@@ -62,7 +62,7 @@ npm create deepseek-harness-action@latest -- --mode session
 ```
 
 安装器 `0.6.1` 面向正式 Action `v0.10.2`，保持精确 DSH `0.2.0-rc.2`。
-当前源码准备仍待独立验证与 npm 发布；打包只在 Tag、Release 和 canary 身份
+打包只在 Tag、Release 和 canary 身份
 一致后，通过 `DSH_ACTION_RELEASE_SHA` 注入核验过的完整 Action commit。
 安装器另有不可变源码 Tag `create-deepseek-harness-action-v0.6.1`，两个身份均不能猜填。
 

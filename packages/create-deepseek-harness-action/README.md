@@ -126,8 +126,7 @@ For an offline static check from a reviewed Action source checkout, use
 Version `0.6.1` targets formal Action `v0.10.2`. Its Action SHA is not filled in
 until the immutable tag, GitHub Release and controlled/native release canary
 agree. The installer has a separate source identity and immutable
-`create-deepseek-harness-action-v0.6.1` source tag. Source preparation is pending
-qualification; it does not establish npm publication or public consumer success.
+`create-deepseek-harness-action-v0.6.1` source tag.
 Installer source review, exact-source CI/tag, the real guided first run,
 qualified tarball, npm publication and fresh anonymous public consumers are
 distinct gates.

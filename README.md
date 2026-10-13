@@ -68,8 +68,7 @@ npm create deepseek-harness-action@latest -- --mode session
 ```
 
 Installer `0.6.1` targets formal Action `v0.10.2`, retaining exact DSH
-`0.2.0-rc.2`. Source preparation is pending independent qualification and npm
-publication. Packing receives the verified full Action commit through
+`0.2.0-rc.2`. Packing receives the verified full Action commit through
 `DSH_ACTION_RELEASE_SHA` only after tag, Release and canary identity checks.
 The separate immutable installer source tag is
 `create-deepseek-harness-action-v0.6.1`; neither identity is guessed.

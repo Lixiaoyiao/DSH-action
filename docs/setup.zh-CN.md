@@ -76,7 +76,7 @@ npm create deepseek-harness-action@latest -- --mode session
 ```
 
 安装器 `0.6.1` 面向正式 Action `v0.10.2`，两种 composition 都保持精确
-DSH `0.2.0-rc.2`。当前源码准备仍待独立验证与 npm 发布；只有 Action Tag、
+DSH `0.2.0-rc.2`。只有 Action Tag、
 GitHub Release 和 canary 身份一致后，打包才通过 `DSH_ACTION_RELEASE_SHA`
 接收核验出的完整 commit。独立审查的安装器源码使用
 `create-deepseek-harness-action-v0.6.1` Tag。源码模板保留受控 build token，
@@ -156,7 +156,7 @@ uses: Lixiaoyiao/deepseek-harness-action@v0.10.2
 
 生产环境应把 Tag 替换为从正式 `v0.10.2` 解析出的完整、不可变 commit SHA。
 安装器 `0.6.1` 对应该 Action 身份，独立审查的 installer 源码 commit 是另一个身份。
-当前源码准备尚未记录正式 Action SHA；不得替代为候选 SHA 或历史版本 SHA。
+生成的 workflow 使用核验后的正式 commit，源码模板通过发布构建接收该值。
 
 必须分别核验 installer 源码 Tag 与 `DSH_ACTION_RELEASE_SHA` 打包输入；源码中的
 迁移候选准备不能代替正式发布身份。

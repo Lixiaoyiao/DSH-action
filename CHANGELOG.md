@@ -47,7 +47,7 @@ versioning for published action releases.
 - Retains the exact production DSH `0.2.0-rc.2` family. The guided installer is
   qualified and versioned independently after the formal Action canary.
 
-## Installer 0.6.1 - source preparation, pending independent qualification
+## Installer 0.6.1
 
 - Targets formal Action `v0.10.2` and exact DSH `0.2.0-rc.2`.
 - Retains the existing guided setup and controlled/native workflow interfaces.

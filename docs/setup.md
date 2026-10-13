@@ -87,8 +87,7 @@ npm create deepseek-harness-action@latest -- --mode session
 ```
 
 Installer `0.6.1` targets formal Action `v0.10.2` and exact DSH `0.2.0-rc.2`
-in both compositions. Source preparation is pending independent qualification
-and npm publication. Only after the Action tag, GitHub Release and canary agree
+in both compositions. Only after the Action tag, GitHub Release and canary agree
 does packing receive the verified full commit through `DSH_ACTION_RELEASE_SHA`.
 The separately reviewed installer source is tagged
 `create-deepseek-harness-action-v0.6.1`. Source templates retain the controlled
@@ -174,8 +173,8 @@ uses: Lixiaoyiao/deepseek-harness-action@v0.10.2
 
 For production, replace the tag with the full immutable commit SHA resolved
 from formal `v0.10.2`. Installer `0.6.1` targets that Action identity, with a
-separately reviewed source commit. This source preparation does not yet record
-the formal Action SHA; do not substitute a candidate or historical release SHA.
+separately reviewed source commit. Generated workflows use the verified release
+commit; source templates receive it through the release build.
 
 The installer source tag and `DSH_ACTION_RELEASE_SHA` packing input must each
 be verified for their own purpose. Source preparation does not establish a
