@@ -223,7 +223,7 @@ export class ExecutionPreparation {
       resolution: resolvedTools.permission,
       manifests: agentTools.manifests,
       additionalDenials: resolvedTools.permissionDenials,
-      ...(composition.actionManagedExtensionProfile === true || extensions.audit.entries.length > 0
+      ...(composition.actionManagedExtensionProfile || extensions.audit.entries.length > 0
         ? { extensions: extensions.audit }
         : {}),
       mediatedWeb: composition.requiresWebSearchProxy(tools.native),

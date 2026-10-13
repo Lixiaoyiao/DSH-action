@@ -675,7 +675,7 @@ export async function inspectValidationIntegrity(
     });
   }
 
-  if (!graph.reliable && input.changes.all.length > 0) {
+  if (graph.resolution === "unsupported" && input.changes.all.length > 0) {
     const path = input.changes.all[0];
     if (path !== undefined) {
       const existing = classified.findIndex(

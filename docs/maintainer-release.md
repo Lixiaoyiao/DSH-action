@@ -4,7 +4,7 @@
 
 This guide is for repository maintainers qualifying and publishing an Action release. A successful run proves only the exact commit SHA it tested. After any candidate change, repeat every required check against the new latest SHA.
 
-For v0.10.1, retain the exact production DSH `0.2.0-rc.2` family. Qualify
+For v0.10.2, retain the exact production DSH `0.2.0-rc.2` family. Qualify
 `session-mode: auto` with fresh keys in controlled and native compositions.
 Use the trusted [automatic Session E2E workflow](../.github/workflows/session-auto-e2e.yml)
 on live `main`: first creation and an
@@ -26,8 +26,8 @@ The advisory stable/RC/alpha upstream canaries never replace these production ga
 Do not rerun task-bearing failures without first reconciling their diagnostics
 and confirmed effects; preserve a bounded continuation record for external blocks.
 
-The guided installer is prepared as an independently qualified `0.6.0` release
-after the v0.10.1 formal canary succeeds. Its first-repository qualification must
+The guided installer is prepared as an independently qualified `0.6.1` release
+after the v0.10.2 formal canary succeeds. Its first-repository qualification must
 exercise the real Git/gh path, Secret detection, readonly workflow generation,
 separate commit/push confirmations, configuration checks and first-run guidance.
 Keep cancelled confirmations and unrelated working-tree changes covered. Public

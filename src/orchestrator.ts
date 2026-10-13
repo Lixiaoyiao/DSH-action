@@ -84,7 +84,7 @@ export async function runAction(options: RunActionOptions = {}): Promise<RunOutc
     core.info(`DSH mode ${selection.mode}; composition ${composition.id}`);
     deadline = createRunDeadline(startedAt, inputs.timeoutMinutes, options.signal);
     const { signal, deadlineMs } = deadline;
-    preparation = new RunPreparation({ lifecycle, startedAt, inputs, signal });
+    preparation = new RunPreparation({ lifecycle, deadlineMs, inputs, signal });
     const prepared = await preparation.run();
     if (prepared.kind === "complete") return { ...observations(), ...prepared.outcome };
 

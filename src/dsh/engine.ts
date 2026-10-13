@@ -2,26 +2,14 @@ import type { ModelUsage } from "./usage.js";
 import type { ActionInputs } from "../inputs.js";
 import { runDsh, type DshIsolationReport, type DshRuntime, type DshToolReceipt } from "./runner.js";
 import type { DshOutput } from "./schema.js";
-import type { Operation, RequestedAccess } from "../commands/parse.js";
 import type { SecurityPolicy } from "../security/policy.js";
 import { removeMarkdownImages } from "../security/redaction.js";
-import type { EffectiveTools } from "../tools/registry.js";
 import type { AgentEngine, AgentToolManifest, AgentTurnRequest } from "../agent/contracts.js";
 import type { AnyExtensionAudit, ExtensionPlan } from "../extensions/plan.js";
 import { nativeToolSchema, type NativeToolId } from "../tools/schema.js";
 import type { DshComposition } from "./composition.js";
 import { selectDshComposition } from "./select-composition.js";
 import { DshAbortedError, DshConfigurationError } from "./errors.js";
-
-export interface AgentTask {
-  readonly operation: Operation;
-  readonly requestedAccess: RequestedAccess;
-  readonly policy: SecurityPolicy;
-  readonly contextPacket: unknown;
-  readonly instructions: string;
-  readonly workspacePath: string;
-  readonly tools: EffectiveTools;
-}
 
 export interface DshTurnMetadata {
   readonly usage?: ModelUsage;

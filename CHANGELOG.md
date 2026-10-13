@@ -3,6 +3,22 @@
 Notable user-facing changes are recorded here. This project follows semantic
 versioning for published action releases.
 
+## [0.10.2]
+
+- Gives admission, validation, operation publication, progress and Session state
+  separate owners. Result snapshots preserve confirmed effects through later
+  failures without a shared mutable run-state object.
+- Uses one workspace-validation implementation for repository writes and typed
+  GitHub mutations, retaining revision-specific reuse and current-authority checks.
+- Binds review and diagnosis to narrow publication interfaces, and moves the
+  general DSH engine and controlled Profile into the runtime adapter.
+- Removes unused reserved Session abstractions, duplicated tool-policy bookkeeping,
+  repeated candidate-admission scripts and checks tied only to source wording.
+- Keeps Action inputs, schema-v1 results, controlled/native ownership, the exact
+  DSH `0.2.0-rc.2` family and existing Session formats and resource bounds compatible.
+- Installer publication remains independent and binds its workflows to the
+  qualified immutable Action release through `DSH_ACTION_RELEASE_SHA`.
+
 ## [0.10.1] - 2026-10-10
 
 - Keeps Controller, worker, Gateway and validation ownership while concentrating

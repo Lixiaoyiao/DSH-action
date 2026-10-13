@@ -9,6 +9,8 @@ import type * as ValidationModule from "../src/write/validate.js";
 import { DshProcessError } from "../src/dsh/errors.js";
 import { runAction } from "../src/orchestrator.js";
 import { SessionCheckpointError } from "../src/session/errors.js";
+import type { ControllerSession } from "../src/session/controller.js";
+import type { SessionRunSummary } from "../src/result.js";
 import { githubClientFixture } from "./helpers/github-client.js";
 import { actionLifecycleGitHub } from "./helpers/action-lifecycle-github.js";
 import type { ReviewFinding } from "../src/review/schema.js";
@@ -32,8 +34,21 @@ vi.mock("../src/write/validate.js", async (original) => ({
   ...(await original<typeof ValidationModule>()),
   runValidationCommandsInDocker: ports.validate,
 }));
-// Session storage is the external checkpoint port in the final lifecycle case.
-vi.mock("../src/session/controller.js", () => ({ prepareControllerSession: ports.session }));
+// Session transport and ownership are exercised separately by the Controller Session suite.
+vi.mock("../src/session/controller.js", () => ({ createControllerSession: ports.session }));
+
+function checkpointSession(save: () => Promise<void>): ControllerSession {
+  let status: SessionRunSummary["status"] = "claimed";
+  return {
+    prepare: () => Promise.resolve(),
+    restore: () => Promise.resolve(),
+    save,
+    finish: (completion) => {
+      status = completion;
+    },
+    snapshot: () => ({ mode: "save", status }),
+  };
+}
 
 const base = "a".repeat(40);
 const tree = "b".repeat(40);
@@ -221,7 +236,7 @@ beforeEach(async () => {
       ]);
     },
   );
-  ports.session.mockResolvedValue(undefined);
+  ports.session.mockReturnValue(undefined);
   ports.runDsh.mockImplementation(async (request) => {
     if (request.workspacePath === undefined) throw new Error("Missing worker workspace");
     workerPath = request.workspacePath;
@@ -256,7 +271,7 @@ afterEach(async () => {
 
 it("returns a blocked task without validation, repository writes or saving a Session", async () => {
   const save = vi.fn(() => Promise.resolve());
-  ports.session.mockResolvedValue({ restore: () => Promise.resolve(), save });
+  ports.session.mockReturnValue(checkpointSession(save));
   ports.runDsh.mockResolvedValue(readonlyWorkerResult("blocked"));
   const outcome = await runAction();
   expect(outcome).toMatchObject({
@@ -378,10 +393,11 @@ it.each(["controlled", "native"] as const)(
 );
 
 it("keeps passed validation and confirmed PR evidence when checkpoint upload fails", async () => {
-  ports.session.mockResolvedValue({
-    restore: () => Promise.resolve(),
-    save: () => Promise.reject(new SessionCheckpointError("artifact upload failed", "runtime")),
-  });
+  ports.session.mockReturnValue(
+    checkpointSession(() =>
+      Promise.reject(new SessionCheckpointError("artifact upload failed", "runtime")),
+    ),
+  );
   const outcome = await runAction();
   expect(outcome).toMatchObject({
     conclusion: "failure",
@@ -565,7 +581,7 @@ it("retains confirmed review publication when a later checkpoint upload fails", 
   const save = vi.fn(() =>
     Promise.reject(new SessionCheckpointError("artifact upload failed", "runtime")),
   );
-  ports.session.mockResolvedValue({ restore: () => Promise.resolve(), save });
+  ports.session.mockReturnValue(checkpointSession(save));
   const outcome = await runAction();
   expect(outcome).toMatchObject({
     conclusion: "failure",
@@ -581,10 +597,11 @@ it("retains confirmed review publication when a later checkpoint upload fails", 
 it("retains an already published no-change answer when its Session checkpoint fails", async () => {
   await selectEntity("task", "issue");
   ports.runDsh.mockResolvedValue(readonlyWorkerResult("final"));
-  ports.session.mockResolvedValue({
-    restore: () => Promise.resolve(),
-    save: () => Promise.reject(new SessionCheckpointError("artifact upload failed", "runtime")),
-  });
+  ports.session.mockReturnValue(
+    checkpointSession(() =>
+      Promise.reject(new SessionCheckpointError("artifact upload failed", "runtime")),
+    ),
+  );
   const outcome = await runAction();
   expect(outcome).toMatchObject({
     conclusion: "failure",

@@ -33,7 +33,7 @@ export interface PackageGraphDetail {
 export interface CommandDependencyGraph {
   readonly packageDetails: ReadonlyMap<string, PackageGraphDetail>;
   readonly entrypoints: ReadonlySet<string>;
-  readonly reliable: boolean;
+  readonly resolution: "resolved" | "unsupported";
 }
 
 export interface ValidationCommandGraphWorkspace {
@@ -287,5 +287,5 @@ export async function buildValidationCommandGraph(
     }
   }
   for (const manifestPath of manifestPaths) await loadPackageDetail(manifestPath);
-  return { packageDetails, entrypoints, reliable };
+  return { packageDetails, entrypoints, resolution: reliable ? "resolved" : "unsupported" };
 }

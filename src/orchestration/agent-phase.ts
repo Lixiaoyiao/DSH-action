@@ -121,6 +121,9 @@ export class AgentPhase {
     const { githubAuthority, validation } = this.options.execution;
     const agent = this.agent;
     return {
+      ...(githubAuthority?.hasExternalEffect === true
+        ? { writeStatus: "partial-success" as const }
+        : {}),
       ...this.operation.snapshot(),
       ...(this.blockedCommentId === undefined ? {} : { commentId: this.blockedCommentId }),
       ...(agent === undefined

@@ -41,7 +41,10 @@ export interface AuthorizedRun {
 }
 
 export type PrepareRunResult =
-  | { readonly kind: "complete"; readonly outcome: RunOutcome }
+  | {
+      readonly kind: "complete";
+      readonly outcome: Omit<RunOutcome, "schemaVersion" | "durationMs">;
+    }
   | { readonly kind: "authorized"; readonly run: AuthorizedRun };
 
 /** Own admission observations even when preparation fails before returning a run. */
@@ -56,7 +59,7 @@ export class RunPreparation {
   public constructor(
     private readonly options: {
       readonly lifecycle: RunLifecycle;
-      readonly startedAt: number;
+      readonly deadlineMs: number;
       readonly inputs: ActionInputs;
       readonly signal: AbortSignal;
     },
@@ -70,7 +73,7 @@ export class RunPreparation {
   }
 
   public async run(): Promise<PrepareRunResult> {
-    const { lifecycle, startedAt, inputs, signal } = this.options;
+    const { lifecycle, deadlineMs, inputs, signal } = this.options;
     const state = this.facts;
     throwIfCancelled(signal);
     core.setSecret(inputs.githubToken);
@@ -96,9 +99,6 @@ export class RunPreparation {
       return {
         kind: "complete",
         outcome: {
-          schemaVersion: 1,
-          durationMs: Math.max(0, Date.now() - startedAt),
-          ...this.snapshot(),
           conclusion: "neutral",
           summary:
             inputs.triggerPhrase === "@dsh"
@@ -116,9 +116,6 @@ export class RunPreparation {
       return {
         kind: "complete",
         outcome: {
-          schemaVersion: 1,
-          durationMs: Math.max(0, Date.now() - startedAt),
-          ...this.snapshot(),
           conclusion: "neutral",
           operation: command.operation,
           summary: "Draft pull requests are not reviewed automatically",
@@ -128,7 +125,7 @@ export class RunPreparation {
     }
 
     const client = createGitHubClient(inputs.githubToken, signal, {
-      deadlineMs: startedAt + inputs.timeoutMinutes * 60_000,
+      deadlineMs,
     });
     state.githubClient = client;
     throwIfCancelled(signal);

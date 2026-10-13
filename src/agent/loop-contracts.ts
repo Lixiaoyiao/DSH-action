@@ -1,9 +1,22 @@
+import type { Operation, RequestedAccess } from "../commands/parse.js";
+import type { SecurityPolicy } from "../security/policy.js";
+import type { EffectiveTools } from "../tools/registry.js";
 import type { AgentEngine, ToolProvider } from "./contracts.js";
 import type { DshRunResult, DshRuntime } from "../dsh/runner.js";
 import type { DshFailureTelemetry } from "../dsh/errors.js";
 import type { DshOutput } from "../dsh/schema.js";
 import type { DshTurnMetadata } from "../dsh/engine.js";
 import type { ValidationFailureError } from "../write/validate.js";
+
+export interface AgentTask {
+  readonly operation: Operation;
+  readonly requestedAccess: RequestedAccess;
+  readonly policy: SecurityPolicy;
+  readonly contextPacket: unknown;
+  readonly instructions: string;
+  readonly workspacePath: string;
+  readonly tools: EffectiveTools;
+}
 
 export interface AgentLoopStats {
   readonly turns: number;

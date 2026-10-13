@@ -105,12 +105,28 @@ checks combinations and credential isolation before side effects. Result types,
 failure classification, Action output serialization and Markdown rendering have
 independent implementations behind the existing public result contract.
 
+`runAction` orders admission, capability preparation and Agent execution. Each
+phase retains its own observations, including facts obtained before preparation
+fails. `RunLifecycle` owns only progress and cancellation reporting. Final
+outputs combine read-only snapshots; they do not grant authority.
+
 `runAgentLoop` owns turn/retry decisions. Its lifecycle module owns acquisition,
 bounded execution and disposal; feedback handles bounded, untrusted repair
-context. Operation finalization owns Controller validation and publication.
-Validation success is recorded when validation succeeds, so a later authority,
-write or Session failure cannot rewrite that stage's outcome. Confirmed external
-effects remain visible when a later stage fails.
+context. The selected `PreparedOperation` binds only its actual publication
+inputs. Review and diagnosis never receive write validation or Session state.
+Operations retain confirmed effects before another asynchronous step can fail.
+
+`WorkspaceValidation` owns command counts, integrity findings and accepted
+workspace revisions. Repository writes and the Gateway use that same owner.
+A matching revision can reuse its executed suite; permission and remote target
+checks still run at the effect seam. A completed historical operation is
+reportable validation evidence but cannot authorize a new workspace mutation.
+
+`ControllerSession` owns preparation, restore, save and settlement. The owner
+exists before preparation starts, so an acknowledged artifact remains visible
+even if a subsequent metadata read fails. Session failure cannot erase a
+confirmed PR, comment or completed validation. Session transport and the pure
+archive decoder retain their existing bounds and provenance checks.
 
 Write transactions own validation → fresh actor authorization → entity/ref
 revalidation → effects → reconciliation. Task and implementation share the
@@ -118,6 +134,10 @@ new-PR transaction; a PR-head fix uses its separate update semantics. Both reuse
 the same validation/authority stage. The Gateway applies the same fresh actor
 gate to queued typed mutations. Reauthorization can revoke admitted capability;
 it cannot add capability to a running Agent.
+
+The DSH engine belongs to the DSH adapter. Controlled Profile rows and tool
+policy hooks stay inside that adapter; generic extension package resolution
+serves both real compositions.
 
 DSH resource ownership stays run-scoped. Controlled and native compositions may
 share installation and environment preparation, while their tool-policy owners
@@ -145,8 +165,10 @@ DSH/Agent execution, deadlines and disposal; write/Gateway transactions and
 external effects; and installer CLI onboarding in a fresh Git repository.
 GitHub, Docker and model transports are external adapters. Internal validation,
 policy, state transitions and output projection stay real wherever feasible.
-An extraction must preserve these behavior tests; new tests target meaningful
-failure paths, rather than mirroring private helpers. Release qualification then
+An extraction preserves these behavior tests and replaces obsolete tests of
+private structure. Shared candidate admission is exercised with real Bash
+and transport fixtures. Version and artifact binding checks remain; prose,
+local variable names and equivalent source layouts are not contracts. Release qualification then
 checks the exact candidate SHA and fresh public consumers.
 
 ## Extension points
