@@ -34,56 +34,28 @@ Keep cancelled confirmations and unrelated working-tree changes covered. Public
 npm consumers must install the same qualified archive through anonymous fresh
 caches; local packing alone does not satisfy this gate.
 
-Historical installer `0.5.0` binds formal v0.10.0 commit `9c52f682bbeed1b7752a9e21273e6c13b01e79b1` only after
-[formal canary 37654999388](https://github.com/Lixiaoyiao/deepseek-harness-action/actions/runs/37654999388) succeeds.
-Pass this verified SHA as `DSH_ACTION_RELEASE_SHA`; qualify and publish the same
-actual tarball and repeat controlled/native and Session consumers against the
-official registry with a fresh anonymous cache. Historical identities below remain unchanged.
+Earlier release identities and qualification notes are preserved in
+[historical release evidence](release-history.md). Use only the newly qualified
+formal Action SHA for `DSH_ACTION_RELEASE_SHA`.
 
-For v0.9.3, keep DSH `0.2.0-rc.2` fixed and retain every existing gate.
-The opt-in [Session contract](session.md) adds independent regressions and
-the trusted [Session E2E workflow](../.github/workflows/session-e2e.yml).
-Qualify a controlled save/resume pair and a native save/resume pair against
-the frozen candidate. Each pair uses two independent Actions runs, a fresh
-`session_key`, the same candidate and trusted harness SHA, and the successful
-save run's ID as `source_run_id` for resume. Do not change the default branch
-between the two runs. The fixture checks a hidden memory value, the original
-raw-log prefix, a new worker, current read-only authorization and no replay;
-a model's claim that it remembers is insufficient evidence.
+## Explicit Session qualification
 
-Dispatch `session-e2e.yml` from `main` with the same approved
-`DSH_E2E_CANDIDATE_SHA` and `candidate_mode`, `candidate_sha` and `pull_request`
-arguments used by Core E2E, plus `phase=save`, `session_key` and `dsh_mode`.
-After that run succeeds, dispatch again with `phase=resume` and its
-`source_run_id`. Omit `pull_request` in exact-main mode. Preserve both runs'
-proof and diagnostics artifacts. Retention, quota or an unconfirmed upload
-failure must be reported; never resend a task or artifact upload to find a
-green result. The artifact SDK uses the Controller job's runtime credential;
-its requests are distinct from Core E2E fixtures and the release monitor.
-Installer `0.4.1` binds the formal v0.9.3 Action commit `e7da1b33a043b4e2e26daa7e731c266817677a4a`
-after its [controlled/native canary](https://github.com/Lixiaoyiao/deepseek-harness-action/actions/runs/37172280127) succeeds.
-Installer source qualification and public npm installation remain separate gates.
+Qualify a controlled save/resume pair and a native save/resume pair against the
+frozen candidate using the [Session E2E workflow](../.github/workflows/session-e2e.yml).
+Each pair uses two independent runs, a fresh `session_key`, the same candidate and
+trusted harness SHA, and the successful save run's ID as `source_run_id` for resume.
+Keep the default branch unchanged between the runs. The fixture checks a hidden
+memory value, raw-log prefix continuity, a new worker, current read-only permissions
+and no replay.
 
-For v0.9.2, keep DSH `0.2.0-rc.2` fixed. Qualify the independent text-file,
-configuration-check and GitHub quota/cache regressions along with every existing
-gate below. The formal two-mode canary exercises real `prompt-file` and
-`context-files` loading and checks their result provenance. The offline
-configuration check never replaces online authorization or final validation.
-[Runtime evidence](v0.9.2-runtime-audit.md) distinguishes the Action-owned Resume
-engineering gap from the Headless image-input gap and records residual audits.
-The independently versioned installer 0.4.0 binds the formal v0.9.2 Action
-commit `c184872f309ebfc5e57a0c5c1397c59e774709e0` after its controlled/native canary succeeds.
-Historical installer 0.3.1/v0.9.1 identities below remain immutable evidence.
-
-v0.9.1 migrates the existing controlled and experimental native compositions
-to the fixed DSH `0.2.0-rc.2` candidate. It does not add Session/Resume, an
-Action-owned GitHub MCP backend, or another GitHub capability. Its formal
-annotated tag, GitHub Release, and release canary must resolve to the same
-qualified exact-main commit. Installer `0.3.1` targets the formal v0.9.1
-Action commit `80cf46ee9098158ea664c45ea6371604c47b71e6`. Its source review,
-source tag, pack qualification, and npm publication are separate gates after
-the Action's formal release canary. Never substitute a guessed or
-installer-source SHA for the immutable Action release binding.
+Dispatch from `main` with the same approved `DSH_E2E_CANDIDATE_SHA`,
+`candidate_mode`, `candidate_sha` and `pull_request` as Core E2E, plus `phase=save`,
+`session_key` and `dsh_mode`. After success, dispatch `phase=resume` with its
+`source_run_id`; omit `pull_request` in exact-main mode. Preserve both runs' proof
+and diagnostics. Report retention, quota or unconfirmed upload failures without
+replaying a task or upload to obtain a green result. The artifact SDK uses the
+Controller job's runtime credential, a separate context from Core E2E fixtures
+and release monitoring.
 
 ## Release invariants
 
@@ -119,22 +91,19 @@ npm ci
 npm run check
 ```
 
-`npm run check` runs formatting, lint, type checking, coverage tests, the release-contract check, the DSH configuration audit, and a deterministic `dist` build comparison. Do not skip a failing sub-check.
+`npm run check` runs formatting, lint, type checking, coverage tests, the release-contract check, DSH patch compatibility, and a deterministic `dist` build comparison. Do not skip a failing sub-check.
 
-v0.9.1 retains the deterministic invariant/model matrix across composition
-mode, trust, permission profile, isolation, extension authority, and Controller
-GitHub authority. Use that matrix for cross-axis policy coverage and reserve
-live E2E for the representative high-value paths below; do not attempt a live
-Cartesian product.
+The deterministic invariant/model matrix covers composition mode, trust,
+permission profile, isolation, extension authority and Controller GitHub authority.
+Use it for cross-axis coverage; live E2E exercises representative paths rather
+than a Cartesian product.
 
-For v0.9.1, the DSH audit verifies the published task/stdin, JSON event stream,
-and Session lifecycle interfaces. The Action submits one text task, explicitly
-selects JSON output, and provides no file, image, or resume input. The terminal
-event still passes the strict Controller schema and business gates. Read the
-[migration and dependency audit](dsh-0.2.0-rc.2-migration.md) for the dependency
-inventory and known limitations; an install or typecheck is not release
-qualification. Compare it with the [v0.9.0 audit](dsh-0.1.7-rc.2-migration.md)
-when reviewing the fixed upstream change range.
+DSH configuration qualification checks patch acceptance against the locked runtime.
+Production launcher, Session lifecycle and native ecosystem tests exercise text-task
+binding, JSON output, resume admission, persistence and observed tools. A narrow
+upload-suppression probe remains until composed launcher configuration has a direct
+test seam. The [migration audit](dsh-0.2.0-rc.2-migration.md) records the fixed
+dependency inventory and upstream limitations.
 
 Before committing, inspect the complete diff and confirm that only intended source, test, metadata, documentation, and generated bundle changes are present. For a documentation-only PR, verify explicitly that `src/`, `dist/`, runtime assets, `action.yml`, and package files did not change.
 
@@ -427,7 +396,7 @@ If the smoke fails after publication, keep the tag immutable. Diagnose the failu
 
 ## Publish the npm create package
 
-The next independent installer is `0.6.0`, targeting formal Action `v0.10.1`
+The independent installer is `0.6.0`, targeting formal Action `v0.10.1`
 with exact DSH `0.2.0-rc.2`. Its source tag is
 `create-deepseek-harness-action-v0.6.0`. Keep the Action SHA and installer source
 SHA unresolved until their respective gates establish them. Do not copy a
@@ -630,30 +599,10 @@ npm view "create-deepseek-harness-action@$installer_version" \
   name version dist-tags --json --registry=https://registry.npmjs.org/
 ```
 
-Stop if `npm whoami` fails; the configured default registry may be a mirror, so
-every authentication, publish, view, and public consumer command must name the
-official registry explicitly. After publication, create three new empty
-directories and run representative consumers from the official package:
-
-```bash
-mkdir "$installer_stage/public-review" \
-  "$installer_stage/public-commands-native" "$installer_stage/public-both"
-(
-  cd "$installer_stage/public-review"
-  npm_config_registry=https://registry.npmjs.org/ \
-    npm create "deepseek-harness-action@$installer_version" -- --mode review
-)
-(
-  cd "$installer_stage/public-commands-native"
-  npm_config_registry=https://registry.npmjs.org/ \
-    npm create "deepseek-harness-action@$installer_version" -- --mode commands --dsh-mode native
-)
-(
-  cd "$installer_stage/public-both"
-  npm_config_registry=https://registry.npmjs.org/ \
-    npm create "deepseek-harness-action@$installer_version" -- --mode both
-)
-```
+Stop if `npm whoami` fails. Every authentication, publish, view and public
+consumer command must select the official registry explicitly. After publication,
+run the complete anonymous consumer gate above against the fetched official
+archive and retain its byte comparison with the qualified tarball.
 
 Confirm the review, commands, and both file sets are correct; controlled remains
 the default; native is explicit; every workflow parses as YAML and contains

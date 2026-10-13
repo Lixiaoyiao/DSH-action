@@ -373,10 +373,8 @@ describe("independent Actions Session qualification fixture", () => {
       ["npm", "run", "typecheck"],
       ["npm", "test"],
     ]);
-    expect(workflow).toContain('[[ "$DISPATCH_SHA" == "$default_sha" ]]');
-    expect(workflow).toContain(
-      '[[ "$APPROVED_CANDIDATE_SHA" =~ $sha_pattern && "$APPROVED_CANDIDATE_SHA" == "$CANDIDATE_SHA" ]]',
-    );
+    expect(workflow).toContain("bash .github/e2e/assert-candidate-binding.sh admit");
+    expect(workflow).toContain("APPROVED_CANDIDATE_SHA: ${{ vars.DSH_E2E_CANDIDATE_SHA }}");
     expect(workflow).toContain("bash .github/e2e/assert-candidate-binding.sh");
     expect(JSON.stringify(jobs.gate)).not.toContain("secrets.");
     expect(workflow).not.toContain("continue-on-error: ${{");
