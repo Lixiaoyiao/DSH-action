@@ -5,7 +5,7 @@ import { AgentDeadlineError } from "./loop-errors.js";
 import type { AgentLoopHooks } from "./loop-contracts.js";
 import type { AgentEngine, AgentTurnRequest, AgentTurnResponse } from "./contracts.js";
 import type { DshOutput } from "../dsh/schema.js";
-import type { DshTurnMetadata } from "../review/run.js";
+import type { DshTurnMetadata } from "../dsh/engine.js";
 
 export async function createRuntimeWithinDeadline(
   createRuntime: () => Promise<DshRuntime>,

@@ -23,7 +23,10 @@ export interface FinishImplementationInput extends ControllerWriteControl {
   readonly boundHeadSha: string;
   readonly operationKey: string;
   readonly result: DshRunResult;
-  readonly inputs: ActionInputs;
+  readonly inputs: Pick<
+    ActionInputs,
+    "runTests" | "testCommands" | "containerImage" | "branchPrefix" | "branchNameTemplate"
+  >;
 }
 
 export async function finishImplementation(

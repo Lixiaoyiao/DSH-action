@@ -8,7 +8,7 @@ import { parseDshOutput, type DshOutput } from "../dsh/schema.js";
 import type { ActionInputs } from "../inputs.js";
 import { throwIfCancelled } from "../lifecycle/cancellation.js";
 import { PHASE_TIMEOUTS, phaseTimeoutMs } from "../lifecycle/deadline.js";
-import { DshAgentEngine, type AgentTask, type DshTurnMetadata } from "../review/run.js";
+import { DshAgentEngine, type AgentTask, type DshTurnMetadata } from "../dsh/engine.js";
 import { ValidationFailureError } from "../write/validate.js";
 import { fingerprintWorkspace } from "../write/workspace.js";
 import { AgentDeadlineError, AgentLoopLimitError, AgentNoProgressError } from "./loop-errors.js";

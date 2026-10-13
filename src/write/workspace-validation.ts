@@ -103,7 +103,6 @@ export class WorkspaceValidation {
   public async inspect(changes: WorkspaceChanges, budget: ValidationDeadline): Promise<void> {
     if (changes.all.length > 0) {
       this.evidence = { status: "failed", commandCount: 0 };
-      this.accepted = undefined;
     }
     const integrity = await withinValidationDeadline(
       () =>
@@ -172,8 +171,13 @@ export class WorkspaceValidation {
       return this.accepted;
     }
     this.options.onPhase();
-    this.evidence = { status: "failed", commandCount: 0 };
-    this.accepted = undefined;
+    this.evidence = {
+      status: "failed",
+      commandCount: 0,
+      ...(budget !== undefined && this.evidence.integrity !== undefined
+        ? { integrity: this.evidence.integrity }
+        : {}),
+    };
     if (budget === undefined) {
       if (this.gateBudget === undefined) {
         const phaseMs = phaseTimeoutMs(deadlineMs, PHASE_TIMEOUTS.validationMs, Date.now);

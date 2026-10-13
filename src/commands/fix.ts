@@ -17,7 +17,10 @@ export interface FinishFixInput extends ControllerWriteControl {
   readonly snapshot: WorkspaceSnapshot;
   readonly identity: BoundPullRequestIdentity;
   readonly result: DshRunResult;
-  readonly inputs: ActionInputs;
+  readonly inputs: Pick<
+    ActionInputs,
+    "runTests" | "testCommands" | "containerImage" | "branchPrefix" | "branchNameTemplate"
+  >;
   readonly runUrl: string;
 }
 

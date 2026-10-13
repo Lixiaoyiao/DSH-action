@@ -65,7 +65,7 @@ export async function runProductionSessionProbe({
     server: { middlewareMode: true },
     appType: "custom",
   });
-  const { prepareControlledProfile } = await vite.ssrLoadModule("/src/extensions/profile.ts");
+  const { prepareControlledProfile } = await vite.ssrLoadModule("/src/dsh/controlled-profile.ts");
   const { writeNativeProfile } = await vite.ssrLoadModule("/src/dsh/native-composition.ts");
   const { resolveExtensionPlan, resolveNativeExtensionPlan } =
     await vite.ssrLoadModule("/src/extensions/plan.ts");

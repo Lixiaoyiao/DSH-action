@@ -1,54 +1,43 @@
 import * as core from "@actions/core";
-
 import { AgentDeadlineError } from "../agent/loop-errors.js";
-import type { RoutedCommand } from "../commands/router.js";
-import type { DshComposition, DshMode } from "../dsh/composition.js";
 import { DshAbortedError } from "../dsh/errors.js";
 import type { StickyProgressReporter } from "../github/progress.js";
-import { githubRequestAudit, type GitHubClient } from "../github/client.js";
 import { PHASE_TIMEOUTS, settleWithin } from "../lifecycle/deadline.js";
-import type { PermissionAudit, ToolPolicyAudit } from "../permissions/profile.js";
-import {
-  describeActionFailure,
-  type ActionFailure,
-  type ActionPhase,
-  type AgentRunSummary,
-  type ValidationSummary,
-  type SessionRunSummary,
-} from "../result.js";
-import type { AuthorityAudit } from "../security/authority.js";
-import type { SecurityPolicy } from "../security/policy.js";
-import type { ValidationIntegritySummary } from "../write/validation-integrity.js";
-import type { WriteOutcome } from "./write.js";
-import type { PublicationResult } from "../review/publisher.js";
-import type { RepositoryTextFileAudit } from "../text-files.js";
+import { describeActionFailure, type ActionFailure, type ActionPhase } from "../result.js";
 
-export interface RunState {
+interface ProgressState {
   phase: ActionPhase;
-  operation?: RoutedCommand["operation"];
-  policy?: SecurityPolicy;
   progress?: StickyProgressReporter;
-  runUrl?: string;
-  agent?: AgentRunSummary;
-  validationCommandCount?: number;
-  permission?: PermissionAudit;
-  toolPolicy?: ToolPolicyAudit;
-  authority?: AuthorityAudit;
-  validationIntegrity?: ValidationIntegritySummary;
-  validationIntegrityWarning?: string;
-  validationPassed?: boolean;
-  dsh?: { readonly mode: DshMode; readonly composition: string };
-  composition?: DshComposition;
   progressFailure?: ProgressFailureFinalization;
-  partialWrite?: WriteOutcome;
-  finalizedCommentId?: number;
-  githubClient?: GitHubClient;
-  session?: SessionRunSummary;
-  partialPublication?: PublicationResult;
-  textSources?: {
-    readonly instruction?: RepositoryTextFileAudit;
-    readonly contexts: readonly RepositoryTextFileAudit[];
-  };
+}
+
+/** Own progress and cancellation finalization, without owning domain results. */
+export class RunLifecycle {
+  private readonly state: ProgressState = { phase: "configuration" };
+  public get phase(): ActionPhase {
+    return this.state.phase;
+  }
+  public get reporter(): StickyProgressReporter | undefined {
+    return this.state.progress;
+  }
+  public get commentId(): number | undefined {
+    return this.state.progress?.commentId;
+  }
+  public enter(phase: ActionPhase): void {
+    this.state.phase = phase;
+  }
+  public setReporter(reporter: StickyProgressReporter): void {
+    this.state.progress ??= reporter;
+  }
+  public async update(...args: Parameters<StickyProgressReporter["update"]>): Promise<void> {
+    await this.state.progress?.update(...args);
+  }
+  public startFailure(error: unknown, override?: ActionFailure): void {
+    startProgressFailure(this.state, error, override);
+  }
+  public async finishFailure(error: unknown, override?: ActionFailure): Promise<void> {
+    await finishProgressFailure(this.state, error, override);
+  }
 }
 
 interface ProgressFailureFinalization {
@@ -124,8 +113,8 @@ function progressFailureStatus(
   return attempt.status;
 }
 
-export function startProgressFailure(
-  state: RunState,
+function startProgressFailure(
+  state: ProgressState,
   error: unknown,
   failureOverride?: ActionFailure,
 ): ProgressFailureFinalization | undefined {
@@ -159,8 +148,8 @@ export function startProgressFailure(
   return attempt;
 }
 
-export async function finishProgressFailure(
-  state: RunState,
+async function finishProgressFailure(
+  state: ProgressState,
   error: unknown,
   failureOverride?: ActionFailure,
 ): Promise<void> {
@@ -186,36 +175,4 @@ export async function finishProgressFailure(
   core.warning(
     "The best-effort progress comment finalization timed out; the primary action result was preserved.",
   );
-}
-
-export function outcomeContext(state: RunState, startedAt: number) {
-  const githubRequests =
-    state.githubClient === undefined ? undefined : githubRequestAudit(state.githubClient);
-  const commentId = state.finalizedCommentId ?? state.progress?.commentId;
-  return {
-    schemaVersion: 1 as const,
-    durationMs: Math.max(0, Date.now() - startedAt),
-    ...(state.runUrl === undefined ? {} : { runUrl: state.runUrl }),
-    ...(state.policy === undefined ? {} : { policy: state.policy }),
-    ...(state.agent === undefined ? {} : { agent: state.agent }),
-    ...(state.permission === undefined ? {} : { permission: state.permission }),
-    ...(state.toolPolicy === undefined ? {} : { toolPolicy: state.toolPolicy }),
-    ...(state.dsh === undefined ? {} : { dsh: state.dsh }),
-    ...(state.authority === undefined ? {} : { authority: state.authority }),
-    ...(githubRequests === undefined ? {} : { githubRequests }),
-    ...(state.session === undefined ? {} : { session: state.session }),
-    ...(state.partialPublication === undefined ? {} : { publication: state.partialPublication }),
-    ...(state.textSources === undefined ? {} : { textSources: state.textSources }),
-    ...(commentId === undefined ? {} : { commentId }),
-  };
-}
-
-export function successfulValidation(
-  state: Pick<RunState, "validationCommandCount" | "validationIntegrity">,
-): ValidationSummary {
-  return {
-    status: "passed",
-    commandCount: state.validationCommandCount ?? 0,
-    ...(state.validationIntegrity === undefined ? {} : { integrity: state.validationIntegrity }),
-  };
 }

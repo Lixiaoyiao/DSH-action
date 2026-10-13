@@ -6,7 +6,11 @@ import type { ActionInputs } from "../inputs.js";
 import { throwIfCancelled } from "../lifecycle/cancellation.js";
 import type { WorkspaceSnapshot } from "../write/workspace.js";
 import { issueTaskIdentity, resolveBaseBranch, runUrl } from "./context.js";
-import type { ValidationCommandCountObserver } from "../write/validate.js";
+import type {
+  ValidationCommandCountObserver,
+  CurrentWorkspaceValidation,
+} from "../write/validate.js";
+import type { ValidationDeadline } from "../write/validation-deadline.js";
 import type { RepositoryValidationProvenance } from "../write/transaction.js";
 
 export interface WriteOutcome {
@@ -24,7 +28,16 @@ export interface ExecuteWriteOptions {
     AuthorizedRun,
     "client" | "context" | "command" | "policy" | "snapshot" | "revalidateAuthority"
   >;
-  readonly inputs: ActionInputs;
+  readonly inputs: Pick<
+    ActionInputs,
+    | "baseBranch"
+    | "botUserId"
+    | "runTests"
+    | "testCommands"
+    | "containerImage"
+    | "branchPrefix"
+    | "branchNameTemplate"
+  >;
   readonly workspaceCopy: WorkspaceSnapshot;
   readonly boundWriteSha: string;
   readonly agentResult: DshRunResult;
@@ -32,7 +45,8 @@ export interface ExecuteWriteOptions {
   readonly taskIdentity: string;
   readonly onPhase: (phase: "validation" | "write") => void;
   readonly onValidationPassed: (validation: RepositoryValidationProvenance) => void;
-  readonly onValidationCommandCount: ValidationCommandCountObserver;
+  readonly onValidationCommandCount?: ValidationCommandCountObserver;
+  readonly validateWorkspace?: (budget: ValidationDeadline) => Promise<CurrentWorkspaceValidation>;
   readonly signal?: AbortSignal;
 }
 
@@ -48,6 +62,7 @@ export async function executeWrite(options: ExecuteWriteOptions): Promise<WriteO
     onPhase,
     onValidationPassed,
     onValidationCommandCount,
+    validateWorkspace,
     signal,
   } = options;
   const { client, context, command, policy, snapshot, revalidateAuthority } = authorized;
@@ -86,7 +101,8 @@ export async function executeWrite(options: ExecuteWriteOptions): Promise<WriteO
       onPhase,
       revalidateAuthority,
       onValidationPassed,
-      onValidationCommandCount,
+      ...(onValidationCommandCount === undefined ? {} : { onValidationCommandCount }),
+      ...(validateWorkspace === undefined ? {} : { validateWorkspace }),
     });
     return {
       writeStatus: "success",
@@ -129,7 +145,8 @@ export async function executeWrite(options: ExecuteWriteOptions): Promise<WriteO
       onPhase,
       revalidateAuthority,
       onValidationPassed,
-      onValidationCommandCount,
+      ...(onValidationCommandCount === undefined ? {} : { onValidationCommandCount }),
+      ...(validateWorkspace === undefined ? {} : { validateWorkspace }),
     });
     return {
       writeStatus: "success",
@@ -170,7 +187,8 @@ export async function executeWrite(options: ExecuteWriteOptions): Promise<WriteO
       onPhase,
       revalidateAuthority,
       onValidationPassed,
-      onValidationCommandCount,
+      ...(onValidationCommandCount === undefined ? {} : { onValidationCommandCount }),
+      ...(validateWorkspace === undefined ? {} : { validateWorkspace }),
     });
     return {
       writeStatus: result.status,
@@ -205,7 +223,8 @@ export async function executeWrite(options: ExecuteWriteOptions): Promise<WriteO
       onPhase,
       revalidateAuthority,
       onValidationPassed,
-      onValidationCommandCount,
+      ...(onValidationCommandCount === undefined ? {} : { onValidationCommandCount }),
+      ...(validateWorkspace === undefined ? {} : { validateWorkspace }),
     });
     return {
       writeStatus: "success",

@@ -2,7 +2,7 @@ import type { AgentEngine, ToolProvider } from "./contracts.js";
 import type { DshRunResult, DshRuntime } from "../dsh/runner.js";
 import type { DshFailureTelemetry } from "../dsh/errors.js";
 import type { DshOutput } from "../dsh/schema.js";
-import type { DshTurnMetadata } from "../review/run.js";
+import type { DshTurnMetadata } from "../dsh/engine.js";
 import type { ValidationFailureError } from "../write/validate.js";
 
 export interface AgentLoopStats {

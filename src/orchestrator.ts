@@ -3,11 +3,10 @@
  * Copyright (c) 2025 Anthropic, PBC. MIT licensed; see THIRD_PARTY_NOTICES.md.
  */
 import * as core from "@actions/core";
-
 import { assertStartupConfiguration } from "./configuration-check.js";
 import { DshAbortedError } from "./dsh/errors.js";
 import { selectDshComposition } from "./dsh/select-composition.js";
-import { loadInputs, type ActionInputs } from "./inputs.js";
+import { loadInputs } from "./inputs.js";
 import { throwIfCancelled } from "./lifecycle/cancellation.js";
 import {
   describeActionFailure,
@@ -17,19 +16,16 @@ import {
 } from "./result.js";
 import { buildAuthorityAudit } from "./security/authority.js";
 import { ValidationIntegrityError } from "./write/validation-integrity.js";
-import { runAgentPhase } from "./orchestration/agent-phase.js";
-import { prepareExecution } from "./orchestration/execution.js";
+import { AgentPhase } from "./orchestration/agent-phase.js";
+import { ExecutionPreparation } from "./orchestration/execution.js";
 import {
   createRunDeadline,
   failureFromSignal,
-  finishProgressFailure,
   isCancellationError,
-  outcomeContext,
-  startProgressFailure,
+  RunLifecycle,
   type RunDeadline,
-  type RunState,
 } from "./orchestration/lifecycle.js";
-import { prepareAuthorizedRun } from "./orchestration/prepare.js";
+import { RunPreparation } from "./orchestration/prepare.js";
 import {
   disposeWorkspace,
   prepareWorkspace,
@@ -46,80 +42,32 @@ export interface RunActionOptions {
   readonly signal?: AbortSignal;
 }
 
-/** Prepare -> authorize/context -> capabilities -> Agent -> validate/finalize -> result. */
-async function runActionInternal(
-  state: RunState,
-  startedAt: number,
-  inputs: ActionInputs,
-  signal: AbortSignal,
-  deadlineMs: number,
-): Promise<RunOutcome> {
-  const preparation = await prepareAuthorizedRun({ state, startedAt, inputs, signal });
-  if (preparation.kind === "complete") return preparation.outcome;
-
-  state.phase = "context";
-  let workspace: PreparedWorkspace | undefined;
-  try {
-    workspace = await prepareWorkspace({
-      client: preparation.run.client,
-      context: preparation.run.context,
-      ...(preparation.run.snapshot === undefined ? {} : { snapshot: preparation.run.snapshot }),
-      ...(preparation.run.baseBranch === undefined
-        ? {}
-        : { baseBranch: preparation.run.baseBranch }),
-      inputs,
-      policy: preparation.run.policy,
-      signal,
-      onFailureBeforeCleanup: (error) => {
-        startProgressFailure(
-          state,
-          error,
-          isCancellationError(error) ? describeCancellationFailure(state.phase) : undefined,
-        );
-      },
-    });
-    const execution = await prepareExecution({
-      state,
-      authorized: preparation.run,
-      workspace,
-      inputs,
-      deadlineMs,
-      signal,
-    });
-    return await runAgentPhase({
-      state,
-      startedAt,
-      authorized: preparation.run,
-      workspace,
-      execution,
-      inputs,
-      signal,
-      deadlineMs,
-    });
-  } catch (error: unknown) {
-    if (error instanceof ValidationIntegrityError) state.validationIntegrity = error.audit;
-    // Start terminal publication before bounded temporary-workspace cleanup.
-    startProgressFailure(
-      state,
-      error,
-      isCancellationError(error) ? describeCancellationFailure(state.phase) : undefined,
-    );
-    throw error;
-  } finally {
-    if (workspace !== undefined) await disposeWorkspace(workspace);
-  }
-}
-
+/** Domain owners retain their own facts; orchestration only orders their lifecycles. */
 export async function runAction(options: RunActionOptions = {}): Promise<RunOutcome> {
   const startedAt = Date.now();
-  const state: RunState = { phase: "configuration" };
+  const lifecycle = new RunLifecycle();
   let deadline: RunDeadline | undefined;
+  let preparation: RunPreparation | undefined;
+  let execution: ExecutionPreparation | undefined;
+  let agent: AgentPhase | undefined;
+  let runtime: Pick<RunOutcome, "dsh" | "authority"> = {};
+  const observations = () => ({
+    schemaVersion: 1 as const,
+    durationMs: Math.max(0, Date.now() - startedAt),
+    ...runtime,
+    ...preparation?.snapshot(),
+    ...execution?.snapshot(),
+    ...(lifecycle.commentId === undefined ? {} : { commentId: lifecycle.commentId }),
+    ...agent?.snapshot(),
+  });
   const beginCancellationFinalization = (): void => {
-    if (state.progress === undefined || state.phase === "publication" || state.phase === "write") {
+    if (
+      lifecycle.reporter === undefined ||
+      lifecycle.phase === "publication" ||
+      lifecycle.phase === "write"
+    )
       return;
-    }
-    // A cancellation signal is routing information, not public failure identity.
-    startProgressFailure(state, new DshAbortedError(), describeCancellationFailure(state.phase));
+    lifecycle.startFailure(new DshAbortedError(), describeCancellationFailure(lifecycle.phase));
   };
   options.signal?.addEventListener("abort", beginCancellationFinalization, { once: true });
   if (options.signal?.aborted === true) beginCancellationFinalization();
@@ -127,47 +75,91 @@ export async function runAction(options: RunActionOptions = {}): Promise<RunOutc
     throwIfCancelled(options.signal);
     const inputs = loadInputs();
     assertStartupConfiguration(inputs);
-    const compositionSelection = selectDshComposition(inputs.dshMode);
-    const composition = compositionSelection.create();
-    state.composition = composition;
-    state.dsh = { mode: compositionSelection.mode, composition: composition.id };
-    core.info(`DSH mode ${compositionSelection.mode}; composition ${composition.id}`);
-    state.authority = buildAuthorityAudit();
+    const selection = selectDshComposition(inputs.dshMode);
+    const composition = selection.create();
+    runtime = {
+      dsh: { mode: selection.mode, composition: composition.id },
+      authority: buildAuthorityAudit(),
+    };
+    core.info(`DSH mode ${selection.mode}; composition ${composition.id}`);
     deadline = createRunDeadline(startedAt, inputs.timeoutMinutes, options.signal);
-    return await runActionInternal(state, startedAt, inputs, deadline.signal, deadline.deadlineMs);
-  } catch (error: unknown) {
-    // Preserve an independent validation/security/write failure if cancellation races it.
-    if (state.session !== undefined && state.session.status !== "saved") {
-      state.session = { ...state.session, status: "failed" };
+    const { signal, deadlineMs } = deadline;
+    preparation = new RunPreparation({ lifecycle, startedAt, inputs, signal });
+    const prepared = await preparation.run();
+    if (prepared.kind === "complete") return { ...observations(), ...prepared.outcome };
+
+    lifecycle.enter("context");
+    let workspace: PreparedWorkspace | undefined;
+    const startFailure = (error: unknown): void =>
+      lifecycle.startFailure(
+        error,
+        isCancellationError(error) ? describeCancellationFailure(lifecycle.phase) : undefined,
+      );
+    try {
+      const authorized = prepared.run;
+      workspace = await prepareWorkspace({
+        client: authorized.client,
+        context: authorized.context,
+        ...(authorized.snapshot === undefined ? {} : { snapshot: authorized.snapshot }),
+        ...(authorized.baseBranch === undefined ? {} : { baseBranch: authorized.baseBranch }),
+        inputs,
+        policy: authorized.policy,
+        signal,
+        onFailureBeforeCleanup: startFailure,
+      });
+      execution = new ExecutionPreparation({
+        lifecycle,
+        composition,
+        authorized,
+        workspace,
+        inputs,
+        deadlineMs,
+        signal,
+      });
+      const capabilities = await execution.run();
+      agent = new AgentPhase({
+        lifecycle,
+        authorized,
+        workspace,
+        execution: capabilities,
+        inputs,
+        signal,
+        deadlineMs,
+      });
+      const outcome = await agent.run();
+      return { ...observations(), ...outcome };
+    } catch (error: unknown) {
+      // Begin terminal reporting before bounded workspace cleanup.
+      startFailure(error);
+      throw error;
+    } finally {
+      if (workspace !== undefined) await disposeWorkspace(workspace);
     }
+  } catch (error: unknown) {
     const effectiveError = failureFromSignal(error, deadline?.signal);
     const failure = isCancellationError(effectiveError)
-      ? describeCancellationFailure(state.phase)
-      : describeActionFailure(effectiveError, state.phase);
-    await finishProgressFailure(state, effectiveError, failure);
-    let validationStatus: ValidationSummary["status"] =
-      state.validationPassed === true ? "passed" : "not-applicable";
-    if (state.validationIntegrity?.status === "blocked" || state.validationPassed === false)
-      validationStatus = "failed";
+      ? describeCancellationFailure(lifecycle.phase)
+      : describeActionFailure(effectiveError, lifecycle.phase);
+    await lifecycle.finishFailure(effectiveError, failure);
+    const accepted = execution?.validation?.snapshot();
+    const integrity = error instanceof ValidationIntegrityError ? error.audit : accepted?.integrity;
     const validation: ValidationSummary | undefined =
-      failure.phase === "validation" || state.validationIntegrity !== undefined
+      failure.phase === "validation" || integrity !== undefined
         ? {
-            status: validationStatus,
-            commandCount:
-              validationStatus === "not-applicable" ? 0 : (state.validationCommandCount ?? 0),
-            ...(state.validationIntegrity === undefined
-              ? {}
-              : { integrity: state.validationIntegrity }),
+            status:
+              integrity?.status === "blocked" ? "failed" : (accepted?.status ?? "not-applicable"),
+            commandCount: accepted?.status === "not-applicable" ? 0 : (accepted?.commandCount ?? 0),
+            ...(integrity === undefined ? {} : { integrity }),
           }
         : undefined;
+    const observed = observations();
+    delete observed.validation;
     return {
-      ...outcomeContext(state, startedAt),
+      ...observed,
       conclusion: "failure",
-      ...(state.operation === undefined ? {} : { operation: state.operation }),
       summary: failure.title,
       findingsCount: 0,
       ...(validation === undefined ? {} : { validation }),
-      ...(state.partialWrite ?? {}),
       error: failure,
     };
   } finally {

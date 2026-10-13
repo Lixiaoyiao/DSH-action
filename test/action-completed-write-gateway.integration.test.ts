@@ -8,9 +8,7 @@ import type * as DshModule from "../src/dsh/runner.js";
 import type * as GitHubModule from "../src/github/client.js";
 import type * as ProcessModule from "../src/security/argv.js";
 import { runAction } from "../src/orchestrator.js";
-import { ControllerGitHubMutationValidation } from "../src/orchestration/github-validation.js";
-import type { RunState } from "../src/orchestration/lifecycle.js";
-import type { CurrentWorkspaceValidation } from "../src/write/validate.js";
+import { WorkspaceValidation } from "../src/write/workspace-validation.js";
 import { actionLifecycleGitHub } from "./helpers/action-lifecycle-github.js";
 import { githubClientFixture } from "./helpers/github-client.js";
 import { inputs } from "./helpers.js";
@@ -257,41 +255,30 @@ it.each(["passed", "failed"] as const)(
   },
 );
 
-it("rejects a passed write receipt when the workspace has advanced to another revision", async () => {
+it("requires current validation after a completed write workspace advances", async () => {
   const repository = await writeFixture();
-  const receipts: CurrentWorkspaceValidation[] = [];
-  ports.process.mockResolvedValue(passed);
-  await repository.task({
-    onValidationPassed: (validation) => {
-      if (validation.kind === "current-workspace") receipts.push(validation);
-    },
-  });
-  const receipt = receipts[0];
-  if (receipt === undefined)
-    throw new Error("The real transaction did not emit current validation evidence");
-  const state: RunState = {
-    phase: "validation",
-    validationPassed: true,
-    validationCommandCount: 1,
-  };
-  const gate = new ControllerGitHubMutationValidation({
-    state,
+  const configuration = inputs({ testCommands: [["npm", "test"]] });
+  const gate = new WorkspaceValidation({
     workspace: repository.snapshot,
-    inputs: inputs({ testCommands: [["npm", "test"]] }),
+    configuration: {
+      runTests: configuration.runTests,
+      commands: configuration.testCommands,
+      containerImage: configuration.containerImage,
+    },
+    integrityMode: configuration.validationIntegrity,
+    onPhase: () => undefined,
     deadlineMs: Date.now() + 30_000,
     signal: new AbortController().signal,
   });
-  await gate.acceptValidatedWorkspaceRevision(receipt);
+  ports.process.mockResolvedValue(passed);
+  await repository.task({ validateWorkspace: (budget) => gate.validate(budget) });
   await gate.validate();
   expect(ports.process).toHaveBeenCalledOnce();
   await writeFile(join(repository.snapshot.workerRoot, "parser.ts"), "different later revision\n");
   const oldEffects = [...repository.effects];
-  await expect(gate.acceptValidatedWorkspaceRevision(receipt)).rejects.toMatchObject({
-    code: "POLICY_DENIED",
-  });
-  expect(ports.process).toHaveBeenCalledOnce();
+  gate.completedOperation();
   ports.process.mockResolvedValue({ ...passed, exitCode: 1 });
   await expect(gate.validate()).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
   expect(repository.effects).toEqual(oldEffects);
-  expect(state).toMatchObject({ validationPassed: false, validationCommandCount: 1 });
+  expect(gate.snapshot()).toMatchObject({ status: "failed", commandCount: 1 });
 });

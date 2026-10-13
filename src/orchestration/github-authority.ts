@@ -13,7 +13,6 @@ import {
 } from "../tools/github.js";
 import type { GitHubToolId } from "../tools/schema.js";
 import type { SecurityPolicy } from "../security/policy.js";
-import type { RunState } from "./lifecycle.js";
 
 type GitHubContext = ReturnType<typeof parseGitHubContext>;
 
@@ -70,7 +69,7 @@ export class GitHubAuthoritySession {
     readonly backend: GitHubToolBackend;
     readonly revalidateAuthority: () => Promise<void>;
     readonly validationGate?: GitHubMutationValidationGate;
-    readonly state: RunState;
+    readonly onPhase: () => void;
     readonly workspacePath: string;
     readonly deadlineMs: number;
     readonly signal: AbortSignal;
@@ -90,14 +89,14 @@ export class GitHubAuthoritySession {
         : {
             validationGate: async (request) => {
               await validationGate(request);
-              options.state.phase = "write";
+              options.onPhase();
             },
           }),
     });
   }
 
   private readonly options: {
-    readonly state: RunState;
+    readonly onPhase: () => void;
     readonly workspacePath: string;
     readonly deadlineMs: number;
     readonly signal: AbortSignal;
@@ -129,16 +128,11 @@ export class GitHubAuthoritySession {
     }
   }
 
+  public get hasExternalEffect(): boolean {
+    return githubFlushHasExternalEffect(this.flushReceipts);
+  }
+
   private record(receipts: readonly GitHubToolFlushReceipt[]): void {
     this.flushReceipts.push(...receipts);
-    if (githubFlushHasExternalEffect(receipts)) {
-      this.options.state.partialWrite ??= { writeStatus: "partial-success" };
-    }
-    if (this.options.state.agent?.toolReceipts !== undefined) {
-      this.options.state.agent = {
-        ...this.options.state.agent,
-        toolReceipts: this.reconcileAgentReceipts(this.options.state.agent.toolReceipts),
-      };
-    }
   }
 }
