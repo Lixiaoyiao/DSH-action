@@ -8,6 +8,7 @@ import type * as DshModule from "../src/dsh/runner.js";
 import type * as GitHubModule from "../src/github/client.js";
 import type * as ProcessModule from "../src/security/argv.js";
 import { runAction } from "../src/orchestrator.js";
+import { inspectWorkspaceChanges } from "../src/write/workspace.js";
 import { WorkspaceValidation } from "../src/write/workspace-validation.js";
 import { actionLifecycleGitHub } from "./helpers/action-lifecycle-github.js";
 import { githubClientFixture } from "./helpers/github-client.js";
@@ -271,7 +272,13 @@ it("requires current validation after a completed write workspace advances", asy
     signal: new AbortController().signal,
   });
   ports.process.mockResolvedValue(passed);
-  await repository.task({ validateWorkspace: (budget) => gate.validate(budget) });
+  await repository.task({
+    validateWorkspace: async (budget) => {
+      const changes = await inspectWorkspaceChanges(repository.snapshot);
+      const run = await gate.prepareWrite(changes, budget);
+      return await run();
+    },
+  });
   await gate.validate();
   expect(ports.process).toHaveBeenCalledOnce();
   await writeFile(join(repository.snapshot.workerRoot, "parser.ts"), "different later revision\n");

@@ -126,7 +126,7 @@ export class WorkspaceValidation {
     }
   }
 
-  public async enforceIntegrity(budget: ValidationDeadline): Promise<void> {
+  private async enforceIntegrity(budget: ValidationDeadline): Promise<void> {
     const audit = this.evidence.integrity;
     if (audit === undefined) return;
     try {
@@ -157,7 +157,18 @@ export class WorkspaceValidation {
     this.evidence = { ...this.evidence, status: "passed" };
   }
 
-  public async validate(budget?: ValidationDeadline): Promise<CurrentWorkspaceValidation> {
+  /** Enforce candidate policy before looking up a historical write or running its suite. */
+  public async prepareWrite(
+    changes: WorkspaceChanges,
+    budget: ValidationDeadline,
+  ): Promise<() => Promise<CurrentWorkspaceValidation>> {
+    await this.inspect(changes, budget);
+    await this.enforceIntegrity(budget);
+    return () => this.runSuite(budget);
+  }
+
+  /** The Gateway uses the same complete policy and may reuse an unchanged revision. */
+  public async validate(): Promise<CurrentWorkspaceValidation> {
     const { workspace, configuration, deadlineMs, signal } = this.options;
     assertWriteValidationConfigured(configuration.runTests, configuration.commands);
     const fingerprint = await fingerprintWorkspace(workspace.workerRoot);
@@ -171,30 +182,26 @@ export class WorkspaceValidation {
       return this.accepted;
     }
     this.options.onPhase();
-    this.evidence = {
-      status: "failed",
-      commandCount: 0,
-      ...(budget !== undefined && this.evidence.integrity !== undefined
-        ? { integrity: this.evidence.integrity }
-        : {}),
-    };
-    if (budget === undefined) {
-      if (this.gateBudget === undefined) {
-        const phaseMs = phaseTimeoutMs(deadlineMs, PHASE_TIMEOUTS.validationMs, Date.now);
-        if (phaseMs <= 0) throw new AgentDeadlineError();
-        this.gateBudget = { deadlineMs: Date.now() + phaseMs, signal };
-      }
-      budget = this.gateBudget;
-      const changes = await withinValidationDeadline(
-        () => inspectWorkspaceChanges(workspace),
-        budget,
-      );
-      await this.inspect(changes, budget);
-      await this.enforceIntegrity(budget);
+    this.evidence = { status: "failed", commandCount: 0 };
+    if (this.gateBudget === undefined) {
+      const phaseMs = phaseTimeoutMs(deadlineMs, PHASE_TIMEOUTS.validationMs, Date.now);
+      if (phaseMs <= 0) throw new AgentDeadlineError();
+      this.gateBudget = { deadlineMs: Date.now() + phaseMs, signal };
     }
+    const budget = this.gateBudget;
+    const changes = await withinValidationDeadline(
+      () => inspectWorkspaceChanges(workspace),
+      budget,
+    );
+    const run = await this.prepareWrite(changes, budget);
+    return await run();
+  }
+
+  private async runSuite(budget: ValidationDeadline): Promise<CurrentWorkspaceValidation> {
+    this.evidence = { ...this.evidence, status: "failed", commandCount: 0 };
     const receipt = await validateWorkspaceRevision(
-      workspace,
-      configuration,
+      this.options.workspace,
+      this.options.configuration,
       budget,
       (commandCount) => {
         this.evidence = { ...this.evidence, commandCount };

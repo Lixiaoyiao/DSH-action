@@ -10,7 +10,7 @@ export async function finishDiagnosis(
   expectedAuthorId: number,
   result: DshRunResult,
   runUrl: string,
-): Promise<void> {
+): Promise<number> {
   const diagnosis = sanitizeUntrustedText(
     stripTrackingMarkers(result.output.diagnosis ?? result.output.summary),
   );
@@ -32,5 +32,5 @@ export async function finishDiagnosis(
     .filter(Boolean)
     .join("\n")
     .slice(0, 65_000);
-  await upsertTrackingComment(client, target, expectedAuthorId, "diagnosis", body);
+  return await upsertTrackingComment(client, target, expectedAuthorId, "diagnosis", body);
 }

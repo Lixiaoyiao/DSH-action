@@ -101,8 +101,9 @@ export function prepareReviewOperation(
 export function prepareDiagnosisOperation(
   options: PublicationOptions & { readonly issueNumber?: number },
 ): PreparedOperation {
+  let commentId: number | undefined;
   return {
-    snapshot: () => ({}),
+    snapshot: () => (commentId === undefined ? {} : { commentId }),
     async finalize(result) {
       options.lifecycle.enter("publication");
       await options.lifecycle.update(
@@ -111,7 +112,7 @@ export function prepareDiagnosisOperation(
       );
       if (options.issueNumber !== undefined) {
         await options.revalidateAuthority();
-        await finishDiagnosis(
+        commentId = await finishDiagnosis(
           options.client,
           { ...options.repository, issueNumber: options.issueNumber },
           options.expectedAuthorId,
@@ -175,7 +176,7 @@ export function prepareWorkspaceOperation(
 
       const changes =
         workspaceCopy === undefined ? undefined : await inspectWorkspaceChanges(workspaceCopy);
-      if (changes !== undefined && command.requestedAccess === "write") {
+      if (changes?.all.length === 0 && command.requestedAccess === "write") {
         lifecycle.enter("validation");
         remainingControllerMs();
         await validation?.inspect(changes, controllerValidationBudget());
@@ -213,7 +214,12 @@ export function prepareWorkspaceOperation(
           );
         }
       }
-      if (workspaceCopy === undefined || boundWriteSha === undefined || validation === undefined) {
+      if (
+        workspaceCopy === undefined ||
+        boundWriteSha === undefined ||
+        validation === undefined ||
+        changes === undefined
+      ) {
         throw new Error("Write operation requires a trusted checked-out workspace");
       }
       lifecycle.enter("validation");
@@ -223,7 +229,7 @@ export function prepareWorkspaceOperation(
       );
       remainingControllerMs();
       const budget = controllerValidationBudget();
-      await validation.enforceIntegrity(budget);
+      const validateWorkspace = await validation.prepareWrite(changes, budget);
       const write = await executeWrite({
         authorized,
         inputs,
@@ -233,7 +239,7 @@ export function prepareWorkspaceOperation(
         validationDeadlineMs: budget.deadlineMs,
         taskIdentity: options.taskIdentity,
         onPhase: (phase) => lifecycle.enter(phase),
-        validateWorkspace: () => validation.validate(budget),
+        validateWorkspace,
         onValidationPassed: (receipt) => {
           if (receipt.kind === "completed-operation") validation.completedOperation();
         },

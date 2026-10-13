@@ -671,3 +671,26 @@ it.each([false, true])(
     await expect(readFile(join(workerPath, "hello.txt"))).rejects.toThrow();
   },
 );
+
+it("retains a published diagnosis when its Session checkpoint fails", async () => {
+  await selectEntity("diagnose", "pull_request");
+  const worker = readonlyWorkerResult("final");
+  ports.runDsh.mockResolvedValue({
+    ...worker,
+    output: { ...worker.output, operation: "diagnose", diagnosis: "The check failed." },
+  });
+  ports.session.mockReturnValue(
+    checkpointSession(() =>
+      Promise.reject(new SessionCheckpointError("artifact upload failed", "runtime")),
+    ),
+  );
+  const outcome = await runAction();
+  expect(outcome).toMatchObject({
+    conclusion: "failure",
+    operation: "diagnose",
+    commentId: 901,
+    error: { code: "SESSION_CHECKPOINT", phase: "publication" },
+  });
+  expect(published.comment).toHaveBeenCalledOnce();
+  expect(ports.validate).not.toHaveBeenCalled();
+});
