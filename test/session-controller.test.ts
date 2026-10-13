@@ -5,11 +5,12 @@ import { createDshRuntime, disposeDshRuntime, type DshRuntime } from "../src/dsh
 import { ControlledComposition } from "../src/dsh/controlled-composition.js";
 import { resolveExtensionPlan } from "../src/extensions/plan.js";
 import { createGitHubClient } from "../src/github/client.js";
-import type { RunState } from "../src/orchestration/lifecycle.js";
-import type { AuthorizedRun } from "../src/orchestration/prepare.js";
 import type { ControlledActionInputs } from "../src/inputs.js";
 import { evaluatePolicy } from "../src/security/policy.js";
-import { prepareControllerSession } from "../src/session/controller.js";
+import {
+  createControllerSession,
+  type ControllerSessionOptions,
+} from "../src/session/controller.js";
 import { PolicyDeniedError } from "../src/errors.js";
 import type { checkActorPermissions } from "../src/github/permissions.js";
 import type {
@@ -105,7 +106,7 @@ beforeEach(() => {
 afterEach(async () => {
   await Promise.all(runtimes.splice(0).map(disposeDshRuntime));
 });
-function options(overrides: Partial<ControlledActionInputs> = {}) {
+function options(overrides: Partial<ControlledActionInputs> = {}): ControllerSessionOptions {
   const configured = inputs({ sessionMode: "save", sessionKey: "logical-task", ...overrides });
   const context = pullRequestContext({ rawEventName: "issue_comment" });
   const policy = evaluatePolicy({
@@ -116,19 +117,11 @@ function options(overrides: Partial<ControlledActionInputs> = {}) {
     requestedAccess: "read",
     commandSource: "explicit-input",
   });
-  const authorized: AuthorizedRun = {
-    context,
-    client: createGitHubClient("controller-github-secret"),
-    command: {
-      operation: "task",
-      source: "explicit-input",
-      requestedAccess: "read",
-      instructions: "current follow-up",
-    },
-    currentRunUrl: "https://github.com/octo/repo/actions/runs/10",
-    policy,
-    deferWriteProgress: false,
-    revalidateAuthority: createAuthorityRevalidator({
+  const client = createGitHubClient("controller-github-secret");
+  const authority = {
+    trust: policy.trust,
+    allowed: policy.allowed,
+    revalidate: createAuthorityRevalidator({
       client: createGitHubClient("controller-github-secret"),
       context,
       command: {
@@ -141,9 +134,7 @@ function options(overrides: Partial<ControlledActionInputs> = {}) {
       policy,
       signal: new AbortController().signal,
     }),
-    initializeProgress: () => undefined,
   };
-  const state: RunState = { phase: "context" };
   const extensions = resolveExtensionPlan({
     allowedTools: [],
     mcp: configured.mcpConfig,
@@ -153,10 +144,12 @@ function options(overrides: Partial<ControlledActionInputs> = {}) {
   });
   return {
     inputs: configured,
-    authorized,
-    state,
-    composition: new ControlledComposition(),
-    extensions,
+    client,
+    context,
+    operation: "task",
+    authority,
+    compositionId: new ControlledComposition().id,
+    extensionDigest: extensions.configurationDigest,
     deadlineMs: Date.now() + 10_000,
     signal: new AbortController().signal,
     environment,
@@ -167,8 +160,27 @@ async function freshRuntime() {
   runtimes.push(value);
   return value;
 }
+async function preparedSession(configured: ControllerSessionOptions) {
+  const session = createControllerSession(configured);
+  if (session === undefined) throw new Error("missing Session");
+  await session.prepare();
+  return session;
+}
 
 describe("Controller Session integration with isolated transport", () => {
+  it("keeps an acknowledged claim in its owner when preparation fails", async () => {
+    const configured = options();
+    const session = createControllerSession(configured);
+    if (session === undefined) throw new Error("missing Session");
+    const preparing = session.snapshot();
+    transport.prepare.mockImplementationOnce((request) => {
+      request.onUploadReceipt?.({ kind: "claim", id: 999, name: "claim" });
+      return Promise.reject(new PolicyDeniedError("confirmed claim metadata unavailable"));
+    });
+    await expect(session.prepare()).rejects.toThrow("confirmed claim metadata unavailable");
+    expect(session.snapshot()).toMatchObject({ status: "failed", claimArtifactId: 999 });
+    expect(preparing).toEqual({ mode: "save", status: "preparing" });
+  });
   it("auto normalizes logical keys and reports automatic checkpoint selection", async () => {
     const configured = options({ sessionMode: "auto", sessionKey: "Logical-Task" });
     transport.prepare.mockImplementationOnce(async (request) => {
@@ -183,13 +195,13 @@ describe("Controller Session integration with isolated transport", () => {
         options: request,
       };
     });
-    await prepareControllerSession(configured);
+    const session = await preparedSession(configured);
     expect(transport.prepare.mock.calls[0]?.[0]).toMatchObject({
       mode: "auto",
       binding: { keyHash: sessionKeyHash("logical-task") },
     });
     expect(transport.prepare.mock.calls[0]?.[0]).not.toHaveProperty("sourceRunId");
-    expect(configured.state.session).toMatchObject({
+    expect(session.snapshot()).toMatchObject({
       mode: "auto",
       status: "claimed",
       selection: "resumed",
@@ -197,21 +209,9 @@ describe("Controller Session integration with isolated transport", () => {
       sourceRunId: 9,
     });
   });
-  it("retains an acknowledged claim when subsequent fresh metadata verification fails", async () => {
-    const configured = options();
-    transport.prepare.mockImplementationOnce((request) => {
-      request.onUploadReceipt?.({ kind: "claim", id: 999, name: "claim" });
-      return Promise.reject(new PolicyDeniedError("confirmed claim metadata unavailable"));
-    });
-    await expect(prepareControllerSession(configured)).rejects.toThrow(
-      "confirmed claim metadata unavailable",
-    );
-    expect(configured.state.session).toMatchObject({ status: "failed", claimArtifactId: 999 });
-  });
   it("retains checkpoint receipt and raw checksum after an acknowledged upload fails verification", async () => {
     const configured = options();
-    const session = await prepareControllerSession(configured);
-    if (session === undefined) throw new Error("missing Session");
+    const session = await preparedSession(configured);
     const value = await freshRuntime();
     await session.restore(value);
     if (value.session === undefined) throw new Error("missing runtime Session");
@@ -226,7 +226,7 @@ describe("Controller Session integration with isolated transport", () => {
       return Promise.reject(new PolicyDeniedError("confirmed checkpoint metadata unavailable"));
     });
     await expect(session.save(value)).rejects.toThrow("confirmed checkpoint metadata unavailable");
-    expect(configured.state.session).toMatchObject({
+    expect(session.snapshot()).toMatchObject({
       status: "failed",
       claimArtifactId: 99,
       artifactId: 1001,
@@ -234,35 +234,32 @@ describe("Controller Session integration with isolated transport", () => {
       payloadSha256: "b".repeat(64),
     });
   });
-  it("does nothing for an old workflow without opt-in", async () => {
+  it("does nothing for an old workflow without opt-in", () => {
     const configured = options({ sessionMode: "off", sessionKey: "" });
-    expect(await prepareControllerSession({ ...configured, environment: {} })).toBeUndefined();
+    expect(createControllerSession({ ...configured, environment: {} })).toBeUndefined();
     expect(transport.prepare).not.toHaveBeenCalled();
   });
   it("requires current trust before any claim", async () => {
     const configured = options();
-    await expect(
-      prepareControllerSession({
-        ...configured,
-        authorized: {
-          ...configured.authorized,
-          policy: { ...configured.authorized.policy, trust: "untrusted" },
-        },
-      }),
-    ).rejects.toThrow("current trusted");
-    expect(configured.state.session?.status).toBe("failed");
+    const session = createControllerSession({
+      ...configured,
+      authority: { ...configured.authority, trust: "untrusted" },
+    });
+    if (session === undefined) throw new Error("missing Session");
+    await expect(session.prepare()).rejects.toThrow("current trusted");
+    expect(session.snapshot().status).toBe("failed");
     expect(transport.prepare).not.toHaveBeenCalled();
   });
   it("saves with server-verified job provenance and freshly rechecked current authority", async () => {
     const configured = options();
-    const session = await prepareControllerSession(configured);
-    if (session === undefined) throw new Error("missing Session");
+    const session = await preparedSession(configured);
     const value = await freshRuntime();
     await session.restore(value);
     expect(value.session?.knownSecrets).toContain("artifact-credential");
     if (value.session === undefined) throw new Error("missing runtime Session");
     value.session.sessionId = sessionId;
     await session.save(value);
+    session.finish("failed");
     expect(transport.permissions).toHaveBeenCalledTimes(2);
     expect(transport.export.mock.calls[0]?.[0].manifest.workflow).toMatchObject({
       jobName: "Verified static job name",
@@ -271,7 +268,7 @@ describe("Controller Session integration with isolated transport", () => {
       runAttempt: 1,
     });
     expect(transport.export.mock.calls[0]?.[0].manifest).not.toHaveProperty("policy");
-    expect(configured.state.session).toMatchObject({
+    expect(session.snapshot()).toMatchObject({
       status: "saved",
       claimArtifactId: 99,
       artifactId: 101,
@@ -281,15 +278,14 @@ describe("Controller Session integration with isolated transport", () => {
   });
   it("does not restore old authorization if current actor authority is revoked before saving", async () => {
     const configured = options();
-    const session = await prepareControllerSession(configured);
-    if (session === undefined) throw new Error("missing Session");
+    const session = await preparedSession(configured);
     const value = await freshRuntime();
     await session.restore(value);
     if (value.session === undefined) throw new Error("missing runtime Session");
     value.session.sessionId = sessionId;
     transport.permissions.mockResolvedValueOnce(permissions(false));
     await expect(session.save(value)).rejects.toThrow("no longer permits");
-    expect(configured.state.session).toMatchObject({ status: "failed", claimArtifactId: 99 });
+    expect(session.snapshot()).toMatchObject({ status: "failed", claimArtifactId: 99 });
   });
   it("passes only a verified checkpoint into fresh dedicated runtime storage", async () => {
     const configured = options({ sessionMode: "resume", sessionSourceRunId: "9" });
@@ -310,7 +306,7 @@ describe("Controller Session integration with isolated transport", () => {
         mode: "controlled",
         compositionId: "controlled",
         containerImage: configured.inputs.containerImage,
-        extensionDigest: configured.extensions.configurationDigest,
+        extensionDigest: configured.extensionDigest,
       },
       issuer: { actorId: 3, actorLogin: "alice", jobRunId: 100 },
       session: { keyHash: "c".repeat(64), sessionId, generation: 1 },
@@ -335,8 +331,7 @@ describe("Controller Session integration with isolated transport", () => {
       bytes: 1,
       sha256: "b".repeat(64),
     });
-    const session = await prepareControllerSession(configured);
-    if (session === undefined) throw new Error("missing Session");
+    const session = await preparedSession(configured);
     const value = await freshRuntime();
     await session.restore(value);
     expect(transport.restore.mock.calls[0]?.[0]).toMatchObject({
@@ -345,7 +340,7 @@ describe("Controller Session integration with isolated transport", () => {
       workspacePath: "/workspace",
     });
     expect(value.session).toMatchObject({ sessionId, checkpointEventCount: 40 });
-    expect(configured.state.session).toMatchObject({
+    expect(session.snapshot()).toMatchObject({
       status: "restored",
       sourceRunId: 9,
       generation: 2,
