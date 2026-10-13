@@ -19,7 +19,7 @@ vi.mock("../src/github/comments.js", () => ({ upsertTrackingComment: mocks.upser
 
 import { finishDiagnosis } from "../src/commands/diagnose.js";
 import { finishReview } from "../src/commands/review.js";
-import { runAgentTask } from "../src/review/run.js";
+import { DshAgentEngine } from "../src/dsh/engine.js";
 import { publishStatusComment } from "../src/github/status.js";
 import { inputs } from "./helpers.js";
 
@@ -136,31 +136,20 @@ describe("operation finalizers", () => {
         updatePullRequestMetadata: false,
       },
     };
-    await runAgentTask(
-      {
-        operation: "review",
-        requestedAccess: "read",
-        policy,
-        contextPacket: { repository: "o/r", data: "untrusted" },
-        instructions: "focus on security",
-        workspacePath: "workspace",
-        tools: {
-          native: [],
-          workspace: [],
-          manifests: [],
-          commands: [],
-          github: [],
-          permission: {
-            profile: "custom",
-            requestedTools: [],
-            disallowedTools: [],
-            deniedTools: [],
-          },
-          permissionDenials: [],
-        },
-      },
+    await new DshAgentEngine(
       inputs({ dshExecutable: "C:/dsh/lib/bin.js", timeoutMinutes: 2 }),
-    );
+      policy,
+    ).runTurn({
+      schemaVersion: 1,
+      operation: "review",
+      requestedAccess: "read",
+      context: { repository: "o/r", data: "untrusted" },
+      instructions: "focus on security",
+      workspacePath: "workspace",
+      tools: [],
+      deadlineMs: startedAt + 120_000,
+      timeoutMs: 120_000,
+    });
     expect(mocks.runDsh).toHaveBeenCalledWith(
       expect.objectContaining({
         operation: "review",

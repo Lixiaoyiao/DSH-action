@@ -2,11 +2,9 @@ import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import {
-  nativeRuntimeToolNames,
-  prepareControlledProfile,
-  resolveInstalledPluginModuleSpecifiers,
-} from "../extensions/profile.js";
+import { nativeRuntimeToolNames, prepareControlledProfile } from "./controlled-profile.js";
+import { resolveInstalledPluginModuleSpecifiers } from "../extensions/profile.js";
+import type { EffectiveExtensionPlan } from "../extensions/plan.js";
 import {
   CONTAINER_AUDIT,
   CONTAINER_LAUNCHER,
@@ -33,6 +31,11 @@ import type { DshRuntime } from "./runtime.js";
 import { assertDshFile, prepareCompositionLauncher } from "./composition-files.js";
 
 const CONTROLLED_PROFILE_SCHEMA_VERSION = 1;
+
+type DockerProfileOptions = PrepareDshCompositionOptions & {
+  readonly plan: EffectiveExtensionPlan;
+  readonly manifestBase: Readonly<Record<string, unknown>>;
+};
 
 async function writeToolPolicy(
   runtime: DshRuntime,
@@ -159,7 +162,6 @@ export class ControlledComposition implements DshComposition {
   }
 
   public async prepare(options: PrepareDshCompositionOptions): Promise<PreparedDshComposition> {
-    this.assertCompatible({ isolation: options.isolation, extensions: options.plan });
     if (options.plan.profileName !== this.extensionPlanProfile) {
       throw new DshConfigurationError(
         "ControlledComposition requires the github-action controlled extension plan",
@@ -168,11 +170,6 @@ export class ControlledComposition implements DshComposition {
     if (this.validatedAssetsDirectory !== options.assetsDirectory) {
       await this.validateRuntimeAssets({ assetsDirectory: options.assetsDirectory });
     }
-    const patchPath = await this.prepareBasePatch({
-      assetsDirectory: options.assetsDirectory,
-      trust: options.trust,
-      isolation: options.isolation,
-    });
     if (options.isolation === "docker") {
       if (options.manifestBase === undefined) {
         throw new DshConfigurationError(
@@ -180,13 +177,14 @@ export class ControlledComposition implements DshComposition {
         );
       }
       return await this.prepareDockerProfile(
-        { ...options, manifestBase: options.manifestBase },
+        { ...options, plan: options.plan, manifestBase: options.manifestBase },
         options.runtime.verifiedPluginModuleSpecifiers,
       );
     }
     if (options.dshExecutableIdentity === undefined) {
       throw new DshConfigurationError("Controlled host composition requires a DSH executable");
     }
+    const patchPath = await this.prepareBasePatch(options);
     const toolPolicyPath = await writeToolPolicy(options.runtime, options.nativeTools);
     return {
       isolation: "none",
@@ -211,16 +209,9 @@ export class ControlledComposition implements DshComposition {
   }
 
   private async prepareDockerProfile(
-    options: PrepareDshCompositionOptions & {
-      readonly manifestBase: Readonly<Record<string, unknown>>;
-    },
+    options: DockerProfileOptions,
     pluginModuleSpecifiers: Readonly<Record<string, string>> | undefined,
   ): Promise<PreparedDockerDshComposition> {
-    if (options.plan.profileName !== this.extensionPlanProfile) {
-      throw new DshConfigurationError(
-        "ControlledComposition requires the github-action controlled extension plan",
-      );
-    }
     const assets = controlledAssets(options.assetsDirectory);
     const profile = await prepareControlledProfile({
       dshHome: options.runtime.dshHome,
@@ -292,9 +283,7 @@ export class ControlledComposition implements DshComposition {
   }
 
   private async finalizeInstalledPlugins(
-    options: PrepareDshCompositionOptions & {
-      readonly manifestBase: Readonly<Record<string, unknown>>;
-    },
+    options: DockerProfileOptions,
     runPreparation: RunDshCompositionPreparation,
   ): Promise<PreparedDockerDshComposition> {
     let pluginModuleSpecifiers: Readonly<Record<string, string>>;

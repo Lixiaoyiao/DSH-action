@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { isAbsolute, join } from "node:path";
 
 import { assertNoGitHubCredentials } from "../security/env.js";
-import { CONTROLLED_PROFILE_NAME } from "../extensions/profile.js";
+import { CONTROLLED_PROFILE_NAME } from "./controlled-profile.js";
 import { DshConfigurationError } from "./errors.js";
 import type { DshProcessSpec } from "./process.js";
 import type { DeepSeekProxyHandle } from "./proxy.js";
