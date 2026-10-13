@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { fingerprintFinding } from "../src/review/fingerprint.js";
 import { filterHighPrecisionFindings } from "../src/review/precision.js";
-import { partitionDshToolPlanes } from "../src/review/run.js";
+import { partitionDshToolPlanes } from "../src/dsh/engine.js";
 import {
   REVIEW_LIMITS,
   parseReviewResult,

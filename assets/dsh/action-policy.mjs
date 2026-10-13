@@ -234,7 +234,6 @@ export function apply(ctx, rawConfig) {
   const config = validateConfig(rawConfig);
   const counts = readCounts(config.statePath, config.rules);
   const starts = new Map();
-  const countedCalls = new Set();
   const outputLimitedCalls = new Set();
   const hardenedDefinitions = new WeakMap();
   const restrictedAgents = new WeakSet();
@@ -262,24 +261,17 @@ export function apply(ctx, rawConfig) {
     });
   };
 
-  const agentInventory = (agent) => ctx.tools.schemas(agent).map((schema) => schema.name);
-  const assertKnownAgentInventory = (agent) => {
-    const visible = agentInventory(agent);
-    const unknown = visible.find((toolName) => !config.known.includes(toolName));
+  const assertAgentInventory = (agent, inventory, violation) => {
+    const visible = ctx.tools.schemas(agent).map((schema) => schema.name);
+    const unknown = visible.find((toolName) => !inventory.includes(toolName));
     const missing = config.allowed.find((toolName) => !visible.includes(toolName));
-    if (unknown !== undefined) {
-      fail(`agent inventory contains unaudited tool ${unknown}`);
-    }
+    if (unknown !== undefined) fail(`${violation} ${unknown}`);
     if (missing !== undefined) fail(`authorized tool ${missing} was not registered`);
   };
-  const assertAllowedAgentInventory = (agent) => {
-    const visible = agentInventory(agent);
-    const unknown = visible.find((toolName) => !config.allowed.includes(toolName));
-    const missing = config.allowed.find((toolName) => !visible.includes(toolName));
-    if (unknown !== undefined) {
-      fail(`restricted agent inventory exposes unauthorized tool ${unknown}`);
-    }
-    if (missing !== undefined) fail(`authorized tool ${missing} was not registered`);
+  const outputLimitFailure = (exec, rule, value) => {
+    if (serializedBytes(value) <= rule.maxOutputBytes) return undefined;
+    outputLimitedCalls.add(String(exec.callId));
+    return `tool ${rule.id} output exceeded the Controller limit of ${String(rule.maxOutputBytes)} bytes`;
   };
   const hardenFinalContent = (agent) => {
     for (const runtimeName of config.allowed) {
@@ -298,11 +290,9 @@ export function apply(ctx, rawConfig) {
       const boundedFinalizer = (exec, result) => {
         const replacement = original?.(exec, result);
         const content = replacement ?? result.content;
-        if (serializedBytes({ ...result, content }) <= rule.maxOutputBytes) return replacement;
-        outputLimitedCalls.add(String(exec.callId));
-        throw new Error(
-          `tool ${rule.id} output exceeded the Controller limit of ${String(rule.maxOutputBytes)} bytes`,
-        );
+        const failure = outputLimitFailure(exec, rule, { ...result, content });
+        if (failure !== undefined) throw new Error(failure);
+        return replacement;
       };
       try {
         definition.finalizeContent = boundedFinalizer;
@@ -316,21 +306,29 @@ export function apply(ctx, rawConfig) {
     }
   };
 
+  const assertRestrictedAgent = (agent) => {
+    assertAgentInventory(
+      agent,
+      config.allowed,
+      "restricted agent inventory exposes unauthorized tool",
+    );
+    hardenFinalContent(agent);
+  };
+
   ctx.on("agent/created", ({ agent }) => {
     try {
       // Audit the complete pre-restriction inventory. ToolRuntime restrictions
       // hide global tools, but intentionally do not erase agent-scoped tools.
       // The strict post-check therefore also detects scoped tools that an
       // approved plugin attempted to expose outside the Controller allowlist.
-      assertKnownAgentInventory(agent);
+      assertAgentInventory(agent, config.known, "agent inventory contains unaudited tool");
       const globalTools = ctx.tools.schemas().map((schema) => schema.name);
       if (globalTools.length > 0) {
         const allowedGlobals = globalTools.filter((toolName) => config.allowed.includes(toolName));
         if (allowedGlobals.length === 0) agent.ctx.tools.restrict({ deny: globalTools });
         else agent.ctx.tools.restrict({ allow: allowedGlobals });
       }
-      assertAllowedAgentInventory(agent);
-      hardenFinalContent(agent);
+      assertRestrictedAgent(agent);
       restrictedAgents.add(agent);
     } catch (error) {
       restrictionFailure = error;
@@ -346,11 +344,9 @@ export function apply(ctx, rawConfig) {
           `dsh-action-policy: positive tool restriction was not installed: ${String(restrictionFailure ?? "unknown failure")}`,
         );
       }
-      assertAllowedAgentInventory(agent);
-      hardenFinalContent(agent);
+      assertRestrictedAgent(agent);
       const decision = await next();
-      assertAllowedAgentInventory(agent);
-      hardenFinalContent(agent);
+      assertRestrictedAgent(agent);
       return decision;
     },
     { prepend: true },
@@ -373,7 +369,6 @@ export function apply(ctx, rawConfig) {
     counts.groups[rule.groupId] = groupCalls + 1;
     writeCounts(config.statePath, counts);
     starts.set(exec.callId, startedAt);
-    countedCalls.add(exec.callId);
     appendReceipt({
       schemaVersion: 1,
       phase: "started",
@@ -424,19 +419,10 @@ export function apply(ctx, rawConfig) {
       // listener may replace a value or content, so retaining both sides here is
       // deliberately conservative and prevents a small renderer from hiding a
       // large structured result from the Controller limit.
-      const projected = { result, decision };
-      const bytes = serializedBytes(projected);
-      if (bytes <= rule.maxOutputBytes) return decision;
-      outputLimitedCalls.add(String(exec.callId));
-      return {
-        kind: "block",
-        feedback: [
-          {
-            type: "text",
-            text: `Error: tool ${rule.id} output exceeded the Controller limit of ${String(rule.maxOutputBytes)} bytes`,
-          },
-        ],
-      };
+      const failure = outputLimitFailure(exec, rule, { result, decision });
+      return failure === undefined
+        ? decision
+        : { kind: "block", feedback: [{ type: "text", text: `Error: ${failure}` }] };
     },
     { prepend: true },
   );
@@ -445,7 +431,7 @@ export function apply(ctx, rawConfig) {
     const rule = config.rules.get(exec.name);
     const startedAt = starts.get(exec.callId);
     starts.delete(exec.callId);
-    const counted = countedCalls.delete(exec.callId);
+    const counted = startedAt !== undefined;
     const outputLimited = outputLimitedCalls.delete(String(exec.callId));
     const code = outputLimited ? "ACTION_TOOL_OUTPUT_LIMIT" : resultCode(result);
     const receipt = {
