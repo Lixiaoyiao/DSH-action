@@ -242,52 +242,71 @@ async function automaticHistorySource(
   return previous.id;
 }
 
+/** Other Session keys may publish between pages; discard one shifted scan in full. */
+async function repositoryArtifacts(
+  options: PrepareSessionArtifactsOptions,
+  binding: SessionBinding,
+  signal: AbortSignal,
+): Promise<readonly ArtifactMetadata[]> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const artifacts: ArtifactMetadata[] = [];
+    const seen = new Set<number>();
+    let total: number | undefined;
+    let shifted = false;
+    for (let page = 1; page <= 10; page++) {
+      const response = await options.client.rest.actions.listArtifactsForRepo({
+        ...args(binding, signal),
+        per_page: 100,
+        page,
+      });
+      if (response.data.total_count > 1000)
+        denied(
+          "Repository artifacts exceed the bound needed to prove the latest Session generation",
+        );
+      if (total !== undefined && total !== response.data.total_count) {
+        shifted = true;
+        break;
+      }
+      total = response.data.total_count;
+      for (const artifact of response.data.artifacts) {
+        if (seen.has(artifact.id)) {
+          shifted = true;
+          break;
+        }
+        seen.add(artifact.id);
+        artifacts.push(artifact);
+      }
+      if (shifted) break;
+      if (seen.size === total) return artifacts;
+    }
+    if (!shifted)
+      denied("Repository artifact listing could not prove the latest Session generation");
+  }
+  return denied("Repository artifact listing was unstable or duplicated");
+}
+
 async function latestGeneration(
   options: PrepareSessionArtifactsOptions,
   binding: SessionBinding,
   signal: AbortSignal,
 ): Promise<number> {
-  const candidates: ArtifactMetadata[] = [];
-  const seen = new Set<number>();
-  let complete = false;
-  for (let page = 1; page <= 10; page++) {
-    const response = await options.client.rest.actions.listArtifactsForRepo({
-      ...args(binding, signal),
-      per_page: 100,
-      page,
-    });
-    if (response.data.total_count > 1000)
-      denied("Repository artifacts exceed the bound needed to prove the latest Session generation");
-    for (const artifact of response.data.artifacts) {
-      if (seen.has(artifact.id)) denied("Repository artifact listing was unstable or duplicated");
-      seen.add(artifact.id);
-    }
-    if (
-      options.mode === "auto" &&
-      response.data.artifacts.some(
-        (item) =>
-          item.name.startsWith(`dsh-session-${binding.keyHash}-`) &&
-          !item.name.endsWith("-claim") &&
-          !item.name.startsWith(sessionArtifactPrefix(binding)),
-      )
+  const artifacts = await repositoryArtifacts(options, binding, signal);
+  const prefix = sessionArtifactPrefix(binding);
+  if (
+    options.mode === "auto" &&
+    artifacts.some(
+      (item) =>
+        item.name.startsWith(`dsh-session-${binding.keyHash}-`) &&
+        !item.name.endsWith("-claim") &&
+        !item.name.startsWith(prefix),
     )
-      denied(
-        "Automatic Session history is incompatible with the current workflow, task or runtime binding; choose a new key",
-      );
-    candidates.push(
-      ...response.data.artifacts.filter(
-        (item) => item.name.startsWith(sessionArtifactPrefix(binding)) && !item.expired,
-      ),
+  )
+    denied(
+      "Automatic Session history is incompatible with the current workflow, task or runtime binding; choose a new key",
     );
-    if (candidates.length > 20)
-      denied("Session checkpoint candidates exceed the provenance verification bound");
-    if (seen.size === response.data.total_count) {
-      complete = true;
-      break;
-    }
-  }
-  if (!complete)
-    denied("Repository artifact listing could not prove the latest Session generation");
+  const candidates = artifacts.filter((item) => item.name.startsWith(prefix) && !item.expired);
+  if (candidates.length > 20)
+    denied("Session checkpoint candidates exceed the provenance verification bound");
   let latest = 0;
   const runs = new Map<number, VerifiedSessionWorkflowRun | null>();
   const generations = new Set<number>();

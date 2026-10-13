@@ -249,10 +249,10 @@ function fixture() {
               : state.sources.filter((item) => item.workflow_run.id === run_id),
         },
       })),
-      listArtifactsForRepo: vi.fn(() => ({
+      listArtifactsForRepo: vi.fn(({ page = 1 }: { page?: number } = {}) => ({
         data: {
           total_count: state.sources.length + state.current.length,
-          artifacts: [...state.sources, ...state.current],
+          artifacts: [...state.sources, ...state.current].slice((page - 1) * 100, page * 100),
         },
       })),
       downloadArtifact: vi.fn(({ artifact_id }: { artifact_id: number }) => ({
@@ -557,6 +557,61 @@ describe("Controller Session artifact admission and advance", () => {
     display_title: title,
     status: "completed",
     conclusion: "success",
+  });
+  it.each(["insert", "replace"])(
+    "auto tolerates an artifact page shift (%s) without repeating its claim",
+    async (change) => {
+      const f = automaticFixture();
+      const original = Array.from({ length: 101 }, (_, index) => ({
+        ...f.metadata(1000 + index),
+        name: `another-session-${String(index)}`,
+      }));
+      f.state.sources.push(
+        { ...f.metadata(2000), name: "new-other-session-artifact" },
+        ...(change === "insert" ? original : original.slice(0, -1)),
+      );
+      f.api.actions.listArtifactsForRepo.mockReturnValueOnce({
+        data: { total_count: original.length, artifacts: original.slice(0, 100) },
+      });
+
+      await expect(prepareSessionArtifacts(f.options)).resolves.toMatchObject({
+        selection: "created",
+        generation: 1,
+      });
+      expect(f.uploader.uploadArtifact).toHaveBeenCalledTimes(1);
+      expect(
+        f.api.actions.listArtifactsForRepo.mock.calls.map(([request]) => request?.page),
+      ).toEqual([1, 2, 1, 2]);
+    },
+  );
+  it("auto rejects persistently duplicated artifact pages before claiming a Session", async () => {
+    const f = automaticFixture();
+    const firstPage = Array.from({ length: 100 }, (_, index) => ({
+      ...f.metadata(1000 + index),
+      name: `another-session-${String(index)}`,
+    }));
+    f.state.sources.push(...firstPage, ...firstPage.slice(-1));
+    await expect(prepareSessionArtifacts(f.options)).rejects.toThrow(/unstable or duplicated/u);
+    expect(f.uploader.uploadArtifact).not.toHaveBeenCalled();
+    expect(f.api.actions.listArtifactsForRepo).toHaveBeenCalledTimes(4);
+  });
+  it("auto retains the repository artifact bound without rescanning an oversized listing", async () => {
+    const f = automaticFixture();
+    f.api.actions.listArtifactsForRepo.mockReturnValue({
+      data: { total_count: 1001, artifacts: [] },
+    });
+    await expect(prepareSessionArtifacts(f.options)).rejects.toThrow(/exceed the bound/u);
+    expect(f.api.actions.listArtifactsForRepo).toHaveBeenCalledTimes(1);
+    expect(f.uploader.uploadArtifact).not.toHaveBeenCalled();
+  });
+  it("auto does not retry a repository artifact transport failure", async () => {
+    const f = automaticFixture();
+    f.api.actions.listArtifactsForRepo.mockImplementation(() => {
+      throw new Error("artifact HTTP unavailable");
+    });
+    await expect(prepareSessionArtifacts(f.options)).rejects.toThrow("artifact HTTP unavailable");
+    expect(f.api.actions.listArtifactsForRepo).toHaveBeenCalledTimes(1);
+    expect(f.uploader.uploadArtifact).not.toHaveBeenCalled();
   });
   it("auto creates only after complete history proves no previous key, and saves the first generation", async () => {
     const f = automaticFixture();

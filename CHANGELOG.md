@@ -11,6 +11,8 @@ versioning for published action releases.
 - Uses one workspace-validation implementation for repository writes and typed
   GitHub mutations, retaining revision-specific reuse and current-authority checks.
 - Retains the published diagnosis comment ID when a later Session checkpoint fails.
+- Recovers one artifact pagination shift caused by concurrent uploads from other
+  Session keys; uncertain listings still fail without repeating a task or upload.
 - Binds review and diagnosis to narrow publication interfaces, and moves the
   general DSH engine and controlled Profile into the runtime adapter.
 - Removes unused reserved Session abstractions, duplicated tool-policy bookkeeping,
