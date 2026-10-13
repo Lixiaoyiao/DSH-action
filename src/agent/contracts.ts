@@ -26,35 +26,6 @@ export interface AgentToolResult {
   readonly output: unknown;
 }
 
-export interface AgentSessionBinding {
-  readonly schemaVersion: 1;
-  readonly repositoryId: number;
-  readonly target: string;
-  readonly headSha: string;
-  readonly actorFingerprint: string;
-  readonly policyFingerprint: string;
-  readonly taskScopeFingerprint: string;
-  readonly operation: Operation;
-  readonly requestedAccess: RequestedAccess;
-  readonly engine: { readonly id: string; readonly version: string };
-  readonly toolsetDigest: string;
-  readonly extensionLock: readonly {
-    readonly id: string;
-    readonly version: string;
-    readonly digest: string;
-    readonly source: "builtin" | "mcp" | "plugin";
-  }[];
-}
-
-export interface AgentSessionHandle {
-  readonly provider: string;
-  readonly id: string;
-  readonly resumeToken?: string;
-  readonly revision: number;
-  readonly expiresAt: string;
-  readonly binding: AgentSessionBinding;
-}
-
 export interface AgentTurnRequest {
   readonly schemaVersion: 1;
   readonly operation: Operation;
@@ -68,14 +39,12 @@ export interface AgentTurnRequest {
   /** Per-turn Agent execution cap, started only after runtime setup completes. */
   readonly timeoutMs: number;
   readonly signal?: AbortSignal;
-  readonly session?: AgentSessionHandle;
 }
 
 export interface AgentTurnResponse<TOutput = unknown, TMetadata = unknown> {
   readonly output: TOutput;
   readonly durationMs: number;
   readonly metadata: TMetadata;
-  readonly session?: AgentSessionHandle;
 }
 
 /** Provider-neutral seam implemented by the current DSH headless adapter. */
@@ -98,10 +67,4 @@ export interface ToolProvider {
   manifest(): readonly AgentToolManifest[];
   invoke(call: AgentToolCall, context: ToolInvocationContext): Promise<AgentToolResult>;
   dispose?(): Promise<void>;
-}
-
-export interface SessionStore {
-  load(binding: AgentSessionBinding): Promise<AgentSessionHandle | null>;
-  save(session: AgentSessionHandle, expectedRevision: number | null): Promise<void>;
-  invalidate(binding: AgentSessionBinding): Promise<void>;
 }

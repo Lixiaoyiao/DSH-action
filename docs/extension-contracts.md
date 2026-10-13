@@ -2,7 +2,7 @@
 
 [README](../README.md) · [Configuration](configuration.md) · [Troubleshooting](troubleshooting.md) · [Security](../SECURITY.md)
 
-## Status in v0.9.1
+## Extension ownership
 
 The controlled extension model introduced in v0.4 remains active unchanged
 through DeepSeek Harness's official extension mechanisms. The Action does not
@@ -34,22 +34,18 @@ define a second plugin system:
 - The v0.3 placeholder `ExtensionProvider` seam has been removed. MCP and
   plugin tools are not routed through a parallel Action plugin registry.
 
-Session resume remains deferred. Every outer-loop iteration starts a fresh DSH
-headless process over the same run-scoped `.git`-less workspace. Controlled
-mode also reuses its run-scoped invocation-count and receipt files; native does
-not invent equivalent controlled policy state. The Action boots its controlled Profile through the
-official `@deepseek-ai/dsh-app-boot@0.2.0-rc.2` public API rather than the
-general-purpose CLI path. The standalone workflow installer added in v0.5.2
-remains unchanged. v0.6.0 added Controller-side routing, branch UX, typed GitHub
-operations, and optional task-result validation. v0.7.0 added only internal
-composition/backend seams and additive audit semantics. v0.8.0 uses that seam
-for experimental native DSH ownership and its official MCP, Profile Bundle,
-Cordis Plugin, repository Skills, Subagent, and Workflow graph. Its
-behavior-preserving Controller cleanup also converges typed lifecycle phases,
-`GitHubAuthorityGateway`, and the declarative builtin capability contract
-without changing the public extension schemas. It does not add an Action-owned
-GitHub MCP backend, Session/Resume, a reusable session token, Agent Teams,
-GitHub App, or another Agent core expansion.
+Controlled Profile rows, runtime tool names, and tool budgets belong to the
+DSH controlled composition. The shared extension module resolves installed
+plugin entry points for both compositions; it does not select runtime policy.
+The Action boots its controlled Profile through the official
+`@deepseek-ai/dsh-app-boot@0.2.0-rc.2` public API.
+
+Each outer-loop iteration starts a DSH headless process over the run-scoped
+`.git`-less workspace. Controlled mode also reuses invocation counts and
+receipts across turns. Optional [Controller Sessions](session.md) restore
+portable DSH text context after checking current authority; prior tool effects
+are never replayed. Session preparation and checkpoint storage belong to the
+Controller lifecycle, outside the `AgentEngine` turn contract.
 
 ## Versioned configuration
 
@@ -519,7 +515,7 @@ The Action therefore removes Markdown image references from untrusted text and
 does not download, mount, or forward attachment bytes through an unofficial
 runtime path.
 
-## `AgentEngine` and deferred sessions
+## Agent execution and Controller Sessions
 
 `AgentEngine<TOutput, TMetadata>` remains the provider-neutral outer-turn
 boundary. `DshAgentEngine` is the only current implementation. It receives the
@@ -528,11 +524,11 @@ untrusted context, effective manifests, bound workspace, and remaining timeout.
 The Controller validates the returned protocol, operation, paths, and terminal
 state before any validation, publication, or GitHub write.
 
-`SessionStore`, `AgentSessionBinding`, and `AgentSessionHandle` remain reserved
-interfaces only. v0.9.1 does not instantiate a store or expose a resume token.
+`DshAgentEngine` lives with DSH execution and composition. Its turn contract
+contains only the current task, capabilities, workspace, deadline, and result;
+there are no reserved Session handles or pluggable stores. The Controller
+Session implementation owns archive binding, preparation, restore, and save.
+
 The redacted extension audit digest is included in public task identity and
 output audit data, while the Controller-only complete configuration digest binds
-runtime reuse. Neither digest is a reusable session credential. Any
-future resume feature must additionally bind repository, target, immutable head
-SHA, actor, policy, task scope, engine, effective toolset, and extension lock,
-and must prevent replay of prior tool call IDs.
+runtime reuse. Neither digest is a reusable session credential.

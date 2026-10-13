@@ -19,7 +19,7 @@ import { parseMcpConfiguration, parsePluginConfiguration } from "../src/extensio
 import {
   prepareControlledProfile,
   renderControlledProfilePatch,
-} from "../src/extensions/profile.js";
+} from "../src/dsh/controlled-profile.js";
 import type { SecurityPolicy } from "../src/security/policy.js";
 
 const temporary: string[] = [];
