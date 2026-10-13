@@ -42,6 +42,13 @@ jobs:
       pull_request: ${{ steps.bind.outputs.pull_request }}
       harness_sha: ${{ steps.bind.outputs.harness_sha }}
     steps:
+      - name: Checkout trusted admission harness
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Validate immutable candidate identity
         id: bind
         shell: bash
@@ -57,85 +64,7 @@ jobs:
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
           CANDIDATE_PR: ${{ inputs.pull_request }}
           APPROVED_CANDIDATE_SHA: ${{ vars.DSH_E2E_CANDIDATE_SHA }}
-        run: |
-          set -euo pipefail
-          sha_pattern='^[a-f0-9]{40}$'
-
-          [[ "$WORKFLOW_REF" == "refs/heads/$DEFAULT_BRANCH" ]] || {
-            echo "Core E2E must be dispatched from the default branch workflow" >&2
-            exit 1
-          }
-          [[ "$WORKFLOW_SHA" =~ $sha_pattern ]] || {
-            echo "The trusted workflow SHA must be a full lowercase commit SHA" >&2
-            exit 1
-          }
-          [[ "$DISPATCH_SHA" =~ $sha_pattern && "$DISPATCH_SHA" == "$WORKFLOW_SHA" ]] || {
-            echo "The dispatched commit must be the immutable workflow commit" >&2
-            exit 1
-          }
-          default_sha="$(gh api "repos/$REPOSITORY/git/ref/heads/$DEFAULT_BRANCH" --jq .object.sha)"
-          [[ "$DISPATCH_SHA" == "$default_sha" ]] || {
-            echo "The dispatch SHA must equal the live default-branch SHA" >&2
-            exit 1
-          }
-          [[ "$CANDIDATE_SHA" =~ $sha_pattern ]] || {
-            echo "candidate_sha must be a full lowercase commit SHA" >&2
-            exit 1
-          }
-          [[ "$APPROVED_CANDIDATE_SHA" =~ $sha_pattern && "$APPROVED_CANDIDATE_SHA" == "$CANDIDATE_SHA" ]] || {
-            echo "DSH_E2E_CANDIDATE_SHA must exactly match candidate_sha" >&2
-            exit 1
-          }
-
-          permission="$(gh api "repos/$REPOSITORY/collaborators/$ACTOR/permission" --jq .permission 2>/dev/null || true)"
-          [[ "$permission" == "write" || "$permission" == "maintain" || "$permission" == "admin" ]] || {
-            echo "The triggering actor must have repository write permission" >&2
-            exit 1
-          }
-
-          case "$CANDIDATE_MODE" in
-            pull-request)
-              [[ "$CANDIDATE_PR" =~ ^[1-9][0-9]*$ ]] || {
-                echo "pull_request must be a positive integer in pull-request mode" >&2
-                exit 1
-              }
-              pr_json="$(gh api "repos/$REPOSITORY/pulls/$CANDIDATE_PR")"
-              jq -e \
-                --arg sha "$CANDIDATE_SHA" \
-                --arg repo "${REPOSITORY,,}" \
-                --arg base "$DEFAULT_BRANCH" \
-                '(.state == "open") and (.draft == false) and
-                 (.head.sha == $sha) and (.head.repo.full_name | ascii_downcase) == $repo and
-                 (.base.repo.full_name | ascii_downcase) == $repo and (.base.ref == $base)' \
-                <<<"$pr_json" >/dev/null
-              candidate_branch="$(jq -r .head.ref <<<"$pr_json")"
-              summary="Bound PR #$CANDIDATE_PR to candidate $CANDIDATE_SHA"
-              ;;
-            main)
-              [[ -z "$CANDIDATE_PR" || "$CANDIDATE_PR" == "0" ]] || {
-                echo "pull_request must be omitted in main mode" >&2
-                exit 1
-              }
-              [[ "$CANDIDATE_SHA" == "$DISPATCH_SHA" && "$CANDIDATE_SHA" == "$default_sha" ]] || {
-                echo "main mode requires candidate_sha to equal the live immutable default-branch commit" >&2
-                exit 1
-              }
-              CANDIDATE_PR=""
-              candidate_branch="$DEFAULT_BRANCH"
-              summary="Bound post-merge qualification to live $DEFAULT_BRANCH commit $CANDIDATE_SHA"
-              ;;
-            *)
-              echo "candidate_mode must be pull-request or main" >&2
-              exit 1
-              ;;
-          esac
-          echo "run_e2e=true" >> "$GITHUB_OUTPUT"
-          echo "candidate_mode=$CANDIDATE_MODE" >> "$GITHUB_OUTPUT"
-          echo "candidate_sha=$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
-          echo "candidate_branch=$candidate_branch" >> "$GITHUB_OUTPUT"
-          echo "pull_request=$CANDIDATE_PR" >> "$GITHUB_OUTPUT"
-          echo "harness_sha=$DISPATCH_SHA" >> "$GITHUB_OUTPUT"
-          echo "$summary from the trusted default-branch workflow" >> "$GITHUB_STEP_SUMMARY"
+        run: bash .github/e2e/assert-candidate-binding.sh admit
 
   read_only:
     name: Read-only golden paths
