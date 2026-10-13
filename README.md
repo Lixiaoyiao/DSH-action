@@ -67,12 +67,12 @@ expired, corrupt or unknown history requires reconciliation.
 npm create deepseek-harness-action@latest -- --mode session
 ```
 
-Installer `0.6.0` targets formal Action `v0.10.1`, retaining exact DSH
+Installer `0.6.1` targets formal Action `v0.10.2`, retaining exact DSH
 `0.2.0-rc.2`. Source preparation is pending independent qualification and npm
 publication. Packing receives the verified full Action commit through
 `DSH_ACTION_RELEASE_SHA` only after tag, Release and canary identity checks.
 The separate immutable installer source tag is
-`create-deepseek-harness-action-v0.6.0`; neither identity is guessed.
+`create-deepseek-harness-action-v0.6.1`; neither identity is guessed.
 
 If guided setup did not configure the Secret, add `DEEPSEEK_API_KEY` under
 **Settings → Secrets and variables → Actions**. Once the workflow reaches the
