@@ -13,24 +13,13 @@ import {
   revalidatePullRequestIdentity,
   type BoundPullRequestIdentity,
 } from "./pr.js";
+import { withinValidationDeadline, type ValidationDeadline } from "./validation-deadline.js";
 import {
-  remainingValidationMs,
-  withinValidationDeadline,
-  type ValidationDeadline,
-} from "./validation-deadline.js";
-import {
-  assertValidationSucceeded,
-  assertWriteValidationConfigured,
-  runValidationCommandsInDocker,
   type ValidationCommandCountObserver,
   type CurrentWorkspaceValidation,
 } from "./validate.js";
-import {
-  fingerprintWorkspace,
-  inspectWorkspaceChanges,
-  type WorkspaceSnapshot,
-} from "./workspace.js";
-import { PolicyDeniedError } from "../errors.js";
+import { inspectWorkspaceChanges, type WorkspaceSnapshot } from "./workspace.js";
+import { validateWorkspaceRevision } from "./workspace-validation.js";
 import {
   assertEquivalentOperationCommit,
   assertOwnedOperationCommit,
@@ -44,6 +33,7 @@ export type RepositoryValidationProvenance =
 
 export interface ControllerWriteControl {
   readonly revalidateAuthority: () => Promise<void>;
+  readonly validateWorkspace?: (budget: ValidationDeadline) => Promise<CurrentWorkspaceValidation>;
   readonly onValidationPassed?: (validation: RepositoryValidationProvenance) => void;
   readonly onValidationCommandCount?: ValidationCommandCountObserver;
   readonly validationDeadlineMs?: number;
@@ -136,38 +126,14 @@ async function validateWriteTransaction(
   budget: ValidationDeadline,
 ): Promise<void> {
   const { validation, control } = options;
-  assertWriteValidationConfigured(validation.runTests, validation.commands);
-  const before = await withinValidationDeadline(
-    async () => fingerprintWorkspace(options.workspace.workerRoot),
-    budget,
-  );
-  let commandCount = 0;
-  const tests = await withinValidationDeadline(
-    async () =>
-      runValidationCommandsInDocker(
-        options.workspace.workerRoot,
-        validation.commands,
-        validation.containerImage,
-        remainingValidationMs(budget),
-        undefined,
-        control.signal,
-        (count) => {
-          commandCount = count;
-          control.onValidationCommandCount?.(count);
-        },
-      ),
-    budget,
-  );
-  assertValidationSucceeded(tests);
-  const after = await withinValidationDeadline(
-    async () => fingerprintWorkspace(options.workspace.workerRoot),
-    budget,
-  );
-  if (after !== before)
-    throw new PolicyDeniedError(
-      "Workspace changed during Controller write validation; refusing write",
-    );
-  control.onValidationPassed?.({ kind: "current-workspace", fingerprint: after, commandCount });
+  const receipt = await (control.validateWorkspace?.(budget) ??
+    validateWorkspaceRevision(
+      options.workspace,
+      validation,
+      budget,
+      control.onValidationCommandCount,
+    ));
+  control.onValidationPassed?.(receipt);
   throwIfCancelled(control.signal);
   await withinValidationDeadline(async () => revalidateWriteTarget(options), budget);
   await withinValidationDeadline(control.revalidateAuthority, budget);
