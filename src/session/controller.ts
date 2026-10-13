@@ -1,16 +1,17 @@
 import { join } from "node:path";
 
 import { AgentDeadlineError } from "../agent/loop-errors.js";
-import type { DshComposition } from "../dsh/composition.js";
+import type { Operation } from "../commands/parse.js";
 import type { DshRuntime } from "../dsh/runtime.js";
 import { isClassifiedActionError, PolicyDeniedError } from "../errors.js";
-import type { ExtensionPlan } from "../extensions/plan.js";
 import { configuredSessionExtensionSecrets } from "../extensions/credentials.js";
+import type { GitHubClient } from "../github/client.js";
+import type { GitHubContext } from "../github/context.js";
 import { GitHubQuotaError } from "../github/request-policy.js";
 import type { ActionInputs } from "../inputs.js";
-import type { RunState } from "../orchestration/lifecycle.js";
-import type { AuthorizedRun } from "../orchestration/prepare.js";
+import type { SessionRunSummary } from "../result.js";
 import { collectControllerSecrets } from "../security/env.js";
+import type { SecurityPolicy } from "../security/policy.js";
 import {
   prepareSessionArtifacts,
   saveSessionArtifact,
@@ -25,34 +26,69 @@ import { sessionBindingHash, sessionKeyHash } from "./contracts.js";
 import { SessionCheckpointError } from "./errors.js";
 
 export interface ControllerSession {
+  /** Prepare once, retaining confirmed receipts even when preparation rejects. */
+  prepare(): Promise<void>;
   restore(runtime: DshRuntime): Promise<void>;
   save(runtime: DshRuntime): Promise<void>;
+  /** Finish the surrounding run without discarding a saved checkpoint. */
+  finish(status: "failed" | "not_saved"): void;
+  snapshot(): SessionRunSummary;
 }
 
-/** The existing Controller owns transport and provenance; DSH owns Session replay. */
-export async function prepareControllerSession(options: {
-  readonly inputs: ActionInputs;
-  readonly authorized: AuthorizedRun;
-  readonly state: RunState;
-  readonly composition: DshComposition;
-  readonly extensions: ExtensionPlan;
+type SessionInputs = Pick<
+  ActionInputs,
+  | "sessionMode"
+  | "sessionKey"
+  | "sessionSourceRunId"
+  | "sessionRetentionDays"
+  | "deepseekApiKey"
+  | "githubToken"
+  | "maxTurns"
+  | "isolation"
+  | "dshMode"
+  | "containerImage"
+  | "mcpConfig"
+  | "pluginConfig"
+>;
+
+type SessionContext = Pick<GitHubContext, "repository" | "runId" | "actor"> &
+  (
+    | { readonly kind: "entity"; readonly entityNumber: number; readonly isPullRequest: boolean }
+    | { readonly kind: "automation" }
+  );
+
+export interface ControllerSessionOptions {
+  readonly inputs: SessionInputs;
+  readonly client: GitHubClient;
+  readonly context: SessionContext;
+  readonly operation: Operation;
+  readonly authority: Pick<SecurityPolicy, "trust" | "allowed"> & {
+    readonly revalidate: () => Promise<void>;
+  };
+  readonly compositionId: string;
+  readonly extensionDigest: string;
   readonly deadlineMs: number;
   readonly signal: AbortSignal;
   readonly environment?: NodeJS.ProcessEnv;
-}): Promise<ControllerSession | undefined> {
-  const { inputs, authorized, state, composition, extensions, deadlineMs, signal } = options;
+}
+
+/** Own Session evidence before transport starts; DSH owns only Session replay. */
+export function createControllerSession(
+  options: ControllerSessionOptions,
+): ControllerSession | undefined {
+  const { inputs, client, context, operation, authority, deadlineMs, signal } = options;
   if (inputs.sessionMode === "off") return undefined;
   const mode = inputs.sessionMode;
   const logicalKey = mode === "auto" ? inputs.sessionKey.toLowerCase() : inputs.sessionKey;
   const sourceRunId =
     inputs.sessionSourceRunId === "" ? undefined : Number(inputs.sessionSourceRunId);
-  state.session = {
+  let summary: SessionRunSummary = {
     mode,
     status: "preparing",
     ...(sourceRunId === undefined ? {} : { sourceRunId }),
   };
   const failed = (error: unknown): never => {
-    state.session = { ...state.session, mode, status: "failed" };
+    summary = { ...summary, status: "failed" };
     if (error instanceof GitHubQuotaError || error instanceof AgentDeadlineError || signal.aborted)
       throw error;
     throw new SessionCheckpointError(
@@ -62,122 +98,128 @@ export async function prepareControllerSession(options: {
     );
   };
   const environment = options.environment ?? process.env;
-  let prepared: PreparedSessionArtifacts;
   const secrets = new Set([
     inputs.deepseekApiKey,
     inputs.githubToken,
     ...collectControllerSecrets(environment, 1),
     ...configuredSessionExtensionSecrets(inputs.mcpConfig, inputs.pluginConfig),
   ]);
-  try {
-    if (secrets.size + inputs.maxTurns > SESSION_CHECKPOINT_LIMITS.knownSecrets) {
-      throw new PolicyDeniedError(
-        "Session credential inspection exceeds its bounded value budget before worker startup",
-      );
-    }
-    if (
-      authorized.policy.trust === "untrusted" ||
-      !authorized.policy.allowed ||
-      inputs.isolation !== "docker"
-    ) {
-      throw new PolicyDeniedError(
-        "Session requires current trusted repository authority and Docker isolation",
-      );
-    }
-    const prefix = `${authorized.context.repository.fullName}/`;
-    const workflowRef = environment.GITHUB_WORKFLOW_REF ?? "";
-    const separator = workflowRef.lastIndexOf("@");
-    const workflowPath =
-      workflowRef.startsWith(prefix) && separator > prefix.length
-        ? workflowRef.slice(prefix.length, separator)
-        : "";
-    const workflowSha = environment.GITHUB_WORKFLOW_SHA ?? "";
-    const jobId = environment.GITHUB_JOB ?? "";
-    const runId = Number(authorized.context.runId);
-    const runAttempt = Number(environment.GITHUB_RUN_ATTEMPT);
-    if (
-      !/^\.github\/workflows\/[A-Za-z0-9][A-Za-z0-9._-]*\.ya?ml$/u.test(workflowPath) ||
-      !/^[a-f0-9]{40}$/u.test(workflowSha) ||
-      !/^[A-Za-z_][A-Za-z0-9_-]{0,99}$/u.test(jobId) ||
-      !Number.isSafeInteger(runId) ||
-      runId < 1 ||
-      !Number.isSafeInteger(runAttempt) ||
-      runAttempt < 1 ||
-      runAttempt > 1000
-    ) {
-      throw new PolicyDeniedError(
-        "Session requires complete verified Actions workflow, job, run and attempt identity",
-      );
-    }
-    const context = authorized.context;
-    prepared = await prepareSessionArtifacts({
-      client: authorized.client,
-      mode,
-      binding: {
-        repository: {
-          id: context.repository.id,
-          owner: context.repository.owner,
-          repo: context.repository.repo,
+  const prepare = async (): Promise<PreparedSessionArtifacts> => {
+    try {
+      if (secrets.size + inputs.maxTurns > SESSION_CHECKPOINT_LIMITS.knownSecrets) {
+        throw new PolicyDeniedError(
+          "Session credential inspection exceeds its bounded value budget before worker startup",
+        );
+      }
+      if (authority.trust === "untrusted" || !authority.allowed || inputs.isolation !== "docker") {
+        throw new PolicyDeniedError(
+          "Session requires current trusted repository authority and Docker isolation",
+        );
+      }
+      const prefix = `${context.repository.fullName}/`;
+      const workflowRef = environment.GITHUB_WORKFLOW_REF ?? "";
+      const separator = workflowRef.lastIndexOf("@");
+      const workflowPath =
+        workflowRef.startsWith(prefix) && separator > prefix.length
+          ? workflowRef.slice(prefix.length, separator)
+          : "";
+      const workflowSha = environment.GITHUB_WORKFLOW_SHA ?? "";
+      const jobId = environment.GITHUB_JOB ?? "";
+      const runId = Number(context.runId);
+      const runAttempt = Number(environment.GITHUB_RUN_ATTEMPT);
+      if (
+        !/^\.github\/workflows\/[A-Za-z0-9][A-Za-z0-9._-]*\.ya?ml$/u.test(workflowPath) ||
+        !/^[a-f0-9]{40}$/u.test(workflowSha) ||
+        !/^[A-Za-z_][A-Za-z0-9_-]{0,99}$/u.test(jobId) ||
+        !Number.isSafeInteger(runId) ||
+        runId < 1 ||
+        !Number.isSafeInteger(runAttempt) ||
+        runAttempt < 1 ||
+        runAttempt > 1000
+      ) {
+        throw new PolicyDeniedError(
+          "Session requires complete verified Actions workflow, job, run and attempt identity",
+        );
+      }
+      const prepared = await prepareSessionArtifacts({
+        client,
+        mode,
+        binding: {
+          repository: {
+            id: context.repository.id,
+            owner: context.repository.owner,
+            repo: context.repository.repo,
+          },
+          workflow: { path: workflowPath, jobId, jobName: jobId },
+          task:
+            context.kind === "entity"
+              ? {
+                  kind: context.isPullRequest ? "pull_request" : "issue",
+                  identity: `${operation}:${String(context.entityNumber)}`,
+                }
+              : {
+                  kind: "automation",
+                  identity: `${operation}:${logicalKey}`,
+                },
+          runtime: {
+            dshVersion: "0.2.0-rc.2",
+            mode: inputs.dshMode,
+            compositionId: options.compositionId,
+            containerImage: inputs.containerImage,
+            extensionDigest: options.extensionDigest,
+          },
+          keyHash: sessionKeyHash(logicalKey),
         },
-        workflow: { path: workflowPath, jobId, jobName: jobId },
-        task:
-          context.kind === "entity"
-            ? {
-                kind: context.isPullRequest ? "pull_request" : "issue",
-                identity: `${authorized.command.operation}:${String(context.entityNumber)}`,
-              }
-            : {
-                kind: "automation",
-                identity: `${authorized.command.operation}:${logicalKey}`,
-              },
-        runtime: {
-          dshVersion: "0.2.0-rc.2",
-          mode: inputs.dshMode,
-          compositionId: composition.id,
-          containerImage: inputs.containerImage,
-          extensionDigest: extensions.configurationDigest,
+        currentRun: { runId, runAttempt, workflowSha, actorLogin: context.actor },
+        ...(sourceRunId === undefined ? {} : { sourceRunId }),
+        retentionDays: inputs.sessionRetentionDays,
+        deadlineMs,
+        signal,
+        onUploadReceipt: (receipt) => {
+          summary = {
+            ...summary,
+            ...(receipt.kind === "claim"
+              ? { claimArtifactId: receipt.id }
+              : {
+                  artifactId: receipt.id,
+                  artifactName: receipt.name,
+                  ...(receipt.sha256 === undefined ? {} : { archiveSha256: receipt.sha256 }),
+                }),
+          };
         },
-        keyHash: sessionKeyHash(logicalKey),
-      },
-      currentRun: { runId, runAttempt, workflowSha, actorLogin: context.actor },
-      ...(sourceRunId === undefined ? {} : { sourceRunId }),
-      retentionDays: inputs.sessionRetentionDays,
-      deadlineMs,
-      signal,
-      onUploadReceipt: (receipt) => {
-        state.session = {
-          ...state.session,
-          mode,
-          status: state.session?.status ?? "preparing",
-          ...(receipt.kind === "claim"
-            ? { claimArtifactId: receipt.id }
-            : {
-                artifactId: receipt.id,
-                artifactName: receipt.name,
-                ...(receipt.sha256 === undefined ? {} : { archiveSha256: receipt.sha256 }),
-              }),
-        };
-      },
-      authorizeCurrent: async () => {
-        signal.throwIfAborted();
-        await authorized.revalidateAuthority();
-      },
-    });
-    state.session = {
-      ...state.session,
-      mode,
-      status: "claimed",
-      generation: prepared.generation,
-      selection: prepared.selection,
-      ...(prepared.source === undefined ? {} : { sourceRunId: prepared.source.runId }),
-      claimArtifactId: prepared.claimArtifactId,
-    };
-  } catch (error: unknown) {
-    return failed(error);
-  }
+        authorizeCurrent: async () => {
+          signal.throwIfAborted();
+          await authority.revalidate();
+        },
+      });
+      summary = {
+        ...summary,
+        status: "claimed",
+        generation: prepared.generation,
+        selection: prepared.selection,
+        ...(prepared.source === undefined ? {} : { sourceRunId: prepared.source.runId }),
+        claimArtifactId: prepared.claimArtifactId,
+      };
+      return prepared;
+    } catch (error: unknown) {
+      return failed(error);
+    }
+  };
+  let preparation: Promise<PreparedSessionArtifacts> | undefined;
+  const preparedArtifacts = (): Promise<PreparedSessionArtifacts> => (preparation ??= prepare());
   return {
+    prepare: async () => {
+      await preparedArtifacts();
+    },
+    snapshot: () => Object.freeze({ ...summary }),
+    finish: (status) => {
+      if (summary.status !== "saved" && (status === "failed" || summary.status !== "failed")) {
+        summary = { ...summary, status };
+      }
+    },
     restore: async (runtime) => {
       try {
+        const prepared = await preparedArtifacts();
         signal.throwIfAborted();
         runtime.session = {
           bindingDigest: sessionBindingHash(prepared.binding),
@@ -196,9 +238,8 @@ export async function prepareControllerSession(options: {
           });
           runtime.session.sessionId = inspection.sessionId;
           runtime.session.checkpointEventCount = inspection.eventCount;
-          state.session = {
-            ...state.session,
-            mode,
+          summary = {
+            ...summary,
             status: "restored",
             sessionId: inspection.sessionId,
           };
@@ -209,6 +250,7 @@ export async function prepareControllerSession(options: {
     },
     save: async (runtime) => {
       try {
+        const prepared = await preparedArtifacts();
         signal.throwIfAborted();
         const session = runtime.session;
         if (session?.sessionId === undefined)
@@ -246,18 +288,15 @@ export async function prepareControllerSession(options: {
             expiresAt,
           },
         });
-        state.session = {
-          ...state.session,
-          mode,
-          status: state.session?.status ?? "claimed",
+        summary = {
+          ...summary,
           sessionId: session.sessionId,
           payloadSha256: checkpoint.manifest.payload.sha256,
           expiresAt,
         };
         const receipt = await saveSessionArtifact({ prepared, checkpoint, deadlineMs, signal });
-        state.session = {
-          ...state.session,
-          mode,
+        summary = {
+          ...summary,
           status: "saved",
           sessionId: session.sessionId,
           artifactId: receipt.id,
