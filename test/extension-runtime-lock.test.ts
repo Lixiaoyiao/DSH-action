@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { createDshRuntime, disposeDshRuntime } from "../src/dsh/runner.js";
 import type { EffectiveExtensionPlan } from "../src/extensions/plan.js";
-import { prepareControlledProfile } from "../src/extensions/profile.js";
+import { prepareControlledProfile } from "../src/dsh/controlled-profile.js";
 import {
   assertExtensionPackagesAbsentFromRuntimeLock,
   auditExtensionRuntimeLock,

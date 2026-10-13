@@ -20,8 +20,8 @@ import {
 import type { DshOutput } from "../src/dsh/schema.js";
 import { parseTaskOutputSchema } from "../src/dsh/task-output.js";
 import { createDshRuntime, disposeDshRuntime, type DshRuntime } from "../src/dsh/runner.js";
-import type { DshTurnMetadata, AgentTask } from "../src/review/run.js";
-import { DshAgentEngine } from "../src/review/run.js";
+import type { DshTurnMetadata, AgentTask } from "../src/dsh/engine.js";
+import { DshAgentEngine } from "../src/dsh/engine.js";
 import { createDshFixtureManager } from "./helpers/dsh-runner-fixtures.js";
 import { ValidationIntegrityError } from "../src/write/validation-integrity.js";
 import { ValidationFailureError } from "../src/write/validate.js";

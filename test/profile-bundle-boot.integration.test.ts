@@ -11,10 +11,8 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { resolveExtensionPlan } from "../src/extensions/plan.js";
-import {
-  prepareControlledProfile,
-  resolveInstalledPluginModuleSpecifiers,
-} from "../src/extensions/profile.js";
+import { prepareControlledProfile } from "../src/dsh/controlled-profile.js";
+import { resolveInstalledPluginModuleSpecifiers } from "../src/extensions/profile.js";
 import { parseMcpConfiguration, parsePluginConfiguration } from "../src/extensions/schema.js";
 import { messageToolResults, sendMessagesSse as sendSse } from "./fixtures/messages-sse.mjs";
 import type { SecurityPolicy } from "../src/security/policy.js";
