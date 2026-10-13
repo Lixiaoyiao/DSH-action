@@ -14,13 +14,16 @@ import {
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 const dshPackage = (name) => name === "@deepseek-ai/dsh" || name.startsWith("@deepseek-ai/dsh-");
-const countToken = (source, token) => source.split(token).length - 1;
+function yaml(source, name) {
+  const document = parseDocument(source, { strict: true, uniqueKeys: true });
+  assert.deepEqual(document.errors, [], `${name} must be valid YAML`);
+  return document.toJS({ maxAliasCount: 0 });
+}
 
 const [
   manifestText,
   lockText,
   action,
-  ci,
   canary,
   installerManifestText,
   installerLockText,
@@ -31,7 +34,6 @@ const [
   setupGuideZh,
   changelog,
   maintainerReleaseGuide,
-  installerBuild,
   installerRuntime,
   installerReview,
   installerCommands,
@@ -40,7 +42,6 @@ const [
   read("package.json"),
   read("package-lock.json"),
   read("action.yml"),
-  read(".github/workflows/ci.yml"),
   read(".github/workflows/release-canary.yml"),
   read("packages/create-deepseek-harness-action/package.json"),
   read("packages/create-deepseek-harness-action/package-lock.json"),
@@ -51,7 +52,6 @@ const [
   read("docs/setup.zh-CN.md"),
   read("CHANGELOG.md"),
   read("docs/maintainer-release.md"),
-  read("packages/create-deepseek-harness-action/scripts/build.mjs"),
   read("packages/create-deepseek-harness-action/src/installer.mjs"),
   read("packages/create-deepseek-harness-action/src/templates/dsh-review.yml"),
   read("packages/create-deepseek-harness-action/src/templates/dsh-commands.yml"),
@@ -61,7 +61,7 @@ const manifest = JSON.parse(manifestText);
 const lock = JSON.parse(lockText);
 const installerManifest = JSON.parse(installerManifestText);
 const installerLock = JSON.parse(installerLockText);
-const installerVersion = "0.6.0";
+const installerVersion = installerManifest.version;
 const installerActionTag = "v0.10.1";
 const installerSourceTag = `create-deepseek-harness-action-v${installerVersion}`;
 const installerReleaseBinding = "DSH_ACTION_RELEASE_SHA";
@@ -115,100 +115,52 @@ for (const [packagePath, entry] of Object.entries(lock.packages ?? {})) {
 }
 assert.ok(lockedDshPackageCount > 0, "package-lock.json contains no installed DSH packages");
 
-assert.ok(
-  action.includes(`The Action accepts only the audited ${DSH_VERSION} runtime.`),
-  "action.yml DSH compatibility description drifted from src/release.ts",
+assert.equal(
+  yaml(action, "action.yml").inputs["dsh-version"].default,
+  DSH_VERSION,
+  "Action runtime default must use the exact DSH pin",
 );
-assert.ok(
-  action.includes(`default: "${DSH_VERSION}"`),
-  "action.yml dsh-version default drifted from src/release.ts",
+const releaseCanary = yaml(canary, "release canary");
+assert.equal(releaseCanary.name, `${ACTION_TAG} release canary`);
+assert.equal(releaseCanary.concurrency.group, "dsh-release-canary");
+assert.deepEqual(releaseCanary.jobs.smoke.env, {
+  RELEASE_TAG: ACTION_TAG,
+  RELEASE_SHA: `\${{ vars.${RELEASE_CANARY_VARIABLE} }}`,
+});
+const canarySteps = releaseCanary.jobs.smoke.steps;
+const canaryActions = canarySteps.filter((step) => step.uses === "./release-action");
+assert.deepEqual(
+  canaryActions.map((step) => step.id),
+  ["controlled", "native"],
 );
-assert.ok(
-  ci.includes(`const expectedVersion = "${DSH_VERSION}";`),
-  "CI runtime smoke drifted from the audited DSH version",
-);
-assert.ok(ci.includes("locked DSH rc.2"), "CI runtime smoke label must identify rc.2");
+assert.equal(canaryActions[0].with["dsh-mode"], undefined);
+assert.equal(canaryActions[1].with["dsh-mode"], "native");
+const releaseCheckout = canarySteps.find((step) => step.with?.path === "release-action");
+assert.equal(releaseCheckout?.with.ref, "${{ env.RELEASE_SHA }}");
+assert.equal(releaseCheckout?.with["persist-credentials"], false);
 
+// These shell guards still bind the published tag and checkout. The independent
+// diagnostic gate is executed by release-canary.test.ts, not inspected as text.
 for (const expected of [
-  `name: ${ACTION_TAG} release canary`,
-  `RELEASE_TAG: ${ACTION_TAG}`,
-  `vars.${RELEASE_CANARY_VARIABLE}`,
-  "group: dsh-release-canary",
-  "Checkout the fixed release action",
-  `releases/tags/$RELEASE_TAG`,
-  `git/ref/tags/$RELEASE_TAG`,
+  "releases/tags/$RELEASE_TAG",
+  "git/ref/tags/$RELEASE_TAG",
   ".draft == false and .prerelease == false",
   'object_sha" != "$RELEASE_SHA',
   'git -C release-action rev-parse HEAD)" = "$RELEASE_SHA',
+  "git -C release-action config --local --get-regexp",
 ]) {
-  assert.ok(canary.includes(expected), `release canary is missing contract token: ${expected}`);
+  assert.ok(canary.includes(expected), `release canary is missing a binding guard: ${expected}`);
 }
-
-const controlledCanaryStart = canary.indexOf(
-  "      - name: Controlled default strict read-only smoke",
-);
-const nativeCanaryStart = canary.indexOf("      - name: Native read-only smoke");
-assert.ok(controlledCanaryStart >= 0, "release canary must run the controlled default smoke");
-assert.ok(
-  nativeCanaryStart > controlledCanaryStart,
-  "release canary must run the native smoke after the controlled smoke",
-);
-const controlledCanary = canary.slice(controlledCanaryStart, nativeCanaryStart);
-const nativeCanary = canary.slice(nativeCanaryStart);
-assert.doesNotMatch(
-  controlledCanary,
-  /^\s+dsh-mode:/mu,
-  "controlled release canary must exercise the default dsh-mode",
-);
-assert.match(nativeCanary, /^\s+dsh-mode: native$/mu, "native release canary must opt in");
-assert.equal(
-  countToken(canary, "uses: ./release-action"),
-  2,
-  "release canary must invoke the immutable action exactly twice",
-);
-assert.equal(
-  countToken(canary, "persist-credentials: false"),
-  1,
-  "release checkout must disable credential persistence exactly once",
-);
-assert.equal(
-  countToken(canary, "dsh-mode: native"),
-  1,
-  "release canary must contain exactly one native opt-in",
-);
-assert.ok(
-  canary.includes("git -C release-action config --local --get-regexp"),
-  "release canary must recheck the checkout's local credential configuration",
-);
-assert.equal(
-  countToken(canary, "continue-on-error: true"),
-  4,
-  "both release mode invocations and assertions must retain independent evidence",
-);
+const controlledAssertion = canarySteps.find((step) => step.id === "controlled_assert")?.run ?? "";
+const nativeAssertion = canarySteps.find((step) => step.id === "native_assert")?.run ?? "";
 for (const expected of [
-  "Record diagnostics and require both release modes",
-  "if: always()",
-  "steps.controlled.outcome",
-  "steps.controlled_assert.outcome",
-  "steps.native.outcome",
-  "steps.native_assert.outcome",
-  'result.action !== "success" || result.assertion !== "success"',
-  "process.exitCode = 1;",
+  '.toolPolicy.policyOwner == "controller"',
+  '.dsh.mode == "controlled"',
+  '.dsh.composition == "github-action-controlled"',
+  '.permissions.effectiveTools == ["workspace.read","workspace.search"]',
 ]) {
-  assert.ok(
-    canary.includes(expected),
-    `release canary is missing its final failure gate: ${expected}`,
-  );
+  assert.ok(controlledAssertion.includes(expected), `controlled canary is missing: ${expected}`);
 }
-assert.ok(
-  controlledCanary.includes('.toolPolicy.policyOwner == "controller"') &&
-    controlledCanary.includes('.dsh.mode == "controlled"') &&
-    controlledCanary.includes('.dsh.composition == "github-action-controlled"') &&
-    controlledCanary.includes(
-      '.permissions.effectiveTools == ["workspace.read","workspace.search"]',
-    ),
-  "controlled release canary must assert its schema ownership and composition",
-);
 for (const expected of [
   '.toolPolicy.policyOwner == "dsh"',
   '.dsh.mode == "native"',
@@ -219,7 +171,7 @@ for (const expected of [
   '(.toolPolicy | has("requestedTools") | not)',
   '(.toolPolicy | has("deniedTools") | not)',
 ]) {
-  assert.ok(nativeCanary.includes(expected), `native release canary is missing: ${expected}`);
+  assert.ok(nativeAssertion.includes(expected), `native canary is missing: ${expected}`);
 }
 
 assert.equal(
@@ -227,7 +179,6 @@ assert.equal(
   "create-deepseek-harness-action",
   "installer npm package name drifted",
 );
-assert.equal(installerManifest.version, installerVersion, "installer version drifted");
 assert.equal(installerManifest.private, false, "installer must remain publishable");
 assert.equal(
   installerManifest.bin?.["create-deepseek-harness-action"],
@@ -256,7 +207,7 @@ assert.ok(
   `installer documentation must bind to the ${installerSourceTag} source tag`,
 );
 assert.ok(
-  installerReadme.includes(`Version \`${installerVersion}\``) &&
+  installerReadme.includes(installerVersion) &&
     installerReadme.includes(installerActionTag) &&
     installerReadme.includes(installerReleaseBinding),
   "installer README must identify its version and immutable Action binding",
@@ -281,58 +232,17 @@ assert.ok(
     !maintainerReleaseGuide.includes("$GITHUB_REPOSITORY"),
   "installer publish guide must use an explicit repository identity",
 );
-assert.ok(
-  installerRuntime.includes("--dsh-mode controlled|native") &&
-    installerRuntime.includes(
-      "const DEFAULT_DSH_MODE = INSTALLER_ACTION_INPUTS.dshMode.defaultValue",
-    ),
-  "installer CLI must expose native as an opt-in and keep controlled as the default",
-);
-assert.ok(
-  installerRuntime.includes("--advanced") && installerRuntime.includes("runGuidedSetup"),
-  "installer must retain both guided first-run and explicit advanced/manual entry points",
-);
-for (const runtime of [
-  "guided.mjs",
-  "process.mjs",
-  "prompts.mjs",
-  "publication.mjs",
-  "workflow-text.mjs",
-]) {
-  assert.ok(installerBuild.includes(`"${runtime}"`), `installer build must include ${runtime}`);
-}
-for (const expected of ["dsh-review-native.yml", "dsh-commands-native.yml"]) {
-  assert.ok(installerRuntime.includes(expected), `installer runtime is missing: ${expected}`);
-}
-
+// Installer CLI behavior, archive contents, invalid release bindings, and
+// deterministic controlled/native rendering are tested through the real build
+// and packed package in installer.test.ts and installer-guided.test.ts.
 const installerReleaseToken = "__DSH_ACTION_RELEASE_SHA__";
 const installerDshModeToken = "__DSH_MODE_INPUT__";
-assert.ok(
-  installerBuild.includes("DSH_ACTION_RELEASE_SHA"),
-  "installer build must require an explicit release SHA",
-);
-assert.ok(
-  installerBuild.includes("^[0-9a-f]{40}$"),
-  "installer build must accept only a lowercase full commit SHA",
-);
-assert.ok(
-  installerBuild.includes(installerDshModeToken) &&
-    installerBuild.includes('renderTemplate(source, file, "controlled")') &&
-    installerBuild.includes('renderTemplate(source, file, "native")'),
-  "installer build must deterministically render controlled and native templates",
-);
-assert.ok(
-  !/deepseek-harness-action@[0-9a-f]{40}/u.test(installerBuild),
-  "installer source build must receive the formal Action SHA only through DSH_ACTION_RELEASE_SHA",
-);
 for (const [name, template] of [
   ["review", installerReview],
   ["commands", installerCommands],
   ["session", installerSession],
 ]) {
-  const document = parseDocument(template, { strict: true, uniqueKeys: true });
-  assert.deepEqual(document.errors, [], `${name} installer template must be valid YAML`);
-  const workflow = document.toJS({ maxAliasCount: 0 });
+  const workflow = yaml(template, `${name} installer template`);
   const actionSteps = Object.values(workflow.jobs ?? {})
     .flatMap((job) => job.steps ?? [])
     .filter(

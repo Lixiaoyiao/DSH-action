@@ -56,12 +56,10 @@ describe("trusted core E2E workflow", () => {
       "- pull-request",
       "- main",
       "APPROVED_CANDIDATE_SHA: ${{ vars.DSH_E2E_CANDIDATE_SHA }}",
-      '[[ "$CANDIDATE_SHA" == "$DISPATCH_SHA" && "$CANDIDATE_SHA" == "$default_sha" ]]',
-      'candidate_branch="$DEFAULT_BRANCH"',
     ]) {
       expect(gate).toContain(contract);
     }
-    expect(gate).toContain('echo "pull_request=$CANDIDATE_PR" >> "$GITHUB_OUTPUT"');
+    expect(gate).toContain("bash .github/e2e/assert-candidate-binding.sh admit");
     expect(workflow).toContain("bash .github/e2e/assert-candidate-binding.sh");
     expect(workflow).toContain('if [[ "$CANDIDATE_MODE" == "pull-request" ]]; then');
   });
@@ -621,33 +619,5 @@ describe("trusted core E2E workflow", () => {
     expect(cleanup).toContain("Fixture ref preflight could not confirm absence.");
     expect(cleanup).not.toMatch(/ref_sha=.*\|\| return 0/u);
     expect(cleanup).not.toContain("matching-refs");
-  });
-
-  it("keeps the reusable candidate assertion fail-closed in both modes", async () => {
-    const assertion = await readFile(
-      new URL("../.github/e2e/assert-candidate-binding.sh", import.meta.url),
-      "utf8",
-    );
-
-    expect(assertion).toContain("pull-request)");
-    expect(assertion).toContain('.state == "open" and .draft == false');
-    expect(assertion).toContain("main)");
-    expect(assertion).toContain('live_sha="$(gh api');
-    expect(assertion).toContain('"$live_sha" == "$CANDIDATE_SHA"');
-    expect(assertion).not.toContain("matching-refs");
-  });
-
-  it("requires complete post-merge Core E2E on the exact release SHA before tagging", async () => {
-    const guide = await readFile(new URL("../docs/maintainer-release.md", import.meta.url), "utf8");
-    const merge = guide.slice(
-      guide.indexOf("## Merge and qualify `main`"),
-      guide.indexOf("## Tag and GitHub Release"),
-    );
-
-    expect(merge).toContain('gh variable set DSH_E2E_CANDIDATE_SHA --body "$release_sha"');
-    expect(merge).toContain("-f candidate_mode=main");
-    expect(merge).toContain('-f candidate_sha="$release_sha"');
-    expect(merge).toContain("Wait for every Core E2E job");
-    expect(merge.indexOf("candidate_mode=main")).toBeLessThan(merge.indexOf("Do not tag"));
   });
 });

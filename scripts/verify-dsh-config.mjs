@@ -9,103 +9,14 @@ import { parse } from "yaml";
 const require = createRequire(import.meta.url);
 const dshPackage = require.resolve("@deepseek-ai/dsh/package.json");
 const dshBin = join(dshPackage, "..", "lib", "bin.js");
-const headlessPackage = require.resolve("@deepseek-ai/dsh-headless/package.json");
-const headlessRunner = join(headlessPackage, "..", "lib", "index.js");
-const headlessStartup = join(headlessPackage, "..", "lib", "startup.js");
 const projectRoot = join(import.meta.dirname, "..");
-const nativeLauncher = join(projectRoot, "assets", "dsh", "native-launcher.mjs");
-const controlledLauncher = join(projectRoot, "assets", "dsh", "action-launcher.mjs");
 const dshHome = await mkdtemp(join(tmpdir(), "dsh-action-config-"));
 
 try {
-  const [runnerSource, startupSource, nativeLauncherSource, controlledLauncherSource, action] =
-    await Promise.all([
-      readFile(headlessRunner, "utf8"),
-      readFile(headlessStartup, "utf8"),
-      readFile(nativeLauncher, "utf8"),
-      readFile(controlledLauncher, "utf8"),
-      readFile(join(projectRoot, "action.yml"), "utf8"),
-    ]);
-  assert.match(
-    runnerSource,
-    /const Config = z\.object\(\{\s*task: z\.string\(\),\s*sessionId: z\.string\(\),\s*json: z\.boolean\(\)\s*\}\);/u,
-    "the audited headless runner exposes task, session identity, and JSON projection only",
-  );
-  assert.match(
-    runnerSource,
-    /content:\s*\[\{\s*type:\s*"text",\s*text:\s*task\s*\}\]/u,
-    "the audited headless runner must submit the task as one text content block",
-  );
-  assert.doesNotMatch(
-    runnerSource,
-    /type:\s*["']image["']/u,
-    "GitHub attachments must remain deferred until the audited headless runner exposes images",
-  );
-  assert.match(
-    startupSource,
-    /\.argument\(\s*"\[task\.\.\.\]"/u,
-    "the audited headless startup must continue to accept the single text task positional",
-  );
-  assert.match(
-    startupSource,
-    /\.option\("--json"/u,
-    "the published JSON projection flag is available",
-  );
-  assert.match(
-    startupSource,
-    /\.option\("--session-id <id>"/u,
-    "the upstream adoption option is accounted for",
-  );
-  assert.match(
-    runnerSource,
-    /await agent\.whenIdle\(\)/u,
-    "headless must wait for Agent quiescence",
-  );
-  assert.match(
-    runnerSource,
-    /await sessions\.flush\(agent\.session\)/u,
-    "headless must flush its owned Session before exit",
-  );
-  for (const [mode, launcherSource] of [
-    ["controlled", controlledLauncherSource],
-    ["native", nativeLauncherSource],
-  ]) {
-    assert.match(
-      launcherSource,
-      /\["--json", "--", task\]/u,
-      `${mode} must opt into JSON and bind one literal task after the option terminator`,
-    );
-    assert.doesNotMatch(
-      launcherSource,
-      /--(?:file|image|attachment)(?:[\s"'=]|$)/u,
-      `${mode} must not opt into unsupported attachment entry points`,
-    );
-    assert.match(
-      launcherSource,
-      /sessionPlan\?\.sessionId === undefined/u,
-      `${mode} must keep Session resume opt-in`,
-    );
-    assert.match(
-      launcherSource,
-      /\["--json", "--session-id", sessionPlan\.sessionId, "--", task\]/u,
-      `${mode} must use the published literal Headless resume argument`,
-    );
-    assert.match(
-      launcherSource,
-      /sessionEnabled \? await import\("\.\/action-session\.mjs"\) : undefined/u,
-      `${mode} must require Controller Session admission only for explicit opt-in`,
-    );
-    for (const row of [
-      "session-telemetry-otel",
-      "session-log-deepseek",
-      "plugin-package-inventory-deepseek",
-    ]) {
-      assert.ok(
-        launcherSource.includes(`{ id: "${row}", disabled: true }`),
-        `${mode} must explicitly suppress ${row}`,
-      );
-    }
-  }
+  // The production launcher and Session lifecycle tests exercise task binding,
+  // JSON output, resume admission, tool observation, and shutdown through DSH.
+  // This check only owns published Action inputs and upstream patch acceptance.
+  const action = await readFile(join(projectRoot, "action.yml"), "utf8");
   const actionInputs = Object.keys(parse(action).inputs);
   for (const forbidden of [
     "session-id",
@@ -123,31 +34,21 @@ try {
       `Action must not expose ${forbidden} in this migration`,
     );
   }
-  assert.match(
-    nativeLauncherSource,
-    /loadProfile\(NAME, PROFILE, INSTALL_ANCHOR, dshHome\)/u,
-    "native mode must load the official DSH headless Profile",
-  );
-  assert.match(
-    nativeLauncherSource,
-    /host\.on\("agent\/created", \(\{ agent \}\) =>/u,
-    "native tool observation must sample the actual published Agent scope",
-  );
-  assert.match(
-    nativeLauncherSource,
-    /tools\.schemas\(agent\)/u,
-    "native observedTools must come from the public DSH ToolRuntime schema view",
-  );
-  assert.match(
-    nativeLauncherSource,
-    /\{ id: "session-telemetry-otel", disabled: true \}/u,
-    "the programmatic native launcher must preserve default-off DSH telemetry",
-  );
-  assert.doesNotMatch(
-    nativeLauncherSource,
-    /\.restrict\(|action-policy|action-workspace/u,
-    "native observation must not install or imitate the controlled ToolRuntime policy",
-  );
+  // Retain the narrow upload-suppression probes until the launcher exposes a
+  // composed-config seam; general startup and lifecycle use behavioral tests.
+  for (const launcher of ["action-launcher.mjs", "native-launcher.mjs"]) {
+    const source = await readFile(join(projectRoot, "assets", "dsh", launcher), "utf8");
+    for (const row of [
+      "session-telemetry-otel",
+      "session-log-deepseek",
+      "plugin-package-inventory-deepseek",
+    ]) {
+      assert.ok(
+        source.includes(`{ id: "${row}", disabled: true }`),
+        `${launcher} must suppress ${row}`,
+      );
+    }
+  }
 
   for (const patch of [
     "strict-untrusted.patch.yml",

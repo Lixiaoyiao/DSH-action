@@ -443,9 +443,9 @@ describe("Marketplace action metadata", () => {
     expect(gate).toContain("WORKFLOW_REF: ${{ github.ref }}");
     expect(gate).toContain("DISPATCH_SHA: ${{ github.sha }}");
     expect(gate).toContain("APPROVED_CANDIDATE_SHA: ${{ vars.DSH_E2E_CANDIDATE_SHA }}");
-    expect(gate).toContain('"$DISPATCH_SHA" == "$default_sha"');
+    expect(gate).toContain("bash .github/e2e/assert-candidate-binding.sh admit");
     expect(gate).toContain("candidate_mode:");
-    expect(gate).toContain('"$CANDIDATE_SHA" == "$DISPATCH_SHA"');
+    expect(gate).toContain("ref: ${{ github.workflow_sha }}");
     expect(gate).not.toContain("secrets.");
     expect(workflow.match(/environment: core-e2e/gu)).toHaveLength(3);
     expect(workflow.match(/ref: \$\{\{ needs\.gate\.outputs\.harness_sha \}\}/gu)).toHaveLength(4);
