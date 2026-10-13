@@ -67,6 +67,15 @@ export async function executeWrite(options: ExecuteWriteOptions): Promise<WriteO
   } = options;
   const { client, context, command, policy, snapshot, revalidateAuthority } = authorized;
   throwIfCancelled(signal);
+  const control = {
+    validationDeadlineMs,
+    ...(signal === undefined ? {} : { signal }),
+    onPhase,
+    revalidateAuthority,
+    onValidationPassed,
+    ...(onValidationCommandCount === undefined ? {} : { onValidationCommandCount }),
+    ...(validateWorkspace === undefined ? {} : { validateWorkspace }),
+  };
   const baseBranch = resolveBaseBranch(context, inputs.baseBranch);
   const requireBaseBranch = (): string => {
     if (baseBranch === undefined) {
@@ -96,13 +105,7 @@ export async function executeWrite(options: ExecuteWriteOptions): Promise<WriteO
       operationKey: context.runId,
       result: agentResult,
       inputs,
-      validationDeadlineMs,
-      ...(signal === undefined ? {} : { signal }),
-      onPhase,
-      revalidateAuthority,
-      onValidationPassed,
-      ...(onValidationCommandCount === undefined ? {} : { onValidationCommandCount }),
-      ...(validateWorkspace === undefined ? {} : { validateWorkspace }),
+      ...control,
     });
     return {
       writeStatus: "success",
@@ -113,9 +116,10 @@ export async function executeWrite(options: ExecuteWriteOptions): Promise<WriteO
   }
   if (
     command.operation === "task" &&
-    snapshot?.kind === "issue" &&
+    (snapshot?.kind === "issue" || (snapshot === undefined && context.kind === "automation")) &&
     policy.capabilities.createPullRequest
   ) {
+    const issue = snapshot?.kind === "issue" ? snapshot : undefined;
     const result = await finishAutomationTask({
       client,
       owner: context.repository.owner,
@@ -123,7 +127,7 @@ export async function executeWrite(options: ExecuteWriteOptions): Promise<WriteO
       baseBranch: requireBaseBranch(),
       boundHeadSha: boundWriteSha,
       runIdentity: context.runId,
-      taskIdentity: issueTaskIdentity(taskIdentity, snapshot),
+      taskIdentity: issue === undefined ? taskIdentity : issueTaskIdentity(taskIdentity, issue),
       snapshot: workspaceCopy,
       result: agentResult,
       runUrl: runUrl(context),
@@ -132,21 +136,19 @@ export async function executeWrite(options: ExecuteWriteOptions): Promise<WriteO
       containerImage: inputs.containerImage,
       branchPrefix: inputs.branchPrefix,
       branchNameTemplate: inputs.branchNameTemplate,
-      validationDeadlineMs,
-      ...(signal === undefined ? {} : { signal }),
-      relatedIssue: {
-        number: snapshot.number,
-        identity: {
-          state: snapshot.state,
-          updatedAt: snapshot.updatedAt,
-          contentFingerprint: snapshot.contentFingerprint,
-        },
-      },
-      onPhase,
-      revalidateAuthority,
-      onValidationPassed,
-      ...(onValidationCommandCount === undefined ? {} : { onValidationCommandCount }),
-      ...(validateWorkspace === undefined ? {} : { validateWorkspace }),
+      ...control,
+      ...(issue === undefined
+        ? {}
+        : {
+            relatedIssue: {
+              number: issue.number,
+              identity: {
+                state: issue.state,
+                updatedAt: issue.updatedAt,
+                contentFingerprint: issue.contentFingerprint,
+              },
+            },
+          }),
     });
     return {
       writeStatus: "success",
@@ -182,55 +184,12 @@ export async function executeWrite(options: ExecuteWriteOptions): Promise<WriteO
       result: agentResult,
       inputs,
       runUrl: runUrl(context),
-      validationDeadlineMs,
-      ...(signal === undefined ? {} : { signal }),
-      onPhase,
-      revalidateAuthority,
-      onValidationPassed,
-      ...(onValidationCommandCount === undefined ? {} : { onValidationCommandCount }),
-      ...(validateWorkspace === undefined ? {} : { validateWorkspace }),
+      ...control,
     });
     return {
       writeStatus: result.status,
       commitSha: result.commitSha,
       changedPaths: result.paths,
-    };
-  }
-  if (
-    command.operation === "task" &&
-    snapshot === undefined &&
-    context.kind === "automation" &&
-    policy.capabilities.createPullRequest
-  ) {
-    const result = await finishAutomationTask({
-      client,
-      owner: context.repository.owner,
-      repo: context.repository.repo,
-      baseBranch: requireBaseBranch(),
-      boundHeadSha: boundWriteSha,
-      runIdentity: context.runId,
-      taskIdentity,
-      snapshot: workspaceCopy,
-      result: agentResult,
-      runUrl: runUrl(context),
-      runTests: inputs.runTests,
-      testCommands: inputs.testCommands,
-      containerImage: inputs.containerImage,
-      branchPrefix: inputs.branchPrefix,
-      branchNameTemplate: inputs.branchNameTemplate,
-      validationDeadlineMs,
-      ...(signal === undefined ? {} : { signal }),
-      onPhase,
-      revalidateAuthority,
-      onValidationPassed,
-      ...(onValidationCommandCount === undefined ? {} : { onValidationCommandCount }),
-      ...(validateWorkspace === undefined ? {} : { validateWorkspace }),
-    });
-    return {
-      writeStatus: "success",
-      branchName: result.branch,
-      pullRequestNumber: result.pullNumber,
-      pullRequestUrl: result.url,
     };
   }
   throw new Error("The resolved entity does not support this write operation");
