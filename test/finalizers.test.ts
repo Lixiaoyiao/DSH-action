@@ -92,12 +92,14 @@ describe("operation finalizers", () => {
         verification: [{ command: "npm test", status: "passed" }],
       },
     };
+    const onPublication = vi.fn();
     const returned = await finishReview(
       githubClientFixture({}),
       { owner: "o", repo: "r", pullNumber: 7, expectedAuthorId: 1, runUrl: "run" },
       pullRequestSnapshot(),
       reviewResult,
       10,
+      onPublication,
     );
     expect(returned).toBe(publication);
     expect(mocks.publishReview).toHaveBeenCalledWith(
@@ -109,6 +111,7 @@ describe("operation finalizers", () => {
         tests: reviewResult.output.verification,
       }),
       10,
+      onPublication,
     );
   });
 
