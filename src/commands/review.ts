@@ -15,6 +15,7 @@ export async function finishReview(
   snapshot: PullRequestSnapshot,
   result: DshRunResult,
   maxFindings: number,
+  onPublication?: (publication: PublicationResult) => void,
 ): Promise<PublicationResult> {
   if (result.output.operation !== "review") {
     throw new Error(`Review finalizer received ${result.output.operation} output`);
@@ -32,5 +33,6 @@ export async function finishReview(
       ...(result.output.verification === undefined ? {} : { tests: result.output.verification }),
     },
     maxFindings,
+    onPublication,
   );
 }

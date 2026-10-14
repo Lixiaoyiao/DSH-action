@@ -81,7 +81,6 @@ export class WorkspaceValidation {
   private evidence: ValidationSummary = { status: "not-applicable", commandCount: 0 };
   private accepted:
     (CurrentWorkspaceValidation & { readonly integrity?: ValidationIntegritySummary }) | undefined;
-  private gateBudget: ValidationDeadline | undefined;
   private warningKey: string | undefined;
 
   public constructor(
@@ -183,12 +182,11 @@ export class WorkspaceValidation {
     }
     this.options.onPhase();
     this.evidence = { status: "failed", commandCount: 0 };
-    if (this.gateBudget === undefined) {
-      const phaseMs = phaseTimeoutMs(deadlineMs, PHASE_TIMEOUTS.validationMs, Date.now);
-      if (phaseMs <= 0) throw new AgentDeadlineError();
-      this.gateBudget = { deadlineMs: Date.now() + phaseMs, signal };
-    }
-    const budget = this.gateBudget;
+    // A new revision gets its own validation attempt; Agent time between
+    // revisions still consumes the overall deadline, not this phase budget.
+    const phaseMs = phaseTimeoutMs(deadlineMs, PHASE_TIMEOUTS.validationMs, Date.now);
+    if (phaseMs <= 0) throw new AgentDeadlineError();
+    const budget: ValidationDeadline = { deadlineMs: Date.now() + phaseMs, signal };
     const changes = await withinValidationDeadline(
       () => inspectWorkspaceChanges(workspace),
       budget,

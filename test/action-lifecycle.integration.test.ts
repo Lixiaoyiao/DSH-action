@@ -413,6 +413,78 @@ it("keeps passed validation and confirmed PR evidence when checkpoint upload fai
   await expect(readFile(join(workerPath, "hello.txt"))).rejects.toThrow();
 });
 
+it.each([
+  ["task", "pr-create"],
+  ["task", "base-advanced"],
+  ["implement", "pr-create"],
+  ["implement", "base-advanced"],
+] as const)(
+  "retains a confirmed %s branch when %s fails before PR completion",
+  async (operation, failure) => {
+    if (operation === "implement") {
+      await selectEntity("implement", "issue");
+      const run = ports.runDsh.getMockImplementation();
+      ports.runDsh.mockImplementation(async (...args) => {
+        if (run === undefined) throw new Error("Missing model adapter");
+        const result = await run(...args);
+        return { ...result, output: { ...result.output, operation: "implement" } };
+      });
+    }
+    const client = githubClientFixture(fixture);
+    if (failure === "pr-create") {
+      created.pull.mockRejectedValue(
+        Object.assign(new Error("PR endpoint unavailable"), { status: 503 }),
+      );
+    } else {
+      const getRef = client.rest.git.getRef;
+      vi.spyOn(client.rest.git, "getRef").mockImplementation(async (parameters) => {
+        const response = await getRef(parameters);
+        if (created.branch.mock.calls.length > 0 && parameters?.ref === "heads/main") {
+          return {
+            ...response,
+            data: { ...response.data, object: { ...response.data.object, sha: "e".repeat(40) } },
+          };
+        }
+        return response;
+      });
+    }
+    ports.client.mockReturnValue(client);
+    const outcome = await runAction();
+    expect(created.branch).toHaveBeenCalledOnce();
+    const ref = created.branch.mock.calls[0]?.[0].ref;
+    expect(ref).toBeTypeOf("string");
+    expect(outcome).toMatchObject({
+      conclusion: "failure",
+      writeStatus: "partial-success",
+      commitSha: commit,
+      branchName: ref?.replace(/^refs\/heads\//u, ""),
+      validation: { status: "passed", commandCount: 1 },
+      error: { code: failure === "pr-create" ? "ACTION_RUNTIME_FAILED" : "ENTITY_BINDING_CHANGED" },
+    });
+    expect(outcome.pullRequestNumber).toBeUndefined();
+    expect(created.pull).toHaveBeenCalledTimes(failure === "pr-create" ? 1 : 0);
+    expect(ports.runDsh).toHaveBeenCalledOnce();
+    await expect(readFile(join(workerPath, "hello.txt"))).rejects.toThrow();
+  },
+);
+
+it("does not report a branch when its creation and reconciliation cannot confirm it", async () => {
+  created.branch.mockRejectedValue(
+    Object.assign(new Error("Branch endpoint unavailable"), { status: 503 }),
+  );
+  const outcome = await runAction();
+  expect(outcome).toMatchObject({
+    conclusion: "failure",
+    error: { code: "ACTION_RUNTIME_FAILED" },
+  });
+  expect(outcome.writeStatus).toBeUndefined();
+  expect(outcome.branchName).toBeUndefined();
+  expect(outcome.commitSha).toBeUndefined();
+  expect(created.branch).toHaveBeenCalledOnce();
+  expect(created.pull).not.toHaveBeenCalled();
+  expect(ports.runDsh).toHaveBeenCalledOnce();
+});
+
 it("retains the confirmed PR when final progress publication fails without a Session", async () => {
   vi.stubEnv("GITHUB_EVENT_NAME", "issues");
   vi.stubEnv("INPUT_PROGRESS-COMMENT", "true");
@@ -593,6 +665,43 @@ it("retains confirmed review publication when a later checkpoint upload fails", 
   expect(save).toHaveBeenCalledOnce();
   for (const effect of Object.values(created)) expect(effect).not.toHaveBeenCalled();
 });
+
+it.each(["summary-503", "head-advanced"] as const)(
+  "retains confirmed inline review publication after %s",
+  async (failure) => {
+    await selectEntity("review", "pull_request");
+    ports.runDsh.mockResolvedValue(reviewWorkerResult());
+    const client = githubClientFixture(fixture);
+    if (failure === "summary-503") {
+      published.comment.mockRejectedValue(
+        Object.assign(new Error("Summary endpoint unavailable"), { status: 503 }),
+      );
+    } else {
+      const getPull = client.rest.pulls.get;
+      vi.spyOn(client.rest.pulls, "get").mockImplementation(async (parameters) => {
+        const response = await getPull(parameters);
+        if (published.inline.mock.calls.length > 0) {
+          return {
+            ...response,
+            data: { ...response.data, head: { ...response.data.head, sha: "e".repeat(40) } },
+          };
+        }
+        return response;
+      });
+    }
+    ports.client.mockReturnValue(client);
+    const outcome = await runAction();
+    expect(outcome).toMatchObject({
+      conclusion: "failure",
+      operation: "review",
+      publication: { selected: 2, inlinePublished: 1, inlineUpdated: 0 },
+      error: { phase: "publication", code: "ACTION_RUNTIME_FAILED" },
+    });
+    expect(published.inline).toHaveBeenCalledOnce();
+    expect(published.comment).toHaveBeenCalledTimes(failure === "summary-503" ? 1 : 0);
+    expect(ports.runDsh).toHaveBeenCalledOnce();
+  },
+);
 
 it("retains an already published no-change answer when its Session checkpoint fails", async () => {
   await selectEntity("task", "issue");

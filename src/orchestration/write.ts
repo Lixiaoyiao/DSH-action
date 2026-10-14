@@ -11,7 +11,10 @@ import type {
   CurrentWorkspaceValidation,
 } from "../write/validate.js";
 import type { ValidationDeadline } from "../write/validation-deadline.js";
-import type { RepositoryValidationProvenance } from "../write/transaction.js";
+import type {
+  ControllerWriteControl,
+  RepositoryValidationProvenance,
+} from "../write/transaction.js";
 
 export interface WriteOutcome {
   readonly writeStatus: "success" | "partial-success";
@@ -23,7 +26,7 @@ export interface WriteOutcome {
 }
 
 /** Route an already-authorized result to the matching Controller write finalizer. */
-export interface ExecuteWriteOptions {
+export interface ExecuteWriteOptions extends Pick<ControllerWriteControl, "onBranchConfirmed"> {
   readonly authorized: Pick<
     AuthorizedRun,
     "client" | "context" | "command" | "policy" | "snapshot" | "revalidateAuthority"
@@ -62,6 +65,7 @@ export async function executeWrite(options: ExecuteWriteOptions): Promise<WriteO
     onPhase,
     onValidationPassed,
     onValidationCommandCount,
+    onBranchConfirmed,
     validateWorkspace,
     signal,
   } = options;
@@ -73,6 +77,7 @@ export async function executeWrite(options: ExecuteWriteOptions): Promise<WriteO
     onPhase,
     revalidateAuthority,
     onValidationPassed,
+    ...(onBranchConfirmed === undefined ? {} : { onBranchConfirmed }),
     ...(onValidationCommandCount === undefined ? {} : { onValidationCommandCount }),
     ...(validateWorkspace === undefined ? {} : { validateWorkspace }),
   };

@@ -9,7 +9,6 @@ import type { PullRequestSnapshot } from "../github/fetch.js";
 import { throwIfCancelled } from "../lifecycle/cancellation.js";
 import { PHASE_TIMEOUTS, phaseTimeoutMs } from "../lifecycle/deadline.js";
 import type { RunOutcome } from "../result.js";
-import { ReviewPublicationQuotaError } from "../review/publisher.js";
 import { revalidatePullRequestHead } from "../write/pr.js";
 import type { ValidationDeadline } from "../write/validation-deadline.js";
 import { inspectWorkspaceChanges, type WorkspaceSnapshot } from "../write/workspace.js";
@@ -76,23 +75,21 @@ export function prepareReviewOperation(
         snapshot.headSha,
       );
       await options.revalidateAuthority();
-      try {
-        publication = await finishReview(
-          client,
-          {
-            ...repository,
-            pullNumber: snapshot.number,
-            expectedAuthorId: options.expectedAuthorId,
-            runUrl: options.runUrl,
-          },
-          snapshot,
-          result,
-          options.maxFindings,
-        );
-      } catch (error) {
-        if (error instanceof ReviewPublicationQuotaError) publication = error.publication;
-        throw error;
-      }
+      publication = await finishReview(
+        client,
+        {
+          ...repository,
+          pullNumber: snapshot.number,
+          expectedAuthorId: options.expectedAuthorId,
+          runUrl: options.runUrl,
+        },
+        snapshot,
+        result,
+        options.maxFindings,
+        (confirmed) => {
+          publication = confirmed;
+        },
+      );
       return { kind: "review", publication };
     },
   };
@@ -243,9 +240,12 @@ export function prepareWorkspaceOperation(
         onValidationPassed: (receipt) => {
           if (receipt.kind === "completed-operation") validation.completedOperation();
         },
+        onBranchConfirmed: (receipt) => {
+          effects = { ...effects, ...receipt, writeStatus: "partial-success" };
+        },
         signal,
       });
-      effects = { ...write, writeStatus: "partial-success" };
+      effects = { ...effects, ...write, writeStatus: "partial-success" };
       if (snapshot?.kind === "pull_request" && write.commitSha !== undefined) {
         githubAuthority?.advanceValidatedPullHead(write.commitSha, snapshot.headRef);
       }

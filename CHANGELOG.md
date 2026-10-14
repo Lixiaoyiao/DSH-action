@@ -3,6 +3,14 @@
 Notable user-facing changes are recorded here. This project follows semantic
 versioning for published action releases.
 
+## Unreleased
+
+- Retains confirmed branch/commit and inline review publication evidence when a
+  later PR request, review summary or target revalidation fails.
+- Gives each current-workspace validation attempt its own bounded phase budget,
+  including recovery of a completed write after long Agent turns. The overall
+  Action deadline and current validation requirement remain enforced.
+
 ## [0.10.2]
 
 - Gives admission, validation, operation publication, progress and Session state

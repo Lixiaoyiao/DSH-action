@@ -35,6 +35,11 @@ export interface ControllerWriteControl {
   readonly revalidateAuthority: () => Promise<void>;
   readonly validateWorkspace?: (budget: ValidationDeadline) => Promise<CurrentWorkspaceValidation>;
   readonly onValidationPassed?: (validation: RepositoryValidationProvenance) => void;
+  /** Retain a confirmed ref even if subsequent PR publication fails. */
+  readonly onBranchConfirmed?: (receipt: {
+    readonly branchName: string;
+    readonly commitSha: string;
+  }) => void;
   readonly onValidationCommandCount?: ValidationCommandCountObserver;
   readonly validationDeadlineMs?: number;
   readonly signal?: AbortSignal;
@@ -167,6 +172,7 @@ async function persistNewPullRequest(
       target.sha,
     );
   }
+  options.control.onBranchConfirmed?.({ branchName: operation.branch, commitSha });
   await assertRemoteBranchHead(client, owner, repo, operation.branch, commitSha);
   await revalidateWriteTarget(options);
   const pull = await createPullRequest(

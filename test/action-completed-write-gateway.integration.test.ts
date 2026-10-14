@@ -36,6 +36,7 @@ vi.mock("../src/security/argv.js", async (original) => ({
 const roots: string[] = [];
 afterEach(async () => {
   vi.unstubAllEnvs();
+  vi.restoreAllMocks();
   vi.resetAllMocks();
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
   await cleanupWriteFixtures();
@@ -289,3 +290,48 @@ it("requires current validation after a completed write workspace advances", asy
   expect(repository.effects).toEqual(oldEffects);
   expect(gate.snapshot()).toMatchObject({ status: "failed", commandCount: 1 });
 });
+
+it.each([30, 10])(
+  "starts current validation after long completed-write recovery within the %s-minute overall deadline",
+  async (timeoutMinutes) => {
+    const { github, comment, pulls } = await fixture();
+    vi.stubEnv("INPUT_TIMEOUT-MINUTES", String(timeoutMinutes));
+    ports.process.mockResolvedValue(passed);
+    ports.worker.mockImplementationOnce(async ({ workspacePath }) => {
+      if (workspacePath === undefined) throw new Error("Missing worker workspace");
+      await writeFile(join(workspacePath, "hello.txt"), "previous completed candidate\n");
+      return workerResult();
+    });
+    expect(await runAction()).toMatchObject({ conclusion: "success", pullRequestNumber: 123 });
+    for (const effect of Object.values(github.created)) effect.mockClear();
+    ports.process.mockClear();
+    let now = Date.now();
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    ports.worker.mockImplementationOnce(() => {
+      now += 301_000;
+      return Promise.resolve(workerResult(true));
+    });
+    ports.worker.mockImplementationOnce(async ({ workspacePath }) => {
+      if (workspacePath === undefined) throw new Error("Missing worker workspace");
+      await writeFile(join(workspacePath, "hello.txt"), "different current candidate\n");
+      now += 301_000;
+      return workerResult();
+    });
+    const retry = await runAction();
+    const hasTime = timeoutMinutes === 30;
+    expect(retry).toMatchObject(
+      hasTime
+        ? {
+            conclusion: "success",
+            validation: { status: "passed", commandCount: 1 },
+            pullRequestNumber: 123,
+          }
+        : { conclusion: "failure", error: { code: "AGENT_TIMEOUT" } },
+    );
+    expect(comment).toHaveBeenCalledTimes(hasTime ? 1 : 0);
+    expect(ports.process).toHaveBeenCalledTimes(hasTime ? 2 : 1);
+    if (hasTime) expect(ports.process.mock.calls[1]?.[0].timeoutMs).toBe(600_000);
+    for (const effect of Object.values(github.created)) expect(effect).not.toHaveBeenCalled();
+    expect(pulls).toHaveLength(1);
+  },
+);

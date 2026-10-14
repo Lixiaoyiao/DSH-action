@@ -213,6 +213,7 @@ export async function publishPullRequestReview(
   snapshot: PullRequestSnapshot,
   result: ReviewResult,
   maxFindings: number,
+  onPublication?: (publication: PublicationResult) => void,
 ): Promise<PublicationResult> {
   if (snapshot.headSha.length !== 40) throw new Error("A full immutable head SHA is required");
   const diff = buildDiff(snapshot);
@@ -304,6 +305,7 @@ export async function publishPullRequestReview(
         summaryOnly += 1;
         fallbackFindings.add(finding);
       }
+      onPublication?.(publicationResult());
     }
 
     const publication = publicationResult();
@@ -321,5 +323,9 @@ export async function publishPullRequestReview(
     const message = safeBody(error.message);
     if (!failures.some((failure) => failure.includes(message))) failures.push(message);
     throw new ReviewPublicationQuotaError(error, publicationResult());
+  } finally {
+    // Preserve counts through every failure without replacing its original
+    // classification or replaying a confirmed comment operation.
+    onPublication?.(publicationResult());
   }
 }

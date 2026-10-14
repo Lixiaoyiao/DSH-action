@@ -520,6 +520,33 @@ describe("publishPullRequestReview", () => {
     expect(fake.issueComments).toHaveLength(1);
   });
 
+  it("observes an inline update before later revalidation fails and preserves the original error", async () => {
+    const fake = fakeClient();
+    const item = finding();
+    await publishPullRequestReview(fake.value, target, snapshot(), review([item]), 20);
+    const observed = vi.fn();
+    const failure = new Error("Revalidation endpoint unavailable");
+    fake.getPull.mockReset();
+    fake.getPull.mockResolvedValueOnce(pullResponse()).mockImplementationOnce(() => {
+      expect(observed).toHaveBeenLastCalledWith(expect.objectContaining({ inlineUpdated: 1 }));
+      return Promise.reject(failure);
+    });
+    await expect(
+      publishPullRequestReview(
+        fake.value,
+        target,
+        snapshot(),
+        review([{ ...item, body: "The current evidence still confirms the missing check." }]),
+        20,
+        observed,
+      ),
+    ).rejects.toBe(failure);
+    expect(observed).toHaveBeenLastCalledWith(
+      expect.objectContaining({ inlinePublished: 0, inlineUpdated: 1 }),
+    );
+    expect(fake.updateReviewComment).toHaveBeenCalledOnce();
+  });
+
   it("aborts before publication when the PR head already drifted", async () => {
     const fake = fakeClient({ pulls: [pullResponse("d".repeat(40))] });
     await expect(
