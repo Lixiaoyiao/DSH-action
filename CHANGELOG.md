@@ -5,6 +5,10 @@ versioning for published action releases.
 
 ## Unreleased
 
+- Updates compatible MCP SDK, proxy address, cache semantics and source-map
+  dependencies while retaining the exact DSH family. The current dependency
+  security review records the two advisories still constrained by upstream pins.
+
 - Retains confirmed branch/commit and inline review publication evidence when a
   later PR request, review summary or target revalidation fails.
 - Gives each current-workspace validation attempt its own bounded phase budget,

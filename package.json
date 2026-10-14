@@ -93,7 +93,7 @@
     "@deepseek-ai/dsh-system-prompt": "0.2.0-rc.2",
     "@deepseek-ai/dsh-tools": "0.2.0-rc.2",
     "@eslint/js": "10.0.1",
-    "@modelcontextprotocol/sdk": "1.30.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "@types/node": "26.2.0",
     "@vercel/ncc": "0.45.0",
     "@vitest/coverage-v8": "4.1.11",

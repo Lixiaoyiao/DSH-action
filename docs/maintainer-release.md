@@ -396,9 +396,9 @@ If the smoke fails after publication, keep the tag immutable. Diagnose the failu
 
 ## Publish the npm create package
 
-The independent installer is `0.6.0`, targeting formal Action `v0.10.1`
+The independent installer is `0.6.1`, targeting formal Action `v0.10.2`
 with exact DSH `0.2.0-rc.2`. Its source tag is
-`create-deepseek-harness-action-v0.6.0`. Keep the Action SHA and installer source
+`create-deepseek-harness-action-v0.6.1`. Keep the Action SHA and installer source
 SHA unresolved until their respective gates establish them. Do not copy a
 historical release SHA into the new binding.
 

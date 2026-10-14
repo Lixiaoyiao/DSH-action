@@ -357,6 +357,9 @@ app-boot, Profile/Bundle/Plugin, MCP, ToolRuntime, Bash, Web Search, Subagent,
 Workflow/PTC, Session lifecycle, receipts, Docker/path/timeout handling, and
 the packaged `dist` entrypoint. It records required upstream differences and
 the dependency audit findings without approving later DSH releases.
+The [2026-10-14 dependency review](docs/dependency-security-2026-10-14.md)
+records the current compatible patches, remaining exact upstream constraints,
+and the distinction between installed advisories and default-path reachability.
 The separately versioned installer writes workflow files and does not run
 inside the Agent or Controller.
 
