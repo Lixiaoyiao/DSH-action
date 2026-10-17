@@ -197,6 +197,186 @@ const target = {
 } as const;
 
 describe("publishPullRequestReview", () => {
+  it.each([false, true])(
+    "publishes distinct backslash paths with identical source anchors and reversed order=%s",
+    async (reverse) => {
+      const paths = ["src\\file.ts", "src/file.ts"];
+      const original = snapshot().changedFiles[0];
+      if (original === undefined) throw new Error("missing source fixture");
+      const files = paths.map((path) => ({ ...original, path }));
+      const current = snapshot({ changedFiles: reverse ? files.reverse() : files });
+      const fake = fakeClient();
+      const output = review(paths.map((path) => finding({ path })));
+      const result = await publishPullRequestReview(fake.value, target, current, output, 20);
+      expect(result).toMatchObject({ selected: 2, inlinePublished: 2, summaryOnly: 0 });
+      expect(fake.inlineComments.map((comment) => comment.path).sort()).toEqual(paths.sort());
+      expect(new Set(fake.inlineComments.map((comment) => comment.body)).size).toBe(2);
+      const rerun = await publishPullRequestReview(fake.value, target, current, output, 20);
+      expect(rerun).toMatchObject({ selected: 2, duplicatesSkipped: 2, inlinePublished: 0 });
+    },
+  );
+
+  it("keeps unmappable backslash and directory findings separate in the summary", async () => {
+    const original = snapshot().changedFiles[0];
+    if (original === undefined) throw new Error("missing source fixture");
+    const paths = ["src\\file.ts", "src/file.ts"];
+    const fake = fakeClient();
+    const result = await publishPullRequestReview(
+      fake.value,
+      target,
+      snapshot({ changedFiles: paths.map((path) => ({ ...original, path, patchMissing: true })) }),
+      review(paths.map((path) => finding({ path }))),
+      20,
+    );
+    expect(result).toMatchObject({ selected: 2, inlinePublished: 0, summaryOnly: 2 });
+    expect(fake.createReviewComment).not.toHaveBeenCalled();
+    expect(fake.issueComments[0]?.body).toContain("Findings carried in the summary");
+    expect(fake.issueComments[0]?.body).toContain("src/file.ts:2");
+  });
+
+  it("deduplicates a Windows-style model alias with its resolved Git path", async () => {
+    const fake = fakeClient();
+    const first = await publishPullRequestReview(
+      fake.value,
+      target,
+      snapshot(),
+      review([finding({ path: "src\\handler.ts" })]),
+      20,
+    );
+    expect(first).toMatchObject({ inlinePublished: 1, summaryOnly: 0 });
+    const second = await publishPullRequestReview(
+      fake.value,
+      target,
+      snapshot(),
+      review([finding()]),
+      20,
+    );
+    expect(second).toMatchObject({ duplicatesSkipped: 1, inlinePublished: 0 });
+  });
+
+  it("does not let a legacy fingerprint on another Unicode path suppress a current finding", async () => {
+    const original = snapshot().changedFiles[0];
+    if (original === undefined) throw new Error("missing fixture file");
+    const current = snapshot({ changedFiles: [{ ...original, path: "caf\u00e9.ts" }] });
+    const output = review([finding({ path: "caf\u00e9.ts" })]);
+    const reference = fakeClient();
+    await publishPullRequestReview(reference.value, target, current, output, 20);
+    const comment = reference.inlineComments[0];
+    if (comment === undefined) throw new Error("missing reference comment");
+    // Older fingerprints folded NFD names into NFC, so this marker could
+    // already be attached to a different, bot-authored Git path.
+    const fake = fakeClient({ inlineComments: [{ ...comment, path: "cafe\u0301.ts" }] });
+    const result = await publishPullRequestReview(fake.value, target, current, output, 20);
+    expect(result).toMatchObject({ inlinePublished: 1, duplicatesSkipped: 0, summaryOnly: 0 });
+    expect(fake.createReviewComment).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "caf\u00e9.ts" }),
+    );
+  });
+
+  function renameAndRecreatedSnapshot(reverse = false): PullRequestSnapshot {
+    const original = snapshot().changedFiles[0];
+    if (original === undefined) throw new Error("missing fixture file");
+    const files = [
+      { ...original, path: "a-moved.ts", previousPath: "z-original.ts", status: "renamed" },
+      {
+        ...original,
+        path: "z-original.ts",
+        status: "added",
+        additions: 2,
+        deletions: 0,
+        patch: "@@ -0,0 +1,2 @@\n+const replacement = true;\n+newCall();",
+      },
+    ];
+    return snapshot({ changedFiles: reverse ? files.reverse() : files });
+  }
+
+  it("publishes RIGHT findings to a recreated path and retains its anchor when files reorder", async () => {
+    const fake = fakeClient();
+    const output = review([finding({ path: "z-original.ts" })]);
+    const first = await publishPullRequestReview(
+      fake.value,
+      target,
+      renameAndRecreatedSnapshot(),
+      output,
+      20,
+    );
+    expect(first).toMatchObject({ selected: 1, inlinePublished: 1 });
+    expect(fake.inlineComments[0]?.path).toBe("z-original.ts");
+    const rerun = await publishPullRequestReview(
+      fake.value,
+      target,
+      renameAndRecreatedSnapshot(true),
+      output,
+      20,
+    );
+    expect(rerun).toMatchObject({ selected: 1, inlinePublished: 0, duplicatesSkipped: 1 });
+    expect(fake.createReviewComment).toHaveBeenCalledOnce();
+  });
+
+  it("uses one canonical fingerprint for a normal rename's old and current aliases", async () => {
+    const fake = fakeClient();
+    const current = renameAndRecreatedSnapshot();
+    const renamed = current.changedFiles[0];
+    if (renamed === undefined) throw new Error("missing renamed fixture");
+    const result = await publishPullRequestReview(
+      fake.value,
+      target,
+      snapshot({ changedFiles: [renamed] }),
+      review([finding({ path: "z-original.ts" }), finding({ path: "a-moved.ts" })]),
+      20,
+    );
+    expect(result).toMatchObject({ selected: 1, inlinePublished: 1 });
+    expect(fake.inlineComments.map(({ path }) => path)).toEqual(["a-moved.ts"]);
+  });
+
+  it("publishes separate comments for Unicode-distinct paths with identical source", async () => {
+    const fake = fakeClient();
+    const original = snapshot().changedFiles[0];
+    if (original === undefined) throw new Error("missing fixture file");
+    const paths = ["caf\u00e9.ts", "cafe\u0301.ts"];
+    const result = await publishPullRequestReview(
+      fake.value,
+      target,
+      snapshot({ changedFiles: paths.map((path) => ({ ...original, path })) }),
+      review(paths.map((path) => finding({ path }))),
+      20,
+    );
+    expect(result).toMatchObject({ selected: 2, inlinePublished: 2 });
+    expect(new Set(fake.inlineComments.map(({ path }) => path))).toEqual(new Set(paths));
+    expect(fake.inlineComments[0]?.body).not.toBe(fake.inlineComments[1]?.body);
+  });
+
+  it("carries ambiguous file identities in the summary without creating inline comments", async () => {
+    const fake = fakeClient();
+    const original = snapshot().changedFiles[0];
+    if (original === undefined) throw new Error("missing fixture file");
+    const result = await publishPullRequestReview(
+      fake.value,
+      target,
+      snapshot({ changedFiles: [original, { ...original }] }),
+      review([finding()]),
+      20,
+    );
+    expect(result).toMatchObject({ selected: 1, inlinePublished: 0, summaryOnly: 1, failures: [] });
+    expect(fake.createReviewComment).not.toHaveBeenCalled();
+    expect(fake.issueComments[0]?.body).toContain("Findings carried in the summary");
+    expect(fake.issueComments[0]?.body).toContain("`src/handler.ts:2`");
+  });
+
+  it("does not guess a side for a reused path during publication", async () => {
+    const fake = fakeClient();
+    const result = await publishPullRequestReview(
+      fake.value,
+      target,
+      renameAndRecreatedSnapshot(),
+      review([finding({ path: "z-original.ts", side: undefined })]),
+      20,
+    );
+    expect(result).toMatchObject({ inlinePublished: 0, summaryOnly: 1 });
+    expect(fake.createReviewComment).not.toHaveBeenCalled();
+    expect(fake.issueComments[0]?.body).toContain("`z-original.ts:2`");
+  });
+
   it("publishes an exact inline comment and a controller-owned sticky summary", async () => {
     const fake = fakeClient();
     const result = await publishPullRequestReview(

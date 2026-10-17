@@ -1,8 +1,8 @@
 import type { GitHubClient } from "../github/client.js";
 import { assertPullRequestSnapshotCurrent, type PullRequestSnapshot } from "../github/fetch.js";
 import { parseGitHubFilePatches } from "../diff/parse.js";
-import { mapFindingToInline } from "../diff/map.js";
-import type { DiffLine, DiffSide, InlineLocation, ParsedDiff } from "../diff/types.js";
+import { resolveFindingToInline } from "../diff/map.js";
+import type { DiffFile, DiffLine, DiffSide, InlineLocation, ParsedDiff } from "../diff/types.js";
 import { sanitizeMarkdownPath, sanitizeUntrustedText } from "../security/redaction.js";
 import { fingerprintFinding } from "./fingerprint.js";
 import { filterHighPrecisionFindings } from "./precision.js";
@@ -89,7 +89,7 @@ function buildDiff(snapshot: PullRequestSnapshot): ParsedDiff {
 }
 
 function mapFinding(diff: ParsedDiff, finding: ReviewFinding) {
-  return mapFindingToInline(diff, {
+  return resolveFindingToInline(diff, {
     path: finding.path,
     line: finding.line,
     ...(finding.side === undefined ? {} : { side: finding.side }),
@@ -113,12 +113,7 @@ function lineAnchor(line: DiffLine): readonly [DiffLine["kind"], string] {
 }
 
 /** Build a line-number-free source window that remains stable when a hunk moves. */
-function findDiffAnchorContext(diff: ParsedDiff, location: InlineLocation): string | undefined {
-  const file = diff.files.find(
-    (candidate) => candidate.newPath === location.path || candidate.oldPath === location.path,
-  );
-  if (file === undefined) return undefined;
-
+function findDiffAnchorContext(file: DiffFile, location: InlineLocation): string | undefined {
   const startLine = location.startLine ?? location.line;
   for (const hunk of file.hunks) {
     const supported = hunk.lines
@@ -175,10 +170,15 @@ function selectPublicationFindings(
   const seen = new Set<string>();
   for (const finding of filterHighPrecisionFindings(findings)) {
     if (selected.length === maximum) break;
-    const location = mapFinding(diff, finding);
-    const anchorContext = location === null ? undefined : findDiffAnchorContext(diff, location);
+    const mapped = mapFinding(diff, finding);
+    const location = mapped?.location ?? null;
+    const anchorContext =
+      mapped === null ? undefined : findDiffAnchorContext(mapped.file, mapped.location);
     const fingerprint = fingerprintFinding({
       ...finding,
+      // The source window, coordinates and path must describe the same file,
+      // including findings reported through an unambiguous old rename alias.
+      ...location,
       ...(anchorContext === undefined ? {} : { anchorContext }),
     });
     if (seen.has(fingerprint)) continue;
@@ -278,7 +278,10 @@ export async function publishPullRequestReview(
         continue;
       }
       const body = findingBody(finding, fingerprint);
-      const prior = existing.get(fingerprint);
+      const tracked = existing.get(fingerprint);
+      // Legacy fingerprints may have folded distinct Unicode paths together.
+      // A marker on another Git path cannot own this file's current finding.
+      const prior = tracked?.path === location.path ? tracked : undefined;
       const priorMatchesLocation =
         prior?.commit_id === snapshot.headSha &&
         prior.path === location.path &&
