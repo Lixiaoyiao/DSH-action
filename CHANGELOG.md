@@ -9,6 +9,8 @@ versioning for published action releases.
 
 - Upgrades the exact DSH package family to `0.2.1-rc.2`, adapts managed
   Subagents and Headless credentials, and retains Session continuation.
+  Controlled Subagent guidance distinguishes startup from completion and lets
+  the parent wait without spawning placeholder children.
 - Uses the new DeepSeek Search and Fetch APIs through the Controller credential
   proxy. Native supports both; Controlled keeps Fetch opt-in as `native.web-fetch`.
   The Flash model ID remains `deepseek-flash`.

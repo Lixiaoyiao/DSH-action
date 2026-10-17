@@ -128,6 +128,14 @@ preset layer just to replace the removed duplicate filter.
 [tool configuration](https://github.com/deepseek-ai/deepseek-harness/blob/687f282e8625c6b8d11ff58211a90524be2e4317/packages/subagent/tool-subagent/src/index.ts),
 [child composition](https://github.com/deepseek-ai/deepseek-harness/blob/687f282e8625c6b8d11ff58211a90524be2e4317/packages/subagent/subagent/src/child-agent.ts).
 
+The delegation tool now returns a startup acknowledgement immediately. Controlled
+root-output guidance permits an interim waiting message so the parent can become
+idle; official Headless waits for the child, delivers its completion notice, and
+returns the parent's final JSON. A real-model probe reproduced placeholder
+children used as polling calls before this guidance. The integration test holds
+the child's answer until the parent yields and checks that the waiting message
+does not replace the final result.
+
 The Session logical format remains `4`; the compared format-catalog source is
 unchanged. Core adds experimental ignorable `plugin:` records, and JSONL
 persistence has recovery/lease changes. Those are reasons to run the existing
