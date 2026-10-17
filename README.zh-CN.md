@@ -125,13 +125,13 @@ jobs:
 | 受控工具         | 以精确工具档位提供原生、固定命令、Controller GitHub、MCP、Bundle 与 Plugin 工具 |
 | 结构化结果       | 保留 schema-v1 审计信封，并可校验维护者定义的可选 task 结果                     |
 
-v0.9.2 继续提供基于锁定 DSH `0.2.1-rc.2` runtime 的实验性 `dsh-mode: native` 路径及其官方生态 composition。Native MCP server、Profile Bundle、direct Cordis Plugin、仓库 Skills、Subagent 和 Workflow 保留 DSH-native discovery 与行为。`controlled` 仍是兼容默认值，因此未配置 `dsh-mode` 的 workflow 会继续使用原有 composition、权限、工具、budget、receipt 和输出行为。
+Action 提供基于锁定 DSH `0.2.1-rc.2` runtime 的实验性 `dsh-mode: native` 路径及其官方生态 composition。Native MCP server、Profile Bundle、direct Cordis Plugin、仓库 Skills、Subagent 和 Workflow 保留 DSH-native discovery 与行为。`controlled` 仍是兼容默认值，因此未配置 `dsh-mode` 的 workflow 会继续使用原有 composition、权限、工具、budget、receipt 和输出行为。
 
 Native 模式并不是 unsafe 模式。它把 DSH 内部 headless composition、capability graph 和 model-visible inventory 的 ownership 交还给 DSH。Native MCP 通过官方 `@deepseek-ai/dsh-mcp-client` 加载；Bundle 作为官方 Profile layer 组合；direct Plugin 通过 Cordis 加载；仓库 Skills、Subagent 与 Workflow 保留 DSH-native 行为。它使用 definition-only 扩展 schema 来声明 owner 和进程需求，而不是声明 Action tool、grant 或 per-tool budget。动态生态工具只通过运行时 `observedTools` 出现，native `toolPolicy` 不会虚构 Controller `effectiveTools`。
 
 Action 仍拥有 trusted-workflow admission、package exact pin、lifecycle script 禁用、runtime inventory audit、Docker 与 `.git`-less workspace 边界、run-scoped DeepSeek 凭据代理、GitHub 凭据隔离、actor/repository trust、validation 与 deferred write、deadline、cancellation 和 secret redaction。Native 仍仅支持 Docker；bridge network 和 read/write mount 都是 whole-worker 能力，不是 per-extension 或 per-tool sandbox。用户自行配置并携带自有凭据的 GitHub MCP 属于受信任外部扩展，其直接副作用不享受 Controller Gateway 的 binding、revalidation、validation 或 deferred-mutation 保证。Controller-owned `command.*` 与 `github.*` 能力继续作为独立且与 mode 正交的平面。
 
-v0.10.0 新增[按 key 自动创建或续接 Session](docs/zh-CN/session.md)，保留显式保存与恢复。受信工作流自动定位最新成功且兼容的检查点；失败、状态不明、缺失、过期或损坏的历史会明确阻断，避免静默回退。同 key 串行，不同 key 可以并行。继续复用 DSH 已发布的 persistence 和 Headless 接口，保持 Controller / DSH / Gateway / validation 分层、DSH `0.2.1-rc.2` 精确锁定及 Session 默认关闭。本次权限重新计算，旧 GitHub 写入不会重放。[文本文件上下文](docs/text-files.md)、[离线配置检查](docs/configuration-check.md)和[限界 GitHub 请求诊断](docs/github-requests.md)继续可用。真实图片与 Office 附件仍因[已记录的运行时和传输边界](docs/v0.9.2-runtime-audit.md)暂缓。
+Action 支持[按 key 自动创建或续接 Session](docs/zh-CN/session.md)，保留显式保存与恢复。受信工作流自动定位最新成功且兼容的检查点；失败、状态不明、缺失、过期或损坏的历史会明确阻断，避免静默回退。同 key 串行，不同 key 可以并行。继续复用 DSH 已发布的 persistence 和 Headless 接口，保持 Controller / DSH / Gateway / validation 分层、DSH `0.2.1-rc.2` 精确锁定及 Session 默认关闭。本次权限重新计算，旧 GitHub 写入不会重放。[文本文件上下文](docs/text-files.md)、[离线配置检查](docs/configuration-check.md)和[限界 GitHub 请求诊断](docs/github-requests.md)继续可用。真实图片与 Office 附件仍因[已记录的运行时和传输边界](docs/v0.9.2-runtime-audit.md)暂缓。
 
 ## 真实运行
 
