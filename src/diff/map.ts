@@ -8,7 +8,8 @@ import type {
 } from "./types.js";
 
 function normalizePath(path: string): string {
-  return path.replaceAll("\\", "/").replace(/^\.\//u, "").normalize("NFC");
+  // Git paths are byte identities; Unicode-equivalent names may be different files.
+  return path.replaceAll("\\", "/").replace(/^\.\//u, "");
 }
 
 function isSafeRepositoryPath(path: string): boolean {
@@ -27,13 +28,40 @@ function isSafeRepositoryPath(path: string): boolean {
     .some((segment) => segment === "..");
 }
 
-function findFile(diff: ParsedDiff, path: string): DiffFile | undefined {
-  const normalized = normalizePath(path);
-  return diff.files.find(
-    (file) =>
-      (file.newPath !== null && normalizePath(file.newPath) === normalized) ||
-      (file.oldPath !== null && normalizePath(file.oldPath) === normalized),
+function findFile(diff: ParsedDiff, location: FindingLocation): DiffFile | undefined {
+  // Backslashes may be literal Git filename bytes. Resolve the exact identity
+  // before trying a Windows-style model alias; never rewrite paths from Git.
+  const exact = location.path.replace(/^\.\//u, "");
+  const hasExactIdentity = diff.files.some(
+    (file) => file.newPath === exact || file.oldPath === exact,
   );
+  const normalized = hasExactIdentity ? exact : normalizePath(location.path);
+  const matches = (path: string | null): boolean => path !== null && path === normalized;
+  let candidates: DiffFile[];
+  if (location.side === "RIGHT") {
+    // A current path owns RIGHT coordinates even if another file used that name
+    // before a rename. Never fall back because its patch/line is unavailable.
+    const current = diff.files.filter((file) => matches(file.newPath));
+    candidates =
+      current.length > 0
+        ? current
+        : diff.files.filter((file) => file.newPath !== null && matches(file.oldPath));
+  } else {
+    // LEFT accepts both GitHub's current filename and a historical alias, but
+    // additions have no LEFT identity. Without a side, either identity may be
+    // intended. Reject competing files before examining their hunks or lines.
+    candidates = diff.files.filter(
+      (file) =>
+        (location.side !== "LEFT" || file.oldPath !== null) &&
+        (matches(file.newPath) || matches(file.oldPath)),
+    );
+  }
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
+
+export interface MappedFinding {
+  readonly file: DiffFile;
+  readonly location: InlineLocation;
 }
 
 function lineNumber(line: DiffLine, side: DiffSide): number | null {
@@ -78,10 +106,10 @@ function isCommentableRange(
  * Map a model-reported blob line to GitHub's modern `line`/`side` coordinates.
  * Returns null rather than guessing when the path or line is outside the patch.
  */
-export function mapFindingToInline(
+export function resolveFindingToInline(
   diff: ParsedDiff,
   location: FindingLocation,
-): InlineLocation | null {
+): MappedFinding | null {
   if (
     !isSafeRepositoryPath(location.path) ||
     !Number.isSafeInteger(location.line) ||
@@ -89,7 +117,7 @@ export function mapFindingToInline(
   ) {
     return null;
   }
-  const file = findFile(diff, location.path);
+  const file = findFile(diff, location);
   if (file === undefined || file.binary || file.truncated) return null;
 
   let side = location.side;
@@ -106,7 +134,7 @@ export function mapFindingToInline(
 
   if (location.startLine === undefined) {
     if (location.startSide !== undefined) return null;
-    return { path, line: location.line, side };
+    return { file, location: { path, line: location.line, side } };
   }
 
   if (!Number.isSafeInteger(location.startLine) || location.startLine < 1) return null;
@@ -117,12 +145,16 @@ export function mapFindingToInline(
   if (!isCommentableRange(file, location.startLine, location.line, side)) return null;
 
   return {
-    path,
-    line: location.line,
-    side,
-    startLine: location.startLine,
-    startSide,
+    file,
+    location: { path, line: location.line, side, startLine: location.startLine, startSide },
   };
+}
+
+export function mapFindingToInline(
+  diff: ParsedDiff,
+  location: FindingLocation,
+): InlineLocation | null {
+  return resolveFindingToInline(diff, location)?.location ?? null;
 }
 
 export const mapToInlineComment = mapFindingToInline;

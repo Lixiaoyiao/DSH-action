@@ -19,11 +19,13 @@ export interface FingerprintableFinding extends Pick<
 }
 
 function normalizePath(path: string): string {
-  return path.replaceAll("\\", "/").replace(/^\.\//u, "").normalize("NFC");
+  // Publication resolves Windows-style aliases against the diff first. A Git
+  // path itself must retain literal backslashes to avoid merging distinct files.
+  return path.replace(/^\.\//u, "");
 }
 
 function normalizeAnchor(value: string): string {
-  return value.normalize("NFC").replace(/\r\n?/gu, "\n").trim();
+  return value.replace(/\r\n?/gu, "\n").trim();
 }
 
 /**

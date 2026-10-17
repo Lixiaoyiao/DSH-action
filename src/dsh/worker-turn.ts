@@ -77,7 +77,12 @@ export class DshWorker {
             apiKey: request.apiKey,
             baseUrl: request.baseUrl,
             ...(context.webSearchEnabled ? { webSearchBaseUrl: request.webSearchBaseUrl } : {}),
-            allowWebSearch: context.webSearchEnabled,
+            allowWebSearch:
+              context.composition.toolPolicyOwner === "dsh" ||
+              context.nativeTools.includes("native.web-search"),
+            allowWebFetch:
+              context.composition.toolPolicyOwner === "dsh" ||
+              context.nativeTools.includes("native.web-fetch"),
             bindHost: proxyAddress,
             workerHost: proxyAddress,
             requestTimeoutMs: request.timeoutMs,
