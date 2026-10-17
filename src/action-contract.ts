@@ -339,7 +339,7 @@ export const ACTION_INPUT_CONTRACT = [
     required: false,
     default: "https://api.deepseek.com/anthropic/v1",
     description:
-      "Trusted credential-routing input for the legacy DeepSeek Anthropic Messages search endpoint. The new Search/Fetch APIs use base-url.",
+      "An explicit custom URL preserves legacy Messages search. The default uses the new DeepSeek Search API through base-url; Fetch also uses base-url.",
     docsGroup: "credentials",
   },
   {

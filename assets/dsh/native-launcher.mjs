@@ -157,7 +157,13 @@ async function main() {
     { id: "mcp-resources", disabled: true },
     {
       id: "web",
-      config: { searchProvider: "deepseek-search-api", fetchProvider: "deepseek-fetch-api" },
+      config: {
+        searchProvider:
+          process.env.DSH_ACTION_SEARCH_PROVIDER === "deepseek-official"
+            ? "deepseek-official"
+            : "deepseek-search-api",
+        fetchProvider: "deepseek-fetch-api",
+      },
     },
     {
       id: "web-deepseek-api",

@@ -32,6 +32,8 @@ export interface DeepSeekProxyHandle {
   readonly workerBaseUrl: string;
   /** Fixed worker base; the only accepted search endpoint below it is /messages. */
   readonly workerWebSearchBaseUrl?: string;
+  /** An explicit custom legacy endpoint retains its existing Messages protocol. */
+  readonly workerWebSearchProvider?: "deepseek-official" | "deepseek-search-api";
   readonly workerToken: string;
   readonly boundHost: string;
   readonly port: number;
@@ -390,7 +392,13 @@ export async function startDeepSeekProxy(
     workerBaseUrl: `http://${workerHost}:${String(port)}`,
     ...(webSearchBase === undefined
       ? {}
-      : { workerWebSearchBaseUrl: `http://${workerHost}:${String(port)}/anthropic/v1` }),
+      : {
+          workerWebSearchBaseUrl: `http://${workerHost}:${String(port)}/anthropic/v1`,
+          workerWebSearchProvider:
+            webSearchBase.href.replace(/\/+$/u, "") === "https://api.deepseek.com/anthropic/v1"
+              ? "deepseek-search-api"
+              : "deepseek-official",
+        }),
     workerToken: token,
     boundHost: bindHost,
     port,

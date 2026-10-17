@@ -115,6 +115,15 @@ async function main() {
   const patches = [
     ...profile.layers.flatMap((layer) => layer.patches),
     ...profile.patches,
+    ...(process.env.DSH_ACTION_SEARCH_PROVIDER === "deepseek-official"
+      ? [
+          {
+            id: "web",
+            config: { searchProvider: "deepseek-official", fetchProvider: "deepseek-fetch-api" },
+          },
+          { id: "web-search-deepseek", disabled: false, config: { apiKeyEnv: "DEEPSEEK_API_KEY" } },
+        ]
+      : []),
     {
       id: "web-deepseek-api",
       config: {

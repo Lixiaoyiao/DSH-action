@@ -201,3 +201,5 @@ The official npm audit reports 8 moderate affected package entries, all from
 the upstream Office chain's nested `fflate@0.8.2`; there are no high or critical
 entries. The root decoder uses `fflate@0.8.3`. This upgrade does not add Office
 attachment transport or override upstream dependency pins.
+
+Custom `web-search-base-url` values preserve their existing Messages protocol; the default selects the new Search API. A Fetch-only Controlled grant starts without requiring a Search route. Both cases are covered through the proxy and runner interfaces.

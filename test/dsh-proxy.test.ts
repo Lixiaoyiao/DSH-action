@@ -22,6 +22,7 @@ describe("DeepSeek credential proxy", () => {
       fetchImplementation: upstream,
     });
     handles.push(handle);
+    expect(handle.workerWebSearchProvider).toBe("deepseek-search-api");
     for (const operation of ["search", "fetch"]) {
       const response = await fetch(`${handle.workerBaseUrl}/v1/tools/${operation}`, {
         method: "POST",
@@ -326,6 +327,7 @@ describe("DeepSeek credential proxy", () => {
       });
       handles.push(handle);
       const workerSearchBase = handle.workerWebSearchBaseUrl;
+      expect(handle.workerWebSearchProvider).toBe("deepseek-official");
       if (workerSearchBase === undefined)
         throw new Error("Worker web search route was not exposed");
       expect(workerSearchBase).toBe(`${handle.workerBaseUrl}/anthropic/v1`);

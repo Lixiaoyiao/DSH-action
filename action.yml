@@ -143,7 +143,7 @@ inputs:
     required: false
     default: "https://api.deepseek.com"
   web-search-base-url:
-    description: "Trusted credential-routing input for the legacy DeepSeek Anthropic Messages search endpoint. The new Search/Fetch APIs use base-url."
+    description: "An explicit custom URL preserves legacy Messages search. The default uses the new DeepSeek Search API through base-url; Fetch also uses base-url."
     required: false
     default: "https://api.deepseek.com/anthropic/v1"
   bot-user-id:

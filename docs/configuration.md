@@ -23,13 +23,13 @@ validation, image, extension, executable, or credential-routing inputs.
 
 <!-- BEGIN GENERATED ACTION INPUTS: credentials -->
 
-| Input                 | Required/default                        | Description                                                                                                                          |
-| --------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `deepseek-api-key`    | Required                                | DeepSeek API key. Kept by the controller-side credential proxy; never passed to DSH or repository code.                              |
-| `github-token`        | `${{ github.token }}`                   | GitHub token used only by the trusted controller.                                                                                    |
-| `base-url`            | `https://api.deepseek.com`              | Trusted credential-routing input for model requests and DeepSeek Search/Fetch APIs. Never derive it from untrusted content.          |
-| `web-search-base-url` | `https://api.deepseek.com/anthropic/v1` | Trusted credential-routing input for the legacy DeepSeek Anthropic Messages search endpoint. The new Search/Fetch APIs use base-url. |
-| `bot-user-id`         | `41898282`                              | Numeric ID of the bot account that owns tracking comments. Defaults to github-actions[bot].                                          |
+| Input                 | Required/default                        | Description                                                                                                                                       |
+| --------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `deepseek-api-key`    | Required                                | DeepSeek API key. Kept by the controller-side credential proxy; never passed to DSH or repository code.                                           |
+| `github-token`        | `${{ github.token }}`                   | GitHub token used only by the trusted controller.                                                                                                 |
+| `base-url`            | `https://api.deepseek.com`              | Trusted credential-routing input for model requests and DeepSeek Search/Fetch APIs. Never derive it from untrusted content.                       |
+| `web-search-base-url` | `https://api.deepseek.com/anthropic/v1` | An explicit custom URL preserves legacy Messages search. The default uses the new DeepSeek Search API through base-url; Fetch also uses base-url. |
+| `bot-user-id`         | `41898282`                              | Numeric ID of the bot account that owns tracking comments. Defaults to github-actions[bot].                                                       |
 
 <!-- END GENERATED ACTION INPUTS: credentials -->
 

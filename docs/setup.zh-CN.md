@@ -297,3 +297,5 @@ Native 模式可按精确版本重新安装已启用的 npm DSH Bundle。Control
 Native 的网页搜索和读取通过 Controller 代理调用新版 DeepSeek Search/Fetch API。Controlled 的搜索也使用 Search API；Fetch 需要在 custom 或 standard 权限档位中明确加入 `native.web-fetch`。`base-url` 同时决定这些 API 的上游，`web-search-base-url` 保留为旧 Messages 搜索路由。新版 Flash 使用的模型 ID 是 `deepseek-flash`。
 
 Controlled 自动导入面向只读 Review 和 Session；Coding Commands 的插件需要手工声明各任务所需权限。选择同时安装时，插件只加入 Review，Commands 保持原样。Native Commands 保留原有信任检查，插件不能在不受信任的 fork 命令中运行。
+
+显式自定义 `web-search-base-url` 时保留原有 Messages 搜索协议；默认地址使用新版 Search API。Fetch 始终使用独立授权和 `base-url`，也可以只开启 Fetch 而不启用搜索。
