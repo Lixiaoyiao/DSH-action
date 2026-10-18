@@ -3,6 +3,7 @@ export function buildSessionTask(
   phase: string,
   challenge: string,
   memory?: string,
+  imageAttachment?: boolean,
 ): { prompt: string; schema: string };
 export function assertSourceProof(proof: unknown, expected: Record<string, unknown>): unknown;
 export function resultChecks(
@@ -25,6 +26,7 @@ export function inspectCheckpointArchive(
   payload: Buffer;
   payloadSha256: string;
   archiveSha256: string;
+  attachmentSha256?: string;
   manifestSha256: string;
   eventCount: number;
   generation: number;
