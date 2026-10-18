@@ -10,6 +10,8 @@ import { unzipSync } from "fflate";
 import {
   SESSION_IMAGE_BYTES,
   SESSION_IMAGE_SHA256,
+  SESSION_IMAGE_WORKSPACE,
+  verifySessionImageWorkspace,
   sessionImageInstruction,
   inspectSessionImage,
   sessionImageReceipts,
@@ -78,7 +80,10 @@ export function assertSourceProof(proof, expected) {
     requireCheck(proof[key] === expected[key], "SOURCE_BINDING");
   requireCheck(
     (proof.imageAttachment === true) === (expected.imageAttachment === true) &&
-      (expected.imageAttachment !== true || proof.attachmentSha256 === SESSION_IMAGE_SHA256),
+      (expected.imageAttachment !== true ||
+        (proof.attachmentSha256 === SESSION_IMAGE_SHA256 &&
+          proof.imageWorkspace?.branch === SESSION_IMAGE_WORKSPACE.branch &&
+          proof.imageWorkspace?.sha === SESSION_IMAGE_WORKSPACE.sha)),
     "SOURCE_IMAGE_BINDING",
   );
   requireCheck(
@@ -391,6 +396,7 @@ function githubReader(env) {
 async function prepare(env, directory) {
   const current = identity(env);
   const reader = githubReader(env);
+  const imageWorkspace = verifySessionImageWorkspace(current, reader);
   const runs = [];
   for (let page = 1; page <= 10; page++) {
     const listed = reader.json(
@@ -583,6 +589,7 @@ async function prepare(env, directory) {
   process.stdout.write(`::add-mask::${memory}\n::add-mask::${challenge}\n`);
   const expected = {
     ...current,
+    ...(imageWorkspace === undefined ? {} : { imageWorkspace }),
     phase,
     ...(history.source === undefined ? {} : { sourceRunId: history.source.id }),
     ...(orphanProof === undefined
@@ -624,6 +631,7 @@ async function prepare(env, directory) {
       phase,
       runId: current.runId,
       sourceRunId: history.source?.id,
+      ...(imageWorkspace === undefined ? {} : { imageWorkspace }),
       historyStatus: history.status,
       expectedFailure: current.expectedFailure,
       fixtureRequests: reader.audit,
@@ -675,6 +683,13 @@ async function verify(env, directory) {
     /* A missing output is never a passing result. */
   }
   const reader = githubReader(env);
+  const imageWorkspace = verifySessionImageWorkspace(current, reader);
+  requireCheck(
+    imageWorkspace === undefined ||
+      (expected.imageWorkspace?.branch === imageWorkspace.branch &&
+        expected.imageWorkspace?.sha === imageWorkspace.sha),
+    "CURRENT_IMAGE_WORKSPACE",
+  );
   const isFailureProof = expected.expectedFailure !== "none";
   const checks = isFailureProof
     ? failureChecks(result, expected, env.ACTION_OUTCOME)
@@ -730,6 +745,7 @@ async function verify(env, directory) {
     schemaVersion: 1,
     qualified,
     ...current,
+    ...(imageWorkspace === undefined ? {} : { imageWorkspace }),
     phase: expected.phase,
     sourceRunId: expected.sourceRunId,
     expectedFailure: expected.expectedFailure,

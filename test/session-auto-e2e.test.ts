@@ -201,33 +201,38 @@ describe("independent Actions Session qualification fixture", () => {
       const action = steps.map(object).find((step) => step.id === "action");
       const declaredInputs = object(object(action).with);
       for (const mode of ["controlled", "native"]) {
-        const expressions: Readonly<Record<string, string>> = {
-          "${{ secrets.DEEPSEEK_API_KEY }}": "fixture-model-credential",
-          "${{ github.token }}": "fixture-controller-credential",
-          "${{ steps.task.outputs.phase == 'save' && 'write' || 'read' }}":
-            phase === "save" ? "write" : "read",
-          "${{ inputs.dsh_mode }}": mode,
-          "${{ steps.task.outputs.prompt }}": task.prompt,
-          "${{ steps.task.outputs.schema }}": task.schema,
-          "${{ inputs.session_key }}": "fixture-logical-task",
-        };
-        const values = Object.fromEntries(
-          Object.entries(declaredInputs).map(([name, raw]) => {
-            if (typeof raw !== "string")
-              throw new Error("Workflow inputs must be explicit strings");
-            const value = expressions[raw] ?? raw;
-            if (value.includes("${{")) throw new Error("Unresolved fixture expression");
-            return [name, value];
-          }),
-        );
-        // This fixture also lands on the permanent harness before the candidate's auto parser.
-        // Session admission is asserted below; keep this schema-only parser check version-independent.
-        const parsed = loadInputs((name) =>
-          name === "session-mode" ? "off" : name === "session-key" ? "" : (values[name] ?? ""),
-        );
-        expect(parsed.taskOutputSchema).toEqual(schema);
-        expect(parsed.dshMode).toBe(mode);
-        expect(parsed.taskAccess).toBe(phase === "save" ? "write" : "read");
+        for (const baseBranch of ["", "codex/v0110-session-image-fixture"]) {
+          const expressions: Readonly<Record<string, string>> = {
+            "${{ secrets.DEEPSEEK_API_KEY }}": "fixture-model-credential",
+            "${{ github.token }}": "fixture-controller-credential",
+            "${{ steps.task.outputs.phase == 'save' && 'write' || 'read' }}":
+              phase === "save" ? "write" : "read",
+            "${{ inputs.dsh_mode }}": mode,
+            "${{ steps.task.outputs.prompt }}": task.prompt,
+            "${{ steps.task.outputs.schema }}": task.schema,
+            "${{ inputs.session_key }}": "fixture-logical-task",
+            "${{ inputs.image_attachment && 'codex/v0110-session-image-fixture' || '' }}":
+              baseBranch,
+          };
+          const values = Object.fromEntries(
+            Object.entries(declaredInputs).map(([name, raw]) => {
+              if (typeof raw !== "string")
+                throw new Error("Workflow inputs must be explicit strings");
+              const value = expressions[raw] ?? raw;
+              if (value.includes("${{")) throw new Error("Unresolved fixture expression");
+              return [name, value];
+            }),
+          );
+          // This fixture also lands on the permanent harness before the candidate's auto parser.
+          // Session admission is asserted below; keep this schema-only parser check version-independent.
+          const parsed = loadInputs((name) =>
+            name === "session-mode" ? "off" : name === "session-key" ? "" : (values[name] ?? ""),
+          );
+          expect(parsed.taskOutputSchema).toEqual(schema);
+          expect(parsed.dshMode).toBe(mode);
+          expect(parsed.taskAccess).toBe(phase === "save" ? "write" : "read");
+          expect(parsed.baseBranch).toBe(baseBranch);
+        }
       }
     },
   );
@@ -380,6 +385,9 @@ describe("independent Actions Session qualification fixture", () => {
     );
     expect(inputs["deepseek-api-key"]).toBe("${{ secrets.DEEPSEEK_API_KEY }}");
     expect(inputs["base-url"]).toBeUndefined();
+    expect(inputs["base-branch"]).toBe(
+      "${{ inputs.image_attachment && 'codex/v0110-session-image-fixture' || '' }}",
+    );
     expect(inputs["max-turns"]).toBe("1");
     expect(inputs["run-tests"]).toBe("true");
     expect(JSON.parse(String(inputs["test-commands"]))).toEqual([

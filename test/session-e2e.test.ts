@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 
 import { sessionFormatCatalog } from "@deepseek-ai/dsh-session-format-catalog";
 import { unzipSync, zipSync } from "fflate";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
 
 import { parseTaskOutputSchema, validateTaskOutput } from "../src/dsh/task-output.js";
@@ -11,6 +11,10 @@ import { loadInputs } from "../src/inputs.js";
 
 import * as fixture from "../.github/e2e/session-e2e-proof.mjs";
 import * as automaticFixture from "../.github/e2e/session-auto-e2e-proof.mjs";
+import {
+  SESSION_IMAGE_WORKSPACE,
+  verifySessionImageWorkspace,
+} from "../.github/e2e/session-image-proof.mjs";
 import { fixtureObject as object } from "./helpers/json-fixture.js";
 const now = Date.parse("2026-10-04T01:00:00Z");
 const id = "session-11111111-1111-4111-8111-111111111111";
@@ -218,6 +222,65 @@ function successResult(extra: Record<string, unknown> = {}): Record<string, unkn
 }
 
 describe("independent Actions Session qualification fixture", () => {
+  it("reads the fixed image workspace ref once and leaves text-task reads unchanged", () => {
+    const json = vi.fn().mockReturnValue({
+      ref: `refs/heads/${SESSION_IMAGE_WORKSPACE.branch}`,
+      object: { type: "commit", sha: SESSION_IMAGE_WORKSPACE.sha },
+    });
+    expect(verifySessionImageWorkspace({ repository: "octo/repo" }, { json })).toBeUndefined();
+    expect(json).not.toHaveBeenCalled();
+    expect(
+      verifySessionImageWorkspace({ repository: "octo/repo", imageAttachment: true }, { json }),
+    ).toEqual(SESSION_IMAGE_WORKSPACE);
+    expect(json).toHaveBeenCalledExactlyOnceWith(
+      `repos/octo/repo/git/ref/heads/${SESSION_IMAGE_WORKSPACE.branch}`,
+    );
+  });
+
+  it.each([
+    { ref: "refs/heads/main", object: { type: "commit", sha: SESSION_IMAGE_WORKSPACE.sha } },
+    {
+      ref: `refs/heads/${SESSION_IMAGE_WORKSPACE.branch}`,
+      object: { type: "tag", sha: SESSION_IMAGE_WORKSPACE.sha },
+    },
+    {
+      ref: `refs/heads/${SESSION_IMAGE_WORKSPACE.branch}`,
+      object: { type: "commit", sha: "a".repeat(40) },
+    },
+  ])("refuses changed image workspace metadata", (response) => {
+    expect(() =>
+      verifySessionImageWorkspace(
+        { repository: "octo/repo", imageAttachment: true },
+        { json: () => response },
+      ),
+    ).toThrow("SESSION_E2E_IMAGE_WORKSPACE");
+  });
+
+  it.each([fixture, automaticFixture])(
+    "binds image source proof to the same immutable workspace",
+    (producer) => {
+      const expected = identity({ imageAttachment: true });
+      const proof = {
+        ...expected,
+        schemaVersion: 1,
+        qualified: true,
+        payloadSha256: "f".repeat(64),
+        attachmentSha256: "6b931d2bb32abd286838356b03b235f204bdab5fcc5627af34927b8b4bbe0b90",
+        imageWorkspace: SESSION_IMAGE_WORKSPACE,
+      };
+      expect(producer.assertSourceProof(proof, expected)).toEqual(proof);
+      expect(() =>
+        producer.assertSourceProof({ ...proof, imageWorkspace: undefined }, expected),
+      ).toThrow("SOURCE_IMAGE_BINDING");
+      expect(() =>
+        producer.assertSourceProof(
+          { ...proof, imageWorkspace: { ...SESSION_IMAGE_WORKSPACE, sha: "a".repeat(40) } },
+          expected,
+        ),
+      ).toThrow("SOURCE_IMAGE_BINDING");
+    },
+  );
+
   it("binds the optional PNG to its actual bytes and permits no second image read on resume", async () => {
     const imageBytes = await readFile(new URL("./fixtures/images/solid.png", import.meta.url));
     const first = checkpoint({ imageBytes });
@@ -343,30 +406,36 @@ describe("independent Actions Session qualification fixture", () => {
       const action = steps.map(object).find((step) => step.id === "action");
       const declaredInputs = object(object(action).with);
       for (const mode of ["controlled", "native"]) {
-        const expressions: Readonly<Record<string, string>> = {
-          "${{ secrets.DEEPSEEK_API_KEY }}": "fixture-model-credential",
-          "${{ github.token }}": "fixture-controller-credential",
-          "${{ inputs.phase == 'save' && 'write' || 'read' }}": phase === "save" ? "write" : "read",
-          "${{ inputs.dsh_mode }}": mode,
-          "${{ steps.task.outputs.prompt }}": task.prompt,
-          "${{ steps.task.outputs.schema }}": task.schema,
-          "${{ inputs.phase }}": phase,
-          "${{ inputs.session_key }}": "fixture-logical-task",
-          "${{ inputs.source_run_id }}": phase === "save" ? "" : "42",
-        };
-        const values = Object.fromEntries(
-          Object.entries(declaredInputs).map(([name, raw]) => {
-            if (typeof raw !== "string")
-              throw new Error("Workflow inputs must be explicit strings");
-            const value = expressions[raw] ?? raw;
-            if (value.includes("${{")) throw new Error("Unresolved fixture expression");
-            return [name, value];
-          }),
-        );
-        const parsed = loadInputs((name) => values[name] ?? "");
-        expect(parsed.taskOutputSchema).toEqual(schema);
-        expect(parsed.dshMode).toBe(mode);
-        expect(parsed.taskAccess).toBe(phase === "save" ? "write" : "read");
+        for (const baseBranch of ["", SESSION_IMAGE_WORKSPACE.branch]) {
+          const expressions: Readonly<Record<string, string>> = {
+            "${{ secrets.DEEPSEEK_API_KEY }}": "fixture-model-credential",
+            "${{ github.token }}": "fixture-controller-credential",
+            "${{ inputs.phase == 'save' && 'write' || 'read' }}":
+              phase === "save" ? "write" : "read",
+            "${{ inputs.dsh_mode }}": mode,
+            "${{ steps.task.outputs.prompt }}": task.prompt,
+            "${{ steps.task.outputs.schema }}": task.schema,
+            "${{ inputs.phase }}": phase,
+            "${{ inputs.session_key }}": "fixture-logical-task",
+            "${{ inputs.source_run_id }}": phase === "save" ? "" : "42",
+            "${{ inputs.image_attachment && 'codex/v0110-session-image-fixture' || '' }}":
+              baseBranch,
+          };
+          const values = Object.fromEntries(
+            Object.entries(declaredInputs).map(([name, raw]) => {
+              if (typeof raw !== "string")
+                throw new Error("Workflow inputs must be explicit strings");
+              const value = expressions[raw] ?? raw;
+              if (value.includes("${{")) throw new Error("Unresolved fixture expression");
+              return [name, value];
+            }),
+          );
+          const parsed = loadInputs((name) => values[name] ?? "");
+          expect(parsed.taskOutputSchema).toEqual(schema);
+          expect(parsed.dshMode).toBe(mode);
+          expect(parsed.taskAccess).toBe(phase === "save" ? "write" : "read");
+          expect(parsed.baseBranch).toBe(baseBranch);
+        }
       }
     },
   );
@@ -513,6 +582,9 @@ describe("independent Actions Session qualification fixture", () => {
     expect(inputs["task-access"]).toBe("${{ inputs.phase == 'save' && 'write' || 'read' }}");
     expect(inputs["deepseek-api-key"]).toBe("${{ secrets.DEEPSEEK_API_KEY }}");
     expect(inputs["base-url"]).toBeUndefined();
+    expect(inputs["base-branch"]).toBe(
+      "${{ inputs.image_attachment && 'codex/v0110-session-image-fixture' || '' }}",
+    );
     expect(inputs["max-turns"]).toBe("1");
     expect(inputs["run-tests"]).toBe("true");
     expect(JSON.parse(String(inputs["test-commands"]))).toEqual([

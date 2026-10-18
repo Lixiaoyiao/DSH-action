@@ -4,6 +4,24 @@ import { createHash } from "node:crypto";
 export const SESSION_IMAGE_SHA256 =
   "6b931d2bb32abd286838356b03b235f204bdab5fcc5627af34927b8b4bbe0b90";
 export const SESSION_IMAGE_BYTES = 137;
+export const SESSION_IMAGE_WORKSPACE = Object.freeze({
+  branch: "codex/v0110-session-image-fixture",
+  sha: "e65a6b7531d83cbd9e7a357771c170ac5a54b053",
+});
+
+/** One existing-budget GET before and after each image task; text tasks do no extra reads. */
+export function verifySessionImageWorkspace(current, reader) {
+  if (current.imageAttachment !== true) return undefined;
+  const { branch, sha } = SESSION_IMAGE_WORKSPACE;
+  const ref = reader.json(`repos/${current.repository}/git/ref/heads/${branch}`);
+  if (
+    ref?.ref !== `refs/heads/${branch}` ||
+    ref?.object?.type !== "commit" ||
+    ref.object.sha !== sha
+  )
+    throw new Error("SESSION_E2E_IMAGE_WORKSPACE");
+  return SESSION_IMAGE_WORKSPACE;
+}
 
 export function sessionImageInstruction(phase, enabled) {
   if (!enabled) return "Do not call tools, read files, modify anything or make external requests.";
