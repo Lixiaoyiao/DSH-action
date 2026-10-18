@@ -36,13 +36,14 @@ jobs:
         env:
           SESSION_FIXTURE_OPERATION: smoke
       - run: npm run check
-      - name: Linux Docker frozen-SHA Validation Integrity regression
+      - name: Linux Docker frozen-SHA Validation Integrity and image regressions
         id: integrity
-        timeout-minutes: 10
+        timeout-minutes: 20
         shell: bash
         env:
           CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           DSH_E2E_INTEGRITY_DOCKER: "1"
+          DSH_E2E_IMAGE_DOCKER: "1"
         run: |
           set -euo pipefail
           [[ "$CANDIDATE_SHA" =~ ^[a-f0-9]{40}$ ]]
@@ -50,9 +51,10 @@ jobs:
           git diff --exit-code "$CANDIDATE_SHA" -- \
             .github/workflows/ci.yml .github/e2e/integrity-llm.mjs \
             .github/e2e/messages-fixture.mjs \
-            test/integrity-docker.integration.test.ts scripts/verify-dsh-config.mjs \
+            test/integrity-docker.integration.test.ts test/images-docker.integration.test.ts \
+            test/fixtures/images test/fixtures/messages-sse.mjs scripts/verify-dsh-config.mjs \
             src assets/dsh package.json package-lock.json
-          ./node_modules/.bin/vitest run test/integrity-docker.integration.test.ts
+          ./node_modules/.bin/vitest run test/integrity-docker.integration.test.ts test/images-docker.integration.test.ts
       - name: Linux Docker frozen-SHA DSH rc.2 native ecosystem smoke
         # Collect the independent native evidence after a controlled failure;
         # the failed integrity step still fails this job and blocks release.

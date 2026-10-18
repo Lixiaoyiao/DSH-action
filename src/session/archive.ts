@@ -6,9 +6,13 @@ import {
   MAX_SESSION_ARCHIVE_BYTES,
   MAX_SESSION_MANIFEST_BYTES,
   MAX_SESSION_PAYLOAD_BYTES,
+  MAX_SESSION_ATTACHMENTS,
+  MAX_SESSION_ATTACHMENT_BYTES,
+  MAX_SESSION_ATTACHMENTS_BYTES,
   SESSION_MANIFEST_FILE,
   SESSION_PAYLOAD_FILE,
   parseSessionManifest,
+  sessionAttachmentFiles,
   type SessionCheckpoint,
 } from "./contracts.js";
 
@@ -19,21 +23,23 @@ function digest(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-/** Restricted SDK ZIP format: exactly two regular files; no extraction to runner paths. */
+/** Bounded artifact transport for canonical DSH history and referenced bytes; never extracts paths. */
 export function decodeSessionArchive(input: Uint8Array, now = Date.now()): SessionCheckpoint {
   const bytes = Buffer.from(input);
   if (bytes.length < 22 || bytes.length > MAX_SESSION_ARCHIVE_BYTES)
     denied("Session artifact archive exceeds its size bound");
   const end = bytes.length - 22;
+  const fileCount = bytes.readUInt16LE(end + 10);
   if (
     bytes.readUInt32LE(end) !== 0x06054b50 ||
     bytes.readUInt16LE(end + 20) !== 0 ||
     bytes.readUInt16LE(end + 4) !== 0 ||
     bytes.readUInt16LE(end + 6) !== 0 ||
-    bytes.readUInt16LE(end + 8) !== 2 ||
-    bytes.readUInt16LE(end + 10) !== 2
+    bytes.readUInt16LE(end + 8) !== fileCount ||
+    fileCount < 2 ||
+    fileCount > 2 + MAX_SESSION_ATTACHMENTS
   )
-    denied("Session artifact must be one non-ZIP64 archive with exactly two files");
+    denied("Session artifact must be one bounded non-ZIP64 archive with its two required files");
   const centralSize = bytes.readUInt32LE(end + 12);
   const centralStart = bytes.readUInt32LE(end + 16);
   if (centralStart + centralSize !== end)
@@ -41,7 +47,8 @@ export function decodeSessionArchive(input: Uint8Array, now = Date.now()): Sessi
   let position = centralStart;
   const files = new Map<string, Buffer>();
   const ranges: { start: number; end: number }[] = [];
-  for (let index = 0; index < 2; index++) {
+  let totalUncompressed = 0;
+  for (let index = 0; index < fileCount; index++) {
     if (position + 46 > end || bytes.readUInt32LE(position) !== 0x02014b50)
       denied("Session ZIP file metadata is invalid");
     const flags = bytes.readUInt16LE(position + 8);
@@ -76,11 +83,26 @@ export function decodeSessionArchive(input: Uint8Array, now = Date.now()): Sessi
     } catch {
       denied("Session ZIP filenames must be valid UTF-8");
     }
-    if (![SESSION_MANIFEST_FILE, SESSION_PAYLOAD_FILE].includes(name) || files.has(name))
+    const attachmentFile = /^attachment-(?:0|[1-9][0-9]?)\.bin$/u.test(name);
+    if (
+      (!attachmentFile && ![SESSION_MANIFEST_FILE, SESSION_PAYLOAD_FILE].includes(name)) ||
+      files.has(name)
+    )
       denied("Session ZIP contains an unexpected or duplicate file");
     const maximum =
-      name === SESSION_MANIFEST_FILE ? MAX_SESSION_MANIFEST_BYTES : MAX_SESSION_PAYLOAD_BYTES;
-    if (uncompressed < 1 || uncompressed > maximum || compressed > MAX_SESSION_ARCHIVE_BYTES)
+      name === SESSION_MANIFEST_FILE
+        ? MAX_SESSION_MANIFEST_BYTES
+        : attachmentFile
+          ? MAX_SESSION_ATTACHMENT_BYTES
+          : MAX_SESSION_PAYLOAD_BYTES;
+    totalUncompressed += uncompressed;
+    if (
+      (!attachmentFile && uncompressed < 1) ||
+      uncompressed > maximum ||
+      compressed > MAX_SESSION_ARCHIVE_BYTES ||
+      totalUncompressed >
+        MAX_SESSION_MANIFEST_BYTES + MAX_SESSION_PAYLOAD_BYTES + MAX_SESSION_ATTACHMENTS_BYTES
+    )
       denied("Session ZIP declared file size exceeds its bound");
     if (
       local + 30 > centralStart ||
@@ -121,7 +143,7 @@ export function decodeSessionArchive(input: Uint8Array, now = Date.now()): Sessi
         method === 0
           ? Buffer.from(bytes.subarray(dataStart, dataStart + compressed))
           : inflateRawSync(bytes.subarray(dataStart, dataStart + compressed), {
-              maxOutputLength: uncompressed,
+              maxOutputLength: Math.max(1, uncompressed),
             });
     } catch {
       denied("Session ZIP decompression failed or exceeded its declared byte bound");
@@ -136,8 +158,8 @@ export function decodeSessionArchive(input: Uint8Array, now = Date.now()): Sessi
   if (
     position !== end ||
     ranges[0]?.start !== 0 ||
-    ranges[0].end !== ranges[1]?.start ||
-    ranges[1].end !== centralStart
+    ranges.some((range, index) => index > 0 && ranges[index - 1]?.end !== range.start) ||
+    ranges.at(-1)?.end !== centralStart
   )
     denied("Session ZIP contains overlapping or unlisted data entries");
   let value: unknown;
@@ -152,5 +174,14 @@ export function decodeSessionArchive(input: Uint8Array, now = Date.now()): Sessi
   const payload = files.get(SESSION_PAYLOAD_FILE);
   if (payload?.length !== manifest.payload.bytes || digest(payload) !== manifest.payload.sha256)
     denied("Session payload size or SHA256 differs from its manifest");
-  return { manifest, payload };
+  const attachments = Object.fromEntries(
+    [...files].filter(([name]) => name !== SESSION_MANIFEST_FILE && name !== SESSION_PAYLOAD_FILE),
+  );
+  const checkpoint = {
+    manifest,
+    payload,
+    ...(Object.keys(attachments).length > 0 ? { attachments } : {}),
+  };
+  sessionAttachmentFiles(checkpoint);
+  return checkpoint;
 }

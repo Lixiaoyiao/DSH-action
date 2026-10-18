@@ -1,6 +1,6 @@
 {
   "name": "deepseek-harness-action",
-  "version": "0.10.3",
+  "version": "0.11.0",
   "description": "DeepSeek Harness for GitHub - controlled and native DSH composition, coding tasks, review, and safe automation",
   "author": "Lixiaoyiao",
   "repository": {
@@ -48,6 +48,8 @@
     "@deepseek-ai/dsh": "0.2.1-rc.2",
     "@deepseek-ai/dsh-app-boot": "0.2.1-rc.2",
     "@deepseek-ai/dsh-atomic-write": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-attachment": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-attachment-local": "0.2.1-rc.2",
     "@deepseek-ai/dsh-authorization": "0.2.1-rc.2",
     "@deepseek-ai/dsh-base": "0.2.1-rc.2",
     "@deepseek-ai/dsh-cmdline": "0.2.1-rc.2",

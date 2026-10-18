@@ -31,6 +31,7 @@ interface PrepareControlledProfileOptions {
   readonly expectedOperation: DshOperation;
   readonly task: string;
   readonly workerWorkspacePath: string;
+  readonly workerAttachmentHome?: string;
   readonly policyPluginPath: string;
   readonly workspacePluginPath: string;
   readonly workerStatePath: string;
@@ -259,6 +260,13 @@ function controlledRows(
     ),
   ];
   return [
+    {
+      id: "attachment-local",
+      name: "@deepseek-ai/dsh-attachment-local",
+      // The official provider chmods its home and writes a request-image cache.
+      // Docker gives it only the existing writable attachment mount.
+      config: { dshHome: options.workerAttachmentHome ?? options.dshHome },
+    },
     {
       id: "sandbox-policy",
       name: "@deepseek-ai/dsh-sandbox-policy",

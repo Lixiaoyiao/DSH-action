@@ -18,6 +18,7 @@ import {
   sessionArtifactPrefix,
   sessionClaimName,
   validateSessionManifestBinding,
+  sessionAttachmentFiles,
   type SessionBinding,
   type SessionCheckpoint,
   type SessionRunIdentity,
@@ -717,6 +718,7 @@ export async function saveSessionArtifact(options: {
   readonly signal: AbortSignal;
 }): Promise<{ id: number; name: string; generation: number; size?: number; sha256?: string }> {
   const { prepared, checkpoint } = options;
+  const attachmentFiles = sessionAttachmentFiles(checkpoint);
   const signal = budget(options);
   const current = await verifyRun(
     prepared.options,
@@ -771,7 +773,11 @@ export async function saveSessionArtifact(options: {
   const receipt = await upload(
     prepared.options,
     name,
-    { [SESSION_MANIFEST_FILE]: manifest, [SESSION_PAYLOAD_FILE]: checkpoint.payload },
+    {
+      [SESSION_MANIFEST_FILE]: manifest,
+      [SESSION_PAYLOAD_FILE]: checkpoint.payload,
+      ...attachmentFiles,
+    },
     signal,
     {
       kind: "checkpoint",

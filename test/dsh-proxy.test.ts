@@ -11,6 +11,51 @@ afterEach(async () => {
 });
 
 describe("DeepSeek credential proxy", () => {
+  it("forwards a bounded image-bearing Messages body without changing its bytes or opening Files API", async () => {
+    const body = JSON.stringify({
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: "image/png",
+                data: "A".repeat(9 * 1024 * 1024),
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const upstream = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ ok: true }));
+    const handle = await startDeepSeekProxy({
+      apiKey: "controller-key",
+      baseUrl: "https://api.deepseek.com",
+      fetchImplementation: upstream,
+    });
+    handles.push(handle);
+    const response = await fetch(`${handle.workerBaseUrl}/v1/messages`, {
+      method: "POST",
+      headers: { "x-api-key": handle.workerToken },
+      body,
+    });
+    expect(response.status).toBe(200);
+    const forwarded = upstream.mock.lastCall?.[1]?.body;
+    if (!Buffer.isBuffer(forwarded)) throw new Error("Missing forwarded request bytes");
+    expect(forwarded.toString("utf8")).toBe(body);
+    expect(
+      (
+        await fetch(`${handle.workerBaseUrl}/v1/files`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${handle.workerToken}` },
+          body: "{}",
+        })
+      ).status,
+    ).toBe(404);
+    expect(upstream).toHaveBeenCalledTimes(1);
+  });
   it("mediates the new Search and Fetch APIs with separate grants and replaced credentials", async () => {
     const upstream = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ results: [] }));
     const handle = await startDeepSeekProxy({

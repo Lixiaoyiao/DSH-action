@@ -1,5 +1,5 @@
 /** Release constants shared by runtime policy and repository contract checks. */
-export const ACTION_VERSION = "0.10.3" as const;
+export const ACTION_VERSION = "0.11.0" as const;
 export const ACTION_TAG = `v${ACTION_VERSION}` as const;
 export const DSH_VERSION = "0.2.1-rc.2" as const;
 export const RELEASE_CANARY_VARIABLE = "DSH_RELEASE_CANARY_SHA" as const;
@@ -8,6 +8,8 @@ export const RELEASE_CANARY_VARIABLE = "DSH_RELEASE_CANARY_SHA" as const;
 export const DSH_RUNTIME_PACKAGES = [
   "@deepseek-ai/dsh",
   "@deepseek-ai/dsh-app-boot",
+  "@deepseek-ai/dsh-attachment",
+  "@deepseek-ai/dsh-attachment-local",
   "@deepseek-ai/dsh-atomic-write",
   "@deepseek-ai/dsh-authorization",
   "@deepseek-ai/dsh-base",

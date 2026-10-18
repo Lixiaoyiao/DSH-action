@@ -4,6 +4,12 @@ Parts of the GitHub integration architecture and selected utility code are
 derived from [anthropics/claude-code-action](https://github.com/anthropics/claude-code-action)
 at commit `dc33e8a15b19e2109ac3fa8329058842f63780dc`.
 
+The v0.11.0 GitHub image downloader and binary text detection also reference
+the MIT-licensed `image-downloader.ts`, `binary-detection.ts` and Git Blob
+Base64 flow at Anthropic commit `f27be6b65a4652f08a2ba3cff79114829b588967`.
+The image tool, attachment storage and Session codecs remain official DSH
+`0.2.1-rc.2` implementations; no Claude Agent runtime is included.
+
 The v0.3 controller loop and its then-proposed extension design were also
 reviewed against upstream commit
 `d721746d683d812e669ce117cebe55a85fbd9c3e`. No Claude SDK, MCP server, plugin

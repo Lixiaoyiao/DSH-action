@@ -103,7 +103,7 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
           fetch-depth: 1
-      - uses: Lixiaoyiao/deepseek-harness-action@v0.10.3
+      - uses: Lixiaoyiao/deepseek-harness-action@v0.11.0
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           dsh-version: 0.2.1-rc.2
@@ -115,16 +115,17 @@ For production, pin the complete commit published in the corresponding GitHub Re
 
 ## Core capabilities
 
-| Capability              | What it does                                                                                                |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Pull request review     | Reviews new commits, publishes one summary, and adds high-confidence inline findings                        |
-| General tasks           | Answers repository questions or performs an explicitly authorized coding task                               |
-| CI diagnosis and repair | Reads failed checks and logs; trusted workflows may validate and publish a fix                              |
-| Issue implementation    | Turns an authorized Issue request into a validated branch and pull request                                  |
-| Composition modes       | Keeps the existing controlled tool profile by default and offers an experimental native DSH mode            |
-| Controlled tools        | Adds exact profiles for native, fixed-command, typed Controller GitHub, MCP, Bundle, and Plugin tools       |
-| Structured results      | Keeps the schema-v1 audit envelope and can validate an optional maintainer-defined task result              |
-| Explicit Session resume | Continues a completed task in a new Actions run using a verified raw DSH checkpoint and current permissions |
+| Capability              | What it does                                                                                                     |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Pull request review     | Reviews new commits, publishes one summary, and adds high-confidence inline findings                             |
+| General tasks           | Answers repository questions or performs an explicitly authorized coding task                                    |
+| CI diagnosis and repair | Reads failed checks and logs; trusted workflows may validate and publish a fix                                   |
+| Issue implementation    | Turns an authorized Issue request into a validated branch and pull request                                       |
+| Composition modes       | Keeps the existing controlled tool profile by default and offers an experimental native DSH mode                 |
+| Controlled tools        | Adds exact profiles for native, fixed-command, typed Controller GitHub, MCP, Bundle, and Plugin tools            |
+| Structured results      | Keeps the schema-v1 audit envelope and can validate an optional maintainer-defined task result                   |
+| Images and binary files | Reads PNG/JPEG/WebP/GIF through official DSH tools, downloads eligible GitHub images, and preserves binary bytes |
+| Explicit Session resume | Continues a completed task in a new Actions run using a verified raw DSH checkpoint and current permissions      |
 
 The Action provides the experimental `dsh-mode: native` path over the locked DSH `0.2.1-rc.2` runtime and its official ecosystem composition. Native MCP servers, Profile Bundles, direct Cordis Plugins, repository Skills, Subagents, and Workflows retain DSH-native discovery and behavior. `controlled` remains the compatible default, so workflows that omit `dsh-mode` retain their existing composition, permissions, tools, budgets, receipts, and outputs.
 
@@ -132,7 +133,13 @@ Native mode is not an unsafe mode. It returns ownership of DSH's internal headle
 
 The Action still owns trusted-workflow admission, exact package pins, lifecycle-script suppression, runtime inventory audit, Docker and `.git`-less workspace boundaries, the run-scoped DeepSeek credential proxy, GitHub credential isolation, actor/repository trust, validation and deferred writes, deadlines, cancellation, and secret redaction. Native remains Docker-only. Bridge network and read/write mounts are whole-worker capabilities, not per-extension or per-tool sandboxes. A user-configured GitHub MCP with its own credential is a trusted external extension whose direct effects do not receive the Controller Gateway's binding, revalidation, validation, or deferred-mutation guarantees. Controller-owned `command.*` and `github.*` capabilities remain a separate, mode-independent plane.
 
-The Action supports [automatic Session creation and continuation by key](docs/session.md), retaining explicit save/resume. A trusted workflow discovers the latest successful compatible checkpoint; failed, unknown, missing, expired or corrupt history prevents silent fallback. Matching workflow identity and concurrency bindings serialize one key while allowing different keys to run concurrently. The existing Controller / DSH / Gateway / validation ownership, exact `0.2.1-rc.2` pin and default-off Session path remain. Current authority is recalculated; previous GitHub writes are not replayed. [Text file context](docs/text-files.md), [offline configuration checks](docs/configuration-check.md) and [bounded GitHub diagnostics](docs/github-requests.md) remain available. Native image and Office attachments remain deferred for the [documented runtime/transport reasons](docs/v0.9.2-runtime-audit.md).
+The Action supports [automatic Session creation and continuation by key](docs/session.md), retaining explicit save/resume. A trusted workflow discovers the latest successful compatible checkpoint; failed, unknown, missing, expired or corrupt history prevents silent fallback. Matching workflow identity and concurrency bindings serialize one key while allowing different keys to run concurrently. The existing Controller / DSH / Gateway / validation ownership, exact `0.2.1-rc.2` pin and default-off Session path remain. Current authority is recalculated; previous GitHub writes are not replayed. [Text file context](docs/text-files.md), [offline configuration checks](docs/configuration-check.md) and [bounded GitHub diagnostics](docs/github-requests.md) remain available.
+
+### Images and files
+
+Upload a PNG, JPG, WebP or GIF to a GitHub Issue, PR or comment and ask `@dsh task --read` about it. In an eligible trusted Docker run with `workspace.read`, the Controller downloads GitHub-hosted images automatically and DSH's official `read_image` reads them. Repository images use the same tool. Downloads allow 8 image attempts, 4 MiB each and 16 MiB total; skipped or failed images produce a reason in the run logs. Untrusted PRs retain their existing tool permissions.
+
+Binary repository files retain their exact bytes through workspace copies and Git Blob publication. Creating or changing them requires an already authorized binary-capable command or extension and the existing write validation. Session checkpoints also carry the bytes referenced by official image/file attachments. PDF, Word and Excel remain opaque files unless a maintainer configures a suitable DSH extension; the Action does not include a document parser. See [file support and limits](docs/file-support.md).
 
 ## Live runs
 
@@ -178,17 +185,18 @@ Read the complete [Security policy](SECURITY.md) before enabling write mode, hos
 
 ## Documentation
 
-| Guide                                                              | Contents                                                                             |
-| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
-| [Setup](docs/setup.md) · [中文](docs/setup.zh-CN.md)               | Installer, manual setup, Secret, permissions, safe checkout, and templates           |
-| [Usage](docs/usage.md) · [中文](docs/usage.zh-CN.md)               | `@dsh` commands, tasks, review, diagnose, fix, implement, and automation             |
-| [Configuration](docs/configuration.md)                             | Inputs, permission profiles, tools, validation, extensions, and outputs              |
-| [Architecture](ARCHITECTURE.md) · [Invariants](docs/invariants.md) | Component ownership, authority boundaries, and stable system invariants              |
-| [Troubleshooting](docs/troubleshooting.md)                         | Denials, Docker, timeouts, cancellation, validation, and extension failures          |
-| [Security policy](SECURITY.md)                                     | Trust model, credential boundaries, network behavior, and known limitations          |
-| [Extension contracts](docs/extension-contracts.md)                 | Deep technical contracts for MCP, Profile, Bundle, Plugin, ToolRuntime, and receipts |
-| [Maintainer release guide](docs/maintainer-release.md)             | Local checks, Core E2E, release canary, version updates, and publishing              |
-| [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md)        | Development workflow and release history                                             |
+| Guide                                                                         | Contents                                                                             |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| [Setup](docs/setup.md) · [中文](docs/setup.zh-CN.md)                          | Installer, manual setup, Secret, permissions, safe checkout, and templates           |
+| [Usage](docs/usage.md) · [中文](docs/usage.zh-CN.md)                          | `@dsh` commands, tasks, review, diagnose, fix, implement, and automation             |
+| [Configuration](docs/configuration.md)                                        | Inputs, permission profiles, tools, validation, extensions, and outputs              |
+| [Files and images](docs/file-support.md) · [中文](docs/zh-CN/file-support.md) | Supported types, GitHub downloads, binary bytes, Session attachments, and limits     |
+| [Architecture](ARCHITECTURE.md) · [Invariants](docs/invariants.md)            | Component ownership, authority boundaries, and stable system invariants              |
+| [Troubleshooting](docs/troubleshooting.md)                                    | Denials, Docker, timeouts, cancellation, validation, and extension failures          |
+| [Security policy](SECURITY.md)                                                | Trust model, credential boundaries, network behavior, and known limitations          |
+| [Extension contracts](docs/extension-contracts.md)                            | Deep technical contracts for MCP, Profile, Bundle, Plugin, ToolRuntime, and receipts |
+| [Maintainer release guide](docs/maintainer-release.md)                        | Local checks, Core E2E, release canary, version updates, and publishing              |
+| [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md)                   | Development workflow and release history                                             |
 
 ## Development
 

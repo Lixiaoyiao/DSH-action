@@ -2,6 +2,7 @@
  * The data-fetching lifecycle is adapted from anthropics/claude-code-action.
  * Copyright (c) 2025 Anthropic, PBC. MIT licensed; see THIRD_PARTY_NOTICES.md.
  */
+import { isUtf8 } from "node:buffer";
 import { z } from "zod";
 
 import { utf8Prefix } from "../security/utf8.js";
@@ -305,9 +306,11 @@ async function fetchBlobText(
     });
     if (response.data.encoding !== "base64") return { bytes: 0, truncated: true };
     const raw = Buffer.from(response.data.content.replaceAll("\n", ""), "base64");
-    if (raw.includes(0)) return { bytes: 0, truncated: false };
+    // Repository materialization keeps the original bytes. Only complete UTF-8
+    // text belongs in prompt context; never salvage a prefix of a binary blob.
+    if (raw.includes(0) || !isUtf8(raw)) return { bytes: 0, truncated: false };
     const limit = Math.min(MAX_FILE_CONTEXT_BYTES, remainingBytes);
-    const decoded = utf8Prefix(raw, raw.byteLength);
+    const decoded = raw.toString("utf8");
     const bounded = boundedUtf8(decoded, limit);
     return {
       text: bounded.text,

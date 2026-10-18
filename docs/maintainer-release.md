@@ -4,7 +4,7 @@
 
 This guide is for repository maintainers qualifying and publishing an Action release. A successful run proves only the exact commit SHA it tested. After any candidate change, repeat every required check against the new latest SHA.
 
-For v0.10.3, retain the exact production DSH `0.2.1-rc.2` family. Qualify
+For v0.11.0, retain the exact production DSH `0.2.1-rc.2` family. Qualify
 `session-mode: auto` with fresh keys in controlled and native compositions.
 Use the trusted [automatic Session E2E workflow](../.github/workflows/session-auto-e2e.yml)
 on live `main`: first creation and an
@@ -15,6 +15,12 @@ different keys, serialized same-key runs and a failed-history rejection before
 worker startup. Expired, missing, corrupt, incompatible, incomplete and unknown
 history also require explicit failure evidence; unit fixtures alone do not prove
 the real Actions transport path.
+
+For file support, run both compositions with `image_attachment=true` in the
+existing Session workflows. The first run must execute official `read_image`;
+the independent follow-up must preserve the raw image reference and exact
+attachment bytes without downloading or executing the earlier tool again.
+Record the real GitHub image download and binary Blob round-trip evidence too.
 
 The Session harness changes must land through their own CI-qualified PR before
 candidate qualification so that credentials use trusted default-branch harness

@@ -3,12 +3,20 @@ import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, opendir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, parse, resolve, sep } from "node:path";
+import { isDeepStrictEqual } from "node:util";
+import { Readable } from "node:stream";
 
+import { Context } from "@deepseek-ai/cordis";
+import type { FileAttachmentRef, ImageAttachmentRef } from "@deepseek-ai/dsh-attachment";
+import { LocalAttachmentStore, commitPreparedImageFile } from "@deepseek-ai/dsh-attachment-local";
 import { sessionFormatCatalog } from "@deepseek-ai/dsh-session-format-catalog";
 
 import { PolicyDeniedError } from "../errors.js";
 import {
   MAX_SESSION_PAYLOAD_BYTES,
+  MAX_SESSION_ATTACHMENTS,
+  MAX_SESSION_ATTACHMENT_BYTES,
+  MAX_SESSION_ATTACHMENTS_BYTES,
   parseSessionManifest,
   SESSION_PAYLOAD_FILE,
   type SessionBinding,
@@ -17,6 +25,7 @@ import {
   type SessionManifestWithoutPayload,
   type SessionRunIdentity,
   validateSessionManifestBinding,
+  sessionAttachmentFiles,
 } from "./contracts.js";
 
 export const SESSION_CHECKPOINT_LIMITS = Object.freeze({
@@ -35,7 +44,12 @@ export interface SessionPayloadInspection {
   readonly eventCount: number;
   readonly bytes: number;
   readonly sha256: string;
+  readonly attachments?: readonly SessionAttachmentReference[];
 }
+
+type SessionAttachmentReference =
+  | { readonly type: "image"; readonly attachment: ImageAttachmentRef }
+  | { readonly type: "file"; readonly attachment: FileAttachmentRef };
 
 interface PayloadOptions {
   readonly payload: Uint8Array;
@@ -44,11 +58,15 @@ interface PayloadOptions {
   readonly workspacePath: string;
   /** Controller credentials, actual extension secrets and the worker proxy credential. */
   readonly knownSecrets: readonly string[];
+  /** Only callers that verify the referenced official store objects may opt in. */
+  readonly allowAttachments?: boolean;
 }
 
 interface ExportOptions {
   /** Dedicated persistence root after worker shutdown and durability flush. */
   readonly persistenceRoot: string;
+  /** The attachment provider's configured home, independent of the global runtime home. */
+  readonly dshHome?: string;
   readonly manifest: SessionManifestWithoutPayload;
   readonly workspacePath: string;
   readonly knownSecrets: readonly string[];
@@ -57,6 +75,8 @@ interface ExportOptions {
 
 interface StoredOptions {
   readonly persistenceRoot: string;
+  /** The attachment provider's configured home, independent of the global runtime home. */
+  readonly dshHome?: string;
   readonly sessionId: string;
   readonly workspacePath: string;
   readonly knownSecrets: readonly string[];
@@ -64,6 +84,8 @@ interface StoredOptions {
 
 interface ImportOptions {
   readonly persistenceRoot: string;
+  /** The attachment provider's configured home, independent of the global runtime home. */
+  readonly dshHome?: string;
   readonly checkpoint: SessionCheckpoint;
   readonly binding: SessionBinding;
   readonly source: SessionRunIdentity;
@@ -315,16 +337,38 @@ function inspectJson(
 type RestoredArtifact = ReturnType<ReturnType<typeof sessionFormatCatalog.createRestore>["finish"]>;
 
 /** Published image/file blocks reference worker-local attachment bytes outside the raw log. */
-function assertPortableTextHistory(artifact: RestoredArtifact): void {
+function sessionAttachments(
+  artifact: RestoredArtifact,
+  allowAttachments: boolean,
+): SessionAttachmentReference[] {
+  const attachments: SessionAttachmentReference[] = [];
   const record = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : {});
+  // This discriminator is used only on content already validated by the public V4 codec.
+  const attachmentBlock = (value: unknown): value is SessionAttachmentReference => {
+    const type = record(value).type;
+    return type === "image" || type === "file";
+  };
   const content = (value: unknown): void => {
     if (!Array.isArray(value)) return;
     for (const block of value) {
-      const type = record(block).type;
-      if (type === "image" || type === "file") {
-        denied(
-          "contains nonportable image or file attachment content; portable checkpoints require text history",
-        );
+      if (attachmentBlock(block)) {
+        if (!allowAttachments)
+          denied(
+            "contains nonportable image or file attachment content; its official attachment store is required",
+          );
+        // The public current-format codec has already validated these content blocks.
+        const reference = block;
+        if (!attachments.some((existing) => isDeepStrictEqual(existing, reference))) {
+          attachments.push(reference);
+          if (
+            attachments.length > MAX_SESSION_ATTACHMENTS ||
+            reference.attachment.bytes > MAX_SESSION_ATTACHMENT_BYTES ||
+            attachments.reduce((total, item) => total + item.attachment.bytes, 0) >
+              MAX_SESSION_ATTACHMENTS_BYTES
+          ) {
+            denied("attachments exceed the 20-file, 20 MiB per-file or 50 MiB total limit");
+          }
+        }
       }
     }
   };
@@ -361,6 +405,9 @@ function assertPortableTextHistory(artifact: RestoredArtifact): void {
       case "tool/ptc-dispatch":
         content(data.content);
         break;
+      case "team/message/queued":
+        message(data.message);
+        break;
       case "agent/inbox/spliced":
       case "session/title-llm-request": {
         const messages = event.type === "agent/inbox/spliced" ? data.inserted : data.messages;
@@ -371,6 +418,7 @@ function assertPortableTextHistory(artifact: RestoredArtifact): void {
         break;
     }
   }
+  return attachments;
 }
 
 /** Only settled history is portable; resume must not repair or consume old work. */
@@ -624,12 +672,13 @@ export function validateSessionPayload(options: PayloadOptions): SessionPayloadI
       denied("has an unsupported inherited or oversized event history");
     }
     assertSettled(artifact);
-    assertPortableTextHistory(artifact);
+    const attachments = sessionAttachments(artifact, options.allowAttachments === true);
     return {
       sessionId: artifact.header.id,
       eventCount: artifact.events.length,
       bytes,
       sha256: createHash("sha256").update(options.payload).digest("hex"),
+      ...(attachments.length > 0 ? { attachments } : {}),
     };
   } catch (error: unknown) {
     if (error instanceof PolicyDeniedError) throw error;
@@ -675,13 +724,16 @@ async function exactEntries(
   return entries;
 }
 
-async function readLog(path: string): Promise<Buffer> {
+async function readLog(
+  path: string,
+  maximumBytes = SESSION_CHECKPOINT_LIMITS.payloadBytes,
+): Promise<Buffer> {
   const before = await lstat(path);
   if (
     !before.isFile() ||
     before.isSymbolicLink() ||
     before.nlink !== 1 ||
-    before.size > SESSION_CHECKPOINT_LIMITS.payloadBytes
+    before.size > maximumBytes
   ) {
     denied("log is not a bounded regular file");
   }
@@ -720,9 +772,92 @@ async function readLog(path: string): Promise<Buffer> {
   }
 }
 
-async function readStoredSession(
-  options: StoredOptions,
-): Promise<{ payload: Buffer; inspection: SessionPayloadInspection }> {
+/** The official store owns object paths, byte verification and immutable publication. */
+async function readCheckpointAttachments(
+  references: readonly SessionAttachmentReference[],
+  dshHome: string,
+  secrets: readonly string[],
+): Promise<Record<string, Uint8Array>> {
+  const store = new LocalAttachmentStore(new Context(), { dshHome });
+  const files: Record<string, Uint8Array> = {};
+  for (const [index, block] of references.entries()) {
+    const path =
+      block.type === "image"
+        ? store.imageHostPath(block.attachment)
+        : store.fileHostPath(block.attachment);
+    await checkedRoot(dirname(path));
+    const info = await lstat(path);
+    if (
+      !info.isFile() ||
+      info.isSymbolicLink() ||
+      info.size !== block.attachment.bytes ||
+      info.size > MAX_SESSION_ATTACHMENT_BYTES
+    )
+      denied("attachment is not a bounded regular file");
+    let bytes: Uint8Array;
+    if (block.type === "image") {
+      bytes = await readLog(path, MAX_SESSION_ATTACHMENT_BYTES);
+      // The public publisher checks the opaque ID, digest and byte count without
+      // loading a native decoder in the Controller. DSH verifies raster metadata
+      // in the Worker when read_image or the LLM reads the restored attachment.
+      await commitPreparedImageFile(store.root, { data: bytes, ref: block.attachment });
+    } else {
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      for await (const chunk of store.readFileStream(block.attachment)) {
+        total += chunk.byteLength;
+        if (total > block.attachment.bytes) denied("attachment exceeds its referenced byte count");
+        chunks.push(chunk);
+      }
+      bytes = Buffer.concat(chunks);
+    }
+    // Inspect a text view only; the exported payload remains the original bytes.
+    inspectString(Buffer.from(bytes).toString("utf8"), secrets);
+    files[`attachment-${String(index)}.bin`] = bytes;
+  }
+  return files;
+}
+
+async function restoreCheckpointAttachments(
+  references: readonly SessionAttachmentReference[],
+  checkpoint: SessionCheckpoint,
+  dshHome: string | undefined,
+  secrets: readonly string[],
+): Promise<void> {
+  const files = sessionAttachmentFiles(checkpoint);
+  if (Object.keys(files).length !== references.length)
+    denied("attachment files do not match the Session references");
+  if (references.length === 0) return;
+  if (dshHome === undefined) denied("requires its official attachment store");
+  const store = new LocalAttachmentStore(new Context(), { dshHome });
+  await checkedRoot(dshHome);
+  await mkdir(dirname(store.root), { recursive: true, mode: 0o700 });
+  await checkedRoot(dirname(store.root));
+  await mkdir(store.root, { recursive: true, mode: 0o700 });
+  await checkedRoot(store.root);
+  for (const [index, block] of references.entries()) {
+    const bytes = files[`attachment-${String(index)}.bin`];
+    if (bytes?.byteLength !== block.attachment.bytes)
+      denied("attachment bytes do not match the Session reference");
+    inspectString(Buffer.from(bytes).toString("utf8"), secrets);
+    if (block.type === "image") {
+      await commitPreparedImageFile(store.root, { data: bytes, ref: block.attachment });
+    } else {
+      const restored = await store.saveFileStream({
+        data: Readable.from([bytes]),
+        name: block.attachment.name,
+      });
+      if (!isDeepStrictEqual(restored, block.attachment))
+        denied("restored file differs from its Session reference");
+    }
+  }
+}
+
+async function readStoredSession(options: StoredOptions): Promise<{
+  payload: Buffer;
+  inspection: SessionPayloadInspection;
+  attachments?: Readonly<Record<string, Uint8Array>>;
+}> {
   safeSessionId(options.sessionId);
   const root = await checkedRoot(options.persistenceRoot);
   const project = projectName(options.workspacePath);
@@ -745,8 +880,21 @@ async function readStoredSession(
     }
   }
   const payload = await readLog(join(sessionPath, SESSION_LOG_FILE));
-  const inspection = validateSessionPayload({ ...options, payload, sessionId });
-  return { payload, inspection };
+  const inspection = validateSessionPayload({
+    ...options,
+    payload,
+    sessionId,
+    allowAttachments: options.dshHome !== undefined,
+  });
+  const attachments =
+    inspection.attachments === undefined || options.dshHome === undefined
+      ? undefined
+      : await readCheckpointAttachments(
+          inspection.attachments,
+          options.dshHome,
+          secretValues(options.knownSecrets),
+        );
+  return { payload, inspection, ...(attachments === undefined ? {} : { attachments }) };
 }
 
 /** Inspect terminated current-run workers through the same bounded physical reader. */
@@ -764,7 +912,7 @@ export async function inspectStoredSession(
 /** Export only one canonical raw generation after the worker has terminated. */
 export async function exportSessionCheckpoint(options: ExportOptions): Promise<SessionCheckpoint> {
   try {
-    const { payload, inspection } = await readStoredSession({
+    const { payload, inspection, attachments } = await readStoredSession({
       ...options,
       sessionId: options.manifest.session.sessionId,
     });
@@ -772,12 +920,21 @@ export async function exportSessionCheckpoint(options: ExportOptions): Promise<S
       {
         ...options.manifest,
         payload: { file: SESSION_PAYLOAD_FILE, bytes: inspection.bytes, sha256: inspection.sha256 },
+        ...(attachments === undefined
+          ? {}
+          : {
+              attachments: Object.entries(attachments).map(([file, bytes]) => ({
+                file,
+                bytes: bytes.byteLength,
+                sha256: createHash("sha256").update(bytes).digest("hex"),
+              })),
+            }),
       },
       options.now,
     );
     // A manifest may contain maintained labels. Scan it too; never export known credentials.
     inspectJson(manifest, secretValues(options.knownSecrets), { nodes: 0 });
-    return { manifest, payload };
+    return { manifest, payload, ...(attachments === undefined ? {} : { attachments }) };
   } catch (error: unknown) {
     if (error instanceof PolicyDeniedError) throw error;
     denied("could not read its dedicated storage; check files and permissions");
@@ -797,6 +954,7 @@ export async function importSessionCheckpoint(
     ...options,
     payload,
     sessionId: manifest.session.sessionId,
+    allowAttachments: options.dshHome !== undefined,
   });
   if (
     manifest.payload.bytes !== inspection.bytes ||
@@ -808,6 +966,12 @@ export async function importSessionCheckpoint(
   try {
     const root = await checkedRoot(options.persistenceRoot);
     await exactEntries(root, [], []);
+    await restoreCheckpointAttachments(
+      inspection.attachments ?? [],
+      options.checkpoint,
+      options.dshHome,
+      secretValues(options.knownSecrets),
+    );
     const projectPath = join(root, projectName(options.workspacePath));
     await mkdir(projectPath, { mode: 0o700 });
     await checkedRoot(projectPath);

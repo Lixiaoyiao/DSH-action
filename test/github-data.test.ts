@@ -126,6 +126,39 @@ function issueContext() {
 }
 
 describe("GitHub data snapshotting", () => {
+  it.each([
+    { name: "NUL bytes", content: Buffer.from([0x41, 0, 0x42]) },
+    { name: "invalid trailing UTF-8", content: Buffer.from([0x41, 0xff]) },
+    { name: "non-UTF-8 bytes without NUL", content: Buffer.from([0xff, 0xfe, 0x41, 0x42]) },
+  ])("omits $name from PR text context without modifying file metadata", async ({ content }) => {
+    const client = pullClient([pullResponse(), pullResponse()]);
+    githubTransportMock(client.rest.git.getBlob).mockResolvedValue({
+      data: { encoding: "base64", content: content.toString("base64") },
+    });
+
+    const snapshot = await fetchPullRequestSnapshot(client, pullRequestContext(), 7);
+
+    expect(snapshot.changedFiles).toHaveLength(1);
+    expect(snapshot.changedFiles[0]).toMatchObject({
+      path: "src/value.ts",
+      status: "modified",
+      sourceTruncated: false,
+    });
+    expect(snapshot.changedFiles[0]).not.toHaveProperty("source");
+  });
+
+  it("preserves complete multibyte UTF-8 text in PR context", async () => {
+    const client = pullClient([pullResponse(), pullResponse()]);
+    const content = "完整文本 🖼️\n";
+    githubTransportMock(client.rest.git.getBlob).mockResolvedValue({
+      data: { encoding: "base64", content: Buffer.from(content).toString("base64") },
+    });
+
+    const snapshot = await fetchPullRequestSnapshot(client, pullRequestContext(), 7);
+
+    expect(snapshot.changedFiles[0]).toMatchObject({ source: content, sourceTruncated: false });
+  });
+
   it("filters comments created at or after the triggering comment", () => {
     const context = pullRequestContext({
       rawEventName: "issue_comment",

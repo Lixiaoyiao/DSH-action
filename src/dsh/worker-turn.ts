@@ -190,6 +190,7 @@ export class DshWorker {
       const inspection = await scope.setup(async () =>
         inspectStoredSession({
           persistenceRoot: join(runtime.dshHome, "sessions"),
+          dshHome: join(runtime.dshHome, "attachments"),
           sessionId,
           workspacePath: "/workspace",
           knownSecrets: [...session.knownSecrets],

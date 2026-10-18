@@ -444,9 +444,13 @@ describe("NativeComposition", () => {
       await expect(
         readFile(join(runtime.packageRoot, "action-native-root.yml"), "utf8"),
       ).resolves.toBe("[]\n");
-      await expect(readFile(join(runtime.packageRoot, "cordis.patch.yml"), "utf8")).resolves.toBe(
-        "[]\n",
-      );
+      expect(await readJsonFixture(join(runtime.packageRoot, "cordis.patch.yml"))).toEqual([
+        {
+          id: "attachment-local",
+          name: "@deepseek-ai/dsh-attachment-local",
+          config: { dshHome: "/dsh-home/attachments" },
+        },
+      ]);
 
       const observationPath = join(runtime.dshHome, "action-state", "native-observed-tools.jsonl");
       await appendFile(

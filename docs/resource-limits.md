@@ -17,7 +17,14 @@ input and a fresh consumer, rather than only changing a constant.
 | Container temporary storage                 | 512 MiB                                     | Permit normal temporary files without an unbounded writable filesystem. The worker `/tmp` also uses `noexec,nosuid,nodev`.                                       |
 | DSH output                                  | 2 MiB                                       | Bound process buffering and schema input; truncation is an explicit failure, never accepted as a complete model result.                                          |
 | Public receipt outputs                      | 640 KiB in UTF-16 bytes                     | Reserve headroom under GitHub's job output budget for other outputs. Old receipts are dropped with counts; final status and confirmed effects remain.            |
-| Session payload / manifest / archive        | 4 MiB / 16 KiB / payload + 64 KiB           | Keep portable text history small enough to inspect completely, with bounded ZIP overhead and decompression. Large history fails explicitly.                      |
+| GitHub image downloads                      | 8 attempts; 4 MiB each; 16 MiB total        | Bound Controller download bytes; unsupported URLs and failed images report their reason.                                                                         |
+| Image download request chain                | 30 seconds; 3 redirects                     | Bound one supported GitHub upload; redirect destinations remain restricted to GitHub image storage.                                                              |
+| Official DSH image source                   | 20 MiB; 64 million pixels; 8,192 per side   | Official attachment admission bounds decoding. DSH may normalize the model image without rewriting the repository source.                                        |
+| Model proxy request / response              | 32 MiB each                                 | Bound model transport including text and base64 image data.                                                                                                      |
+| Repository materialization / workspace      | 50,000 files; 1 GiB                         | Preserve regular file bytes in a bounded isolated workspace.                                                                                                     |
+| GitHub commit publication                   | 200 changed files; 10 MiB                   | Bound added/modified byte uploads while retaining existing write validation.                                                                                     |
+| Session payload / manifest / archive        | 4 MiB / 16 KiB / payload + 50 MiB + 64 KiB  | Bound raw history, referenced attachment bytes, ZIP overhead and decompression. Large history fails explicitly.                                                  |
+| Session attachment bytes                    | 20 references; 20 MiB each; 50 MiB total    | Verify reference identity, digest and byte count before restore; the official Worker verifies image media type and dimensions at use.                            |
 | Session JSONL                               | 20,000 rows; 1 MiB per row                  | Bound streaming records and prevent one oversized event from bypassing the total payload check.                                                                  |
 | Session JSON complexity                     | depth 40; 200,000 nodes; 20,000 array items | Limit nested traversal and expanded references independently of encoded bytes.                                                                                   |
 | Known Session secrets                       | 256                                         | Inspect all admitted credential representations within a finite work budget; exceeding it fails closed.                                                          |
@@ -26,6 +33,10 @@ input and a fresh consumer, rather than only changing a constant.
 
 Source owners are [lifecycle/deadline.ts](../src/lifecycle/deadline.ts),
 [dsh/docker-policy.ts](../src/dsh/docker-policy.ts),
+[GitHub images](../src/github/images.ts),
+[repository materialization](../src/github/repository.ts),
+[GitHub publication](../src/write/github.ts),
+[model proxy](../src/dsh/proxy.ts),
 [result/outputs.ts](../src/result/outputs.ts), and
 [session contracts](../src/session/contracts.ts) /
 [checkpoint inspection](../src/session/checkpoint.ts) /

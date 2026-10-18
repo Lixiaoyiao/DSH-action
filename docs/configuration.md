@@ -116,7 +116,7 @@ an actual `needs_tool` result is ineligible for terminal formatting repair.
 | `session-mode`           | `off`                                                                                                             | Session opt-in: off, auto, save, or resume. Auto creates or continues the latest successful compatible checkpoint by key, with verified key-scoped concurrency and run-name history. Requires Docker; explicit save/resume remain supported.              |
 | `session-key`            | Empty                                                                                                             | Maintainer-selected logical Session key, 1-64 ASCII letters, digits, dot, underscore or hyphen. Auto keys are case-insensitive, matching GitHub concurrency. Bound to repository, workflow job, task and runtime; never grants authority.                 |
 | `session-source-run-id`  | Empty                                                                                                             | For session-mode=resume, the explicit successful producer Actions run ID. Only its verified current attempt and latest compatible checkpoint may be restored.                                                                                             |
-| `session-retention-days` | `3`                                                                                                               | Checkpoint retention, 1-7 days. Only the complete raw DSH Session and a bounded provenance manifest are saved; credentials and Controller authorization are excluded.                                                                                     |
+| `session-retention-days` | `3`                                                                                                               | Checkpoint retention, 1-7 days. Saves the complete raw DSH Session, referenced official attachment bytes and a bounded provenance manifest; credentials and Controller authorization are excluded.                                                        |
 | `dsh-mode`               | `controlled`                                                                                                      | DSH composition ownership: controlled preserves the Controller-owned ToolRuntime policy; experimental native uses the official DSH headless Profile, MCP, Bundle, Plugin, Skill, Subagent, and Workflow graph inside the Action's Docker safety boundary. |
 | `dsh-version`            | `0.2.1-rc.2`                                                                                                      | Pinned @deepseek-ai/dsh version. The Action accepts only the audited 0.2.1-rc.2 runtime.                                                                                                                                                                  |
 | `dsh-executable`         | Empty                                                                                                             | Trusted capability input. Optional absolute path to a preinstalled DSH executable; host mode executes it without a container boundary.                                                                                                                    |
@@ -361,6 +361,8 @@ These canonical IDs apply to `dsh-mode: controlled`:
 
 - `workspace.read` and `workspace.search` operate on the run-scoped `.git`-less
   workspace when repository access is allowed.
+  `workspace.read` includes official DSH `read_image`; eligible Docker runs also
+  download GitHub-hosted images without a separate image permission or input.
 - `workspace.edit` requires effective trusted-write authority and is followed by
   actual-change inspection and Controller validation.
 - `native.bash` is opt-in through `standard` or `custom`, requires trusted-write
@@ -722,17 +724,33 @@ filesystem and network controls.
 The selected `container-image` itself is trusted worker code. An immutable digest
 proves identity, not safety; review and maintain the image separately.
 
-### GitHub image attachments
+### Images, binary files and attachments
 
-v0.9.1 does not download or forward GitHub image attachments. The exact audited
-`@deepseek-ai/dsh-headless@0.2.1-rc.2` entrypoint accepts one text `task` and
-constructs one text content block; it exposes no formal multimodal input
-contract. Markdown image references therefore remain inert as `[image removed]`.
-Reference definitions, HTML image/source elements, and recognized raw GitHub
-attachment URLs are removed from every prompt channel as well. Enabling
-attachments is deferred until an exact DSH release provides a formal, auditable
-contract; the Action does not pass image URLs, bytes, local paths, or Controller
-credentials through an unofficial channel.
+PNG, JPEG, WebP and GIF use DSH's official `read_image` tool. Eligible trusted
+Docker runs with effective `workspace.read` automatically discover GitHub upload
+images in PR/Issue bodies, selected comments and task instructions. The Controller
+downloads up to 8 images, at most 4 MiB each and 16 MiB total, with a 30-second
+timeout and at most 3 redirects per image. Unsupported URLs, denied access,
+oversize files and download failures produce explicit run warnings.
+
+Only supported GitHub upload hosts and paths are fetched. The Controller token
+is sent only to `github.com`, never to image-storage hosts. Downloaded files are
+staged outside the repository in the worker's read-only DSH home. Headless keeps
+its text task interface; the Agent reads the supplied local paths using official
+tools. Images do not grant tools to untrusted PRs or enable network access in the
+worker. Repository images are readable under the existing repository policy.
+
+Repository materialization, workspace copies and Git Blob commits preserve raw
+binary bytes. Binary modification uses already authorized commands or extensions
+and the ordinary Controller validation and write gates. PDF, Word and Excel have
+no built-in content parser; maintainers may configure an official DSH Skill,
+Bundle, Plugin or MCP through the existing extension settings. File detection
+does not install dependencies or enable tools.
+
+`prompt-file` and `context-files` remain UTF-8 text inputs. Session checkpoints
+carry referenced official image/file attachment bytes alongside the unchanged
+DSH log; they do not snapshot arbitrary workspace files. See [file support](file-support.md)
+and [Session](session.md) for use, limits and recovery.
 
 ## Write validation and integrity
 
@@ -875,7 +893,7 @@ Failed steps set outputs before failing. Read them from a later `always()` step
 without interpolating model-derived text into a shell command:
 
 ```yaml
-- uses: Lixiaoyiao/deepseek-harness-action@v0.10.3
+- uses: Lixiaoyiao/deepseek-harness-action@v0.11.0
   id: dsh
   with:
     deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}

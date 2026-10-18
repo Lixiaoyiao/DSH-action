@@ -133,7 +133,7 @@ export const ACTION_INPUT_CONTRACT = [
     required: false,
     default: "3",
     description:
-      "Checkpoint retention, 1-7 days. Only the complete raw DSH Session and a bounded provenance manifest are saved; credentials and Controller authorization are excluded.",
+      "Checkpoint retention, 1-7 days. Saves the complete raw DSH Session, referenced official attachment bytes and a bounded provenance manifest; credentials and Controller authorization are excluded.",
     docsGroup: "runtime",
   },
   {

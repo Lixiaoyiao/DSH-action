@@ -103,7 +103,7 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
           fetch-depth: 1
-      - uses: Lixiaoyiao/deepseek-harness-action@v0.10.3
+      - uses: Lixiaoyiao/deepseek-harness-action@v0.11.0
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           dsh-version: 0.2.1-rc.2
@@ -115,15 +115,16 @@ jobs:
 
 ## 核心能力
 
-| 能力             | 作用                                                                            |
-| ---------------- | ------------------------------------------------------------------------------- |
-| PR 审查          | 审查新提交，发布一条汇总，并为高置信度问题添加行内评论                          |
-| 通用任务         | 回答仓库问题，或执行经过明确授权的编码任务                                      |
-| CI 诊断与修复    | 读取失败的检查和日志；受信任 workflow 可以验证并发布修复                        |
-| Issue 实现       | 把经过授权的 Issue 请求实现为已验证的分支和 PR                                  |
-| Composition 模式 | 默认保留现有受控工具档位，并提供实验性的 DSH native 模式                        |
-| 受控工具         | 以精确工具档位提供原生、固定命令、Controller GitHub、MCP、Bundle 与 Plugin 工具 |
-| 结构化结果       | 保留 schema-v1 审计信封，并可校验维护者定义的可选 task 结果                     |
+| 能力             | 作用                                                                                |
+| ---------------- | ----------------------------------------------------------------------------------- |
+| PR 审查          | 审查新提交，发布一条汇总，并为高置信度问题添加行内评论                              |
+| 通用任务         | 回答仓库问题，或执行经过明确授权的编码任务                                          |
+| CI 诊断与修复    | 读取失败的检查和日志；受信任 workflow 可以验证并发布修复                            |
+| Issue 实现       | 把经过授权的 Issue 请求实现为已验证的分支和 PR                                      |
+| Composition 模式 | 默认保留现有受控工具档位，并提供实验性的 DSH native 模式                            |
+| 受控工具         | 以精确工具档位提供原生、固定命令、Controller GitHub、MCP、Bundle 与 Plugin 工具     |
+| 结构化结果       | 保留 schema-v1 审计信封，并可校验维护者定义的可选 task 结果                         |
+| 图片与二进制文件 | 使用 DSH 官方工具读取 PNG/JPEG/WebP/GIF，下载符合条件的 GitHub 图片并保持二进制字节 |
 
 Action 提供基于锁定 DSH `0.2.1-rc.2` runtime 的实验性 `dsh-mode: native` 路径及其官方生态 composition。Native MCP server、Profile Bundle、direct Cordis Plugin、仓库 Skills、Subagent 和 Workflow 保留 DSH-native discovery 与行为。`controlled` 仍是兼容默认值，因此未配置 `dsh-mode` 的 workflow 会继续使用原有 composition、权限、工具、budget、receipt 和输出行为。
 
@@ -131,7 +132,13 @@ Native 模式并不是 unsafe 模式。它把 DSH 内部 headless composition、
 
 Action 仍拥有 trusted-workflow admission、package exact pin、lifecycle script 禁用、runtime inventory audit、Docker 与 `.git`-less workspace 边界、run-scoped DeepSeek 凭据代理、GitHub 凭据隔离、actor/repository trust、validation 与 deferred write、deadline、cancellation 和 secret redaction。Native 仍仅支持 Docker；bridge network 和 read/write mount 都是 whole-worker 能力，不是 per-extension 或 per-tool sandbox。用户自行配置并携带自有凭据的 GitHub MCP 属于受信任外部扩展，其直接副作用不享受 Controller Gateway 的 binding、revalidation、validation 或 deferred-mutation 保证。Controller-owned `command.*` 与 `github.*` 能力继续作为独立且与 mode 正交的平面。
 
-Action 支持[按 key 自动创建或续接 Session](docs/zh-CN/session.md)，保留显式保存与恢复。受信工作流自动定位最新成功且兼容的检查点；失败、状态不明、缺失、过期或损坏的历史会明确阻断，避免静默回退。同 key 串行，不同 key 可以并行。继续复用 DSH 已发布的 persistence 和 Headless 接口，保持 Controller / DSH / Gateway / validation 分层、DSH `0.2.1-rc.2` 精确锁定及 Session 默认关闭。本次权限重新计算，旧 GitHub 写入不会重放。[文本文件上下文](docs/text-files.md)、[离线配置检查](docs/configuration-check.md)和[限界 GitHub 请求诊断](docs/github-requests.md)继续可用。真实图片与 Office 附件仍因[已记录的运行时和传输边界](docs/v0.9.2-runtime-audit.md)暂缓。
+Action 支持[按 key 自动创建或续接 Session](docs/zh-CN/session.md)，保留显式保存与恢复。受信工作流自动定位最新成功且兼容的检查点；失败、状态不明、缺失、过期或损坏的历史会明确阻断，避免静默回退。同 key 串行，不同 key 可以并行。继续复用 DSH 已发布的 persistence 和 Headless 接口，保持 Controller / DSH / Gateway / validation 分层、DSH `0.2.1-rc.2` 精确锁定及 Session 默认关闭。本次权限重新计算，旧 GitHub 写入不会重放。[文本文件上下文](docs/text-files.md)、[离线配置检查](docs/configuration-check.md)和[限界 GitHub 请求诊断](docs/github-requests.md)继续可用。
+
+### 图片和文件
+
+在 GitHub Issue、PR 或评论中上传 PNG、JPG、WebP、GIF，再用 `@dsh task --read` 提问。符合现有信任条件、使用 Docker 且具有 `workspace.read` 权限时，Controller 自动下载 GitHub 托管图片，由 DSH 官方 `read_image` 读取；仓库图片也使用同一工具。最多尝试下载 8 张，每张 4 MiB、合计 16 MiB；跳过或失败的原因会写入运行日志。不可信 PR 的工具权限保持不变。
+
+二进制仓库文件在工作区复制和 Git Blob 发布时保持原始字节。生成或修改文件需要已有授权的二进制处理命令或扩展，并通过原有写入验证。Session 检查点也会保存官方图片/文件附件引用对应的字节。PDF、Word、Excel 默认仅支持原样保存；理解或编辑内容需要维护者配置合适的 DSH 扩展，Action 不内置文档解析器。详见[文件支持与限制](docs/zh-CN/file-support.md)。
 
 ## 真实运行
 
@@ -177,17 +184,18 @@ Action 支持[按 key 自动创建或续接 Session](docs/zh-CN/session.md)，�
 
 ## 文档
 
-| 指南                                                       | 内容                                                                 |
-| ---------------------------------------------------------- | -------------------------------------------------------------------- |
-| [安装指南](docs/setup.zh-CN.md) · [English](docs/setup.md) | 安装器、手工安装、Secret、权限、安全检出和模板                       |
-| [使用指南](docs/usage.zh-CN.md) · [English](docs/usage.md) | `@dsh` 命令、task、review、diagnose、fix、implement 和自动化         |
-| [配置参考](docs/configuration.md)                          | 输入、权限档位、工具、验证、扩展和输出                               |
-| [架构](ARCHITECTURE.md) · [不变量](docs/invariants.md)     | 组件职责、authority 边界与稳定系统不变量                             |
-| [故障排查](docs/troubleshooting.md)                        | 权限拒绝、Docker、超时、取消、验证和扩展故障                         |
-| [安全策略](SECURITY.md)                                    | 信任模型、凭据边界、网络行为和已知限制                               |
-| [扩展契约](docs/extension-contracts.md)                    | MCP、Profile、Bundle、Plugin、ToolRuntime 和 receipts 的深层技术约束 |
-| [维护者发布指南](docs/maintainer-release.md)               | 本地检查、核心 E2E、release canary、版本更新和发布                   |
-| [贡献指南](CONTRIBUTING.md) · [更新记录](CHANGELOG.md)     | 开发流程和版本历史                                                   |
+| 指南                                                                       | 内容                                                                 |
+| -------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| [安装指南](docs/setup.zh-CN.md) · [English](docs/setup.md)                 | 安装器、手工安装、Secret、权限、安全检出和模板                       |
+| [使用指南](docs/usage.zh-CN.md) · [English](docs/usage.md)                 | `@dsh` 命令、task、review、diagnose、fix、implement 和自动化         |
+| [配置参考](docs/configuration.md)                                          | 输入、权限档位、工具、验证、扩展和输出                               |
+| [图片与文件](docs/zh-CN/file-support.md) · [English](docs/file-support.md) | 支持的类型、GitHub 下载、二进制字节、Session 附件与限制              |
+| [架构](ARCHITECTURE.md) · [不变量](docs/invariants.md)                     | 组件职责、authority 边界与稳定系统不变量                             |
+| [故障排查](docs/troubleshooting.md)                                        | 权限拒绝、Docker、超时、取消、验证和扩展故障                         |
+| [安全策略](SECURITY.md)                                                    | 信任模型、凭据边界、网络行为和已知限制                               |
+| [扩展契约](docs/extension-contracts.md)                                    | MCP、Profile、Bundle、Plugin、ToolRuntime 和 receipts 的深层技术约束 |
+| [维护者发布指南](docs/maintainer-release.md)                               | 本地检查、核心 E2E、release canary、版本更新和发布                   |
+| [贡献指南](CONTRIBUTING.md) · [更新记录](CHANGELOG.md)                     | 开发流程和版本历史                                                   |
 
 ## 开发
 

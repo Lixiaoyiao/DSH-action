@@ -81,9 +81,10 @@ change, validate it, revalidate the bound entity, and use its own credential to
 perform an allowed mutation. A writable mount is therefore never equivalent to
 permission to commit, push, comment, or update GitHub metadata.
 
-The fixed DSH 0.2.0-rc.2 runtime uses disposable, run-scoped Session storage.
-The optional `session-mode` inputs let the Controller import verified portable
-text history and save a bounded checkpoint artifact. Provenance, compatibility,
+The fixed DSH 0.2.1-rc.2 runtime uses disposable, run-scoped Session storage.
+The optional `session-mode` inputs let the Controller import verified raw Session
+history with its referenced official attachment bytes and save a bounded
+checkpoint artifact. Provenance, compatibility,
 settlement and current actor authority are checked before import or upload;
 restored history never grants authority or replays old writes. Worker mounts and
 runtime storage are cleaned at completion or cancellation. Headless events
