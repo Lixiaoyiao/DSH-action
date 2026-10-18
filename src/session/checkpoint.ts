@@ -65,6 +65,7 @@ interface PayloadOptions {
 interface ExportOptions {
   /** Dedicated persistence root after worker shutdown and durability flush. */
   readonly persistenceRoot: string;
+  /** The attachment provider's configured home, independent of the global runtime home. */
   readonly dshHome?: string;
   readonly manifest: SessionManifestWithoutPayload;
   readonly workspacePath: string;
@@ -74,6 +75,7 @@ interface ExportOptions {
 
 interface StoredOptions {
   readonly persistenceRoot: string;
+  /** The attachment provider's configured home, independent of the global runtime home. */
   readonly dshHome?: string;
   readonly sessionId: string;
   readonly workspacePath: string;
@@ -82,6 +84,7 @@ interface StoredOptions {
 
 interface ImportOptions {
   readonly persistenceRoot: string;
+  /** The attachment provider's configured home, independent of the global runtime home. */
   readonly dshHome?: string;
   readonly checkpoint: SessionCheckpoint;
   readonly binding: SessionBinding;

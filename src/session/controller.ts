@@ -232,7 +232,7 @@ export function createControllerSession(
             throw new PolicyDeniedError("Session checkpoint has no verified source run");
           const inspection = await importSessionCheckpoint({
             persistenceRoot: join(runtime.dshHome, "sessions"),
-            dshHome: runtime.dshHome,
+            dshHome: join(runtime.dshHome, "attachments"),
             checkpoint: prepared.checkpoint,
             binding: prepared.binding,
             source: prepared.source,
@@ -264,7 +264,7 @@ export function createControllerSession(
         ).toISOString();
         const checkpoint = await exportSessionCheckpoint({
           persistenceRoot: join(runtime.dshHome, "sessions"),
-          dshHome: runtime.dshHome,
+          dshHome: join(runtime.dshHome, "attachments"),
           workspacePath: "/workspace",
           knownSecrets: [...session.knownSecrets],
           manifest: {

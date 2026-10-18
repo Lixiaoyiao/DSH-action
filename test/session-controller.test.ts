@@ -1,5 +1,8 @@
 import { DefaultArtifactClient } from "@actions/artifact";
 import { sessionFormatCatalog } from "@deepseek-ai/dsh-session-format-catalog";
+import { Context } from "@deepseek-ai/cordis";
+import { LocalAttachmentStore } from "@deepseek-ai/dsh-attachment-local";
+import type { ImageAttachmentRef } from "@deepseek-ai/dsh-attachment";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -26,6 +29,7 @@ import {
 } from "../src/session/contracts.js";
 import { inputs, permissions, pullRequestContext } from "./helpers.js";
 import { githubClientFixture } from "./helpers/github-client.js";
+import { rasterImages } from "./fixtures/raster-images.js";
 
 const sessionId = "session-12345678-1234-1234-123456789abc";
 const sourceSha = "a".repeat(40);
@@ -330,7 +334,10 @@ function fixture(overrides: Partial<ControlledActionInputs> = {}) {
     signal: new AbortController().signal,
     environment,
   };
-  const seedCheckpoint = () => {
+  const seedCheckpoint = (
+    checkpointPayload = payload,
+    attachmentFiles: Readonly<Record<string, Uint8Array>> = {},
+  ) => {
     const manifest: SessionManifest = {
       schemaVersion: 1,
       repository: binding.repository,
@@ -341,7 +348,20 @@ function fixture(overrides: Partial<ControlledActionInputs> = {}) {
       session: { keyHash: binding.keyHash, sessionId, generation: 1 },
       createdAt: timestamp(9),
       expiresAt: new Date(now - 60_000 + 3 * 86400_000).toISOString(),
-      payload: { file: "session.jsonl", bytes: payload.length, sha256: hash(payload) },
+      payload: {
+        file: "session.jsonl",
+        bytes: checkpointPayload.length,
+        sha256: hash(checkpointPayload),
+      },
+      ...(Object.keys(attachmentFiles).length === 0
+        ? {}
+        : {
+            attachments: Object.entries(attachmentFiles).map(([file, bytes]) => ({
+              file,
+              bytes: bytes.byteLength,
+              sha256: hash(bytes),
+            })),
+          }),
     };
     addArtifact(
       90,
@@ -349,7 +369,8 @@ function fixture(overrides: Partial<ControlledActionInputs> = {}) {
       zipSync(
         {
           "manifest.json": Buffer.from(JSON.stringify(manifest)),
-          "session.jsonl": payload,
+          "session.jsonl": checkpointPayload,
+          ...attachmentFiles,
         },
         { level: 0 },
       ),
@@ -397,7 +418,61 @@ async function completeWorker(runtime: DshRuntime, payload: Buffer) {
   await writeFile(join(directory, SESSION_LOG_FILE), payload);
 }
 
+function withImage(payload: Buffer, attachment: ImageAttachmentRef): Buffer {
+  return Buffer.from(
+    payload
+      .toString("utf8")
+      .replace(
+        JSON.stringify([{ type: "text", text: "Remember this verified text" }]),
+        JSON.stringify([{ type: "image", attachment }]),
+      ),
+  );
+}
+
+async function officialImage(runtime: DshRuntime) {
+  const store = new LocalAttachmentStore(new Context(), {
+    dshHome: join(runtime.dshHome, "attachments"),
+  });
+  const image = rasterImages[0];
+  const ref = await store.saveImage({
+    data: Buffer.from(image.data, "base64"),
+    mediaType: image.mediaType,
+  });
+  return { ref, bytes: (await store.readImage(ref)).data };
+}
+
 describe("Controller Session with real artifact validation and isolated external transport", () => {
+  it("exports attachments from the provider home inside the writable attachment mount", async () => {
+    const f = fixture();
+    const session = await preparedSession(f.options);
+    const runtime = await freshRuntime();
+    await session.restore(runtime);
+    const image = await officialImage(runtime);
+    const payload = withImage(f.payload, image.ref);
+    await completeWorker(runtime, payload);
+    await session.save(runtime);
+    expect(f.uploadedFiles.get(100)?.["attachment-0.bin"]).toEqual(Buffer.from(image.bytes));
+    expect(f.uploadedFiles.get(100)?.["session.jsonl"]).toEqual(payload);
+  });
+
+  it("restores image bytes to the configured provider home without changing the global runtime home", async () => {
+    const f = fixture({ sessionMode: "resume", sessionSourceRunId: "9" });
+    const image = await officialImage(await freshRuntime());
+    const payload = withImage(f.payload, image.ref);
+    f.seedCheckpoint(payload, { "attachment-0.bin": image.bytes });
+    const session = await preparedSession(f.options);
+    const runtime = await freshRuntime();
+    await session.restore(runtime);
+    const store = new LocalAttachmentStore(new Context(), {
+      dshHome: join(runtime.dshHome, "attachments"),
+    });
+    expect((await store.readImage(image.ref)).data).toEqual(image.bytes);
+    expect(
+      await readFile(
+        join(runtime.dshHome, "sessions", "--workspace--", sessionId, SESSION_LOG_FILE),
+      ),
+    ).toEqual(payload);
+  });
   it("keeps an acknowledged claim in its owner when preparation fails", async () => {
     const f = fixture();
     f.state.nextId = 999;

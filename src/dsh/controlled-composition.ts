@@ -7,6 +7,7 @@ import { resolveInstalledPluginModuleSpecifiers } from "../extensions/profile.js
 import type { EffectiveExtensionPlan } from "../extensions/plan.js";
 import {
   CONTAINER_AUDIT,
+  CONTAINER_ATTACHMENTS,
   CONTAINER_LAUNCHER,
   CONTAINER_POLICY_PLUGIN,
   CONTAINER_PROFILE_ROOT,
@@ -221,6 +222,7 @@ export class ControlledComposition implements DshComposition {
       expectedOperation: options.expectedOperation,
       task: options.task,
       workerWorkspacePath: CONTAINER_WORKSPACE,
+      workerAttachmentHome: CONTAINER_ATTACHMENTS,
       policyPluginPath: CONTAINER_POLICY_PLUGIN,
       workspacePluginPath: CONTAINER_WORKSPACE_PLUGIN,
       workerStatePath: CONTAINER_STATE,

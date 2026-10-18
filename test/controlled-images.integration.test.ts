@@ -142,6 +142,7 @@ async function runImages(textOnly: boolean): Promise<void> {
       workspacePluginPath: pathToFileURL(join(process.cwd(), "assets/dsh/action-workspace.mjs"))
         .href,
       workerStatePath: join(dshHome, "action-state", "counts.json"),
+      workerAttachmentHome: join(dshHome, "attachments"),
       workerAuditPath: join(dshHome, "action-state", "receipts.jsonl"),
       manifestBase: z
         .record(z.string(), z.unknown())
@@ -213,7 +214,7 @@ async function runImages(textOnly: boolean): Promise<void> {
       ).toEqual([]);
     } else {
       expect(filesRequests).toBe(0);
-      const storedRoot = join(dshHome, "attachments", "v1");
+      const storedRoot = join(dshHome, "attachments", "attachments", "v1");
       const storedFiles = await readdir(storedRoot, { recursive: true, withFileTypes: true });
       const storedBytes = await Promise.all(
         storedFiles

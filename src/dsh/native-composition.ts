@@ -6,7 +6,11 @@ import { PROFILE_TEMPLATES } from "@deepseek-ai/dsh-app-boot";
 
 import { resolveInstalledPluginModuleSpecifiers } from "../extensions/profile.js";
 import type { NativeExtensionPlan } from "../extensions/plan.js";
-import { CONTAINER_PROFILE_ROOT, CONTAINER_WORKSPACE } from "./docker-policy.js";
+import {
+  CONTAINER_ATTACHMENTS,
+  CONTAINER_PROFILE_ROOT,
+  CONTAINER_WORKSPACE,
+} from "./docker-policy.js";
 import { DshConfigurationError, DshIsolationUnavailableError } from "./errors.js";
 import type {
   DshComposition,
@@ -139,7 +143,18 @@ function nativeProfilePatch(
     ...plan.mcpServers.map((server) => nativeMcpEntry(server)),
     ...plan.plugins.map((plugin) => nativePluginEntry(plugin, moduleSpecifiers)),
   ];
-  return entries.length === 0 ? "[]\n" : `${JSON.stringify([{ insert: entries }], undefined, 2)}\n`;
+  return `${JSON.stringify(
+    [
+      {
+        id: "attachment-local",
+        name: "@deepseek-ai/dsh-attachment-local",
+        config: { dshHome: CONTAINER_ATTACHMENTS },
+      },
+      ...(entries.length === 0 ? [] : [{ insert: entries }]),
+    ],
+    undefined,
+    2,
+  )}\n`;
 }
 
 /** @internal Render the official native Profile; exported for frozen contract smoke coverage. */
