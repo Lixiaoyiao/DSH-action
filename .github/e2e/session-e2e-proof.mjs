@@ -10,6 +10,8 @@ import { unzipSync } from "fflate";
 import {
   SESSION_IMAGE_BYTES,
   SESSION_IMAGE_SHA256,
+  SESSION_IMAGE_WORKSPACE,
+  verifySessionImageWorkspace,
   sessionImageInstruction,
   inspectSessionImage,
   sessionImageReceipts,
@@ -70,7 +72,10 @@ export function assertSourceProof(proof, expected) {
     requireCheck(proof[key] === expected[key], "SOURCE_BINDING");
   requireCheck(
     (proof.imageAttachment === true) === (expected.imageAttachment === true) &&
-      (expected.imageAttachment !== true || proof.attachmentSha256 === SESSION_IMAGE_SHA256),
+      (expected.imageAttachment !== true ||
+        (proof.attachmentSha256 === SESSION_IMAGE_SHA256 &&
+          proof.imageWorkspace?.branch === SESSION_IMAGE_WORKSPACE.branch &&
+          proof.imageWorkspace?.sha === SESSION_IMAGE_WORKSPACE.sha)),
     "SOURCE_IMAGE_BINDING",
   );
   requireCheck(
@@ -302,6 +307,7 @@ function githubReader(env) {
 async function prepare(env, directory) {
   const current = identity(env);
   const reader = githubReader(env);
+  const imageWorkspace = verifySessionImageWorkspace(current, reader);
   let parent;
   if (current.phase === "resume") {
     const run = reader.json(`repos/${current.repository}/actions/runs/${current.sourceRunId}`);
@@ -360,6 +366,7 @@ async function prepare(env, directory) {
   process.stdout.write(`::add-mask::${memory}\n::add-mask::${challenge}\n`);
   const expected = {
     ...current,
+    ...(imageWorkspace === undefined ? {} : { imageWorkspace }),
     memory,
     challenge,
     ...(parent === undefined
@@ -381,6 +388,7 @@ async function prepare(env, directory) {
       phase: current.phase,
       runId: current.runId,
       sourceRunId: current.sourceRunId,
+      ...(imageWorkspace === undefined ? {} : { imageWorkspace }),
       fixtureRequests: reader.audit,
     }) + "\n",
   );
@@ -409,6 +417,13 @@ async function verify(env, directory) {
     /* A missing output is never a passing result. */
   }
   const reader = githubReader(env);
+  const imageWorkspace = verifySessionImageWorkspace(current, reader);
+  requireCheck(
+    imageWorkspace === undefined ||
+      (expected.imageWorkspace?.branch === imageWorkspace.branch &&
+        expected.imageWorkspace?.sha === imageWorkspace.sha),
+    "CURRENT_IMAGE_WORKSPACE",
+  );
   const checks = resultChecks(result, expected);
   checks.actionOutcome = env.ACTION_OUTCOME === "success";
   let checkpoint;
@@ -460,6 +475,7 @@ async function verify(env, directory) {
     schemaVersion: 1,
     qualified,
     ...current,
+    ...(imageWorkspace === undefined ? {} : { imageWorkspace }),
     actionOutcome: outcome(env.ACTION_OUTCOME),
     errorCode: /^[A-Z][A-Z0-9_]{0,79}$/u.test(result?.error?.code ?? "") ? result.error.code : null,
     checks,

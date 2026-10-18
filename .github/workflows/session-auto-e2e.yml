@@ -229,6 +229,7 @@ jobs:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           github-token: ${{ github.token }}
           command: task
+          base-branch: ${{ inputs.image_attachment && 'codex/v0110-session-image-fixture' || '' }}
           task-access: ${{ steps.task.outputs.phase == 'save' && 'write' || 'read' }}
           allow-write: "true"
           dsh-mode: ${{ inputs.dsh_mode }}

@@ -129,6 +129,21 @@ no-tools, no-checkpoint and no-writes check remain mandatory and unchanged.
 
 ## Limits and qualification
 
+Image Session runs use the existing Action `base-branch` input to select
+`codex/v0110-session-image-fixture` at the fixed commit
+`e65a6b7531d83cbd9e7a357771c170ac5a54b053`. This synthetic tree contains only
+`README.md` and the original 137-byte `test/fixtures/images/solid.png`, so each
+worker materializes two blobs. The harness verifies the ref before and after
+each image task using one GET from its existing request budget and records the
+identity in both preparation and qualification evidence. Publish this immutable
+fixture ref before dispatching image pairs and retain it for both runs.
+
+Text-only runs keep their existing default branch and request count. Harness and
+candidate checkouts, current permissions, image digest/reference assertions,
+raw-log continuity and no-replay checks are unchanged. No fixture code runs in
+the worker, and the existing no-change oracle still requires zero validation
+commands. This fixture does not replace Core or production-repository checks.
+
 Fixture creation cannot be combined with `force_failure` or an expected failure,
 and cannot run on reruns, fork refs or established source keys. Artifact SDK
 transport uncertainty fails the producer; the helper performs no application
