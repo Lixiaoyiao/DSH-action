@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 import { sessionFormatCatalog } from "@deepseek-ai/dsh-session-format-catalog";
-import { zipSync } from "fflate";
+import { unzipSync, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
@@ -10,6 +10,7 @@ import { parseTaskOutputSchema, validateTaskOutput } from "../src/dsh/task-outpu
 import { loadInputs } from "../src/inputs.js";
 
 import * as fixture from "../.github/e2e/session-e2e-proof.mjs";
+import * as automaticFixture from "../.github/e2e/session-auto-e2e-proof.mjs";
 import { fixtureObject as object } from "./helpers/json-fixture.js";
 const now = Date.parse("2026-10-04T01:00:00Z");
 const id = "session-11111111-1111-4111-8111-111111111111";
@@ -44,6 +45,8 @@ function checkpoint(
     dshMode?: string;
     extraFile?: boolean;
     extraTurn?: boolean;
+    imageBytes?: Buffer;
+    repeatedImageRead?: boolean;
   } = {},
 ) {
   const generation = options.generation ?? 1;
@@ -53,6 +56,7 @@ function checkpoint(
     { type: "sandbox/mode", data: { mode: permissionMode } },
     { type: "approval/policy", data: { policy: "never" } },
   ];
+  const image = options.imageBytes;
   for (let turn = 1; turn <= generation + (options.extraTurn === true ? 1 : 0); turn++) {
     events.push(
       { type: "turn/start", data: { turn } },
@@ -68,6 +72,80 @@ function checkpoint(
       },
       { type: "turn/end", data: { turn, reason: { kind: "completed" } } },
     );
+    if (image !== undefined && (turn === 1 || options.repeatedImageRead === true)) {
+      events.splice(
+        events.length - 1,
+        0,
+        { type: "step/start", data: { turn, step: 1 } },
+        {
+          type: "request/header",
+          data: {
+            header: { config: { provider: "fixture", model: "fixture" } },
+            reason: "initial",
+          },
+        },
+        {
+          type: "assistant/message",
+          surfaceOp: "append",
+          data: {
+            turn,
+            step: 1,
+            message: {
+              id: `assistant-${String(turn)}`,
+              role: "assistant",
+              content: [
+                {
+                  type: "tool-call",
+                  id: `image-${String(turn)}`,
+                  name: "read_image",
+                  arguments: "{}",
+                },
+              ],
+              source: { kind: "model", provider: "fixture", model: "fixture" },
+            },
+            stream: [],
+          },
+        },
+        {
+          type: "tool/call",
+          data: {
+            turn,
+            step: 1,
+            callId: `image-${String(turn)}`,
+            name: "read_image",
+            arguments: "{}",
+          },
+        },
+        {
+          type: "tool/result",
+          surfaceOp: "append",
+          data: {
+            turn,
+            step: 1,
+            message: {
+              id: `result-${String(turn)}`,
+              role: "tool",
+              toolCallId: `image-${String(turn)}`,
+              source: { kind: "tool", callId: `image-${String(turn)}` },
+              content: [
+                {
+                  type: "image",
+                  attachment: {
+                    attachmentId: `sha256:${hash(image)}`,
+                    mediaType: "image/png",
+                    bytes: image.length,
+                    width: 32,
+                    height: 32,
+                    name: "solid.png",
+                  },
+                },
+              ],
+            },
+          },
+        },
+        { type: "step/end", data: { turn, step: 1 } },
+      );
+    }
   }
   const header = sessionFormatCatalog.encodeCurrentHeader(
     { version: 4, id, createdAt: now, cwd: "/workspace", isSeeded: false, delegationDepth: 0 },
@@ -92,10 +170,14 @@ function checkpoint(
     runtime: { dshVersion: "0.2.1-rc.2", mode: options.dshMode ?? "controlled" },
     session: { sessionId: id, keyHash: "e".repeat(64), generation },
     payload: { file: "session.jsonl", bytes: payload.length, sha256: hash(payload) },
+    ...(image === undefined
+      ? {}
+      : { attachments: [{ file: "attachment-0.bin", bytes: image.length, sha256: hash(image) }] }),
   };
   const archive = zipSync({
     "manifest.json": Buffer.from(JSON.stringify(manifest)),
     "session.jsonl": payload,
+    ...(image === undefined ? {} : { "attachment-0.bin": image }),
     ...(options.extraFile === true ? { "extra.txt": Buffer.from("not admissible") } : {}),
   });
   return {
@@ -106,6 +188,7 @@ function checkpoint(
       permissionMode,
       dshMode: options.dshMode ?? "controlled",
       payloadSha256: hash(payload),
+      ...(image === undefined ? {} : { imageAttachment: true }),
     }),
   };
 }
@@ -135,6 +218,70 @@ function successResult(extra: Record<string, unknown> = {}): Record<string, unkn
 }
 
 describe("independent Actions Session qualification fixture", () => {
+  it("binds the optional PNG to its actual bytes and permits no second image read on resume", async () => {
+    const imageBytes = await readFile(new URL("./fixtures/images/solid.png", import.meta.url));
+    const first = checkpoint({ imageBytes });
+    const automaticFiles = unzipSync(first.archive);
+    const automaticManifest = object(
+      JSON.parse(Buffer.from(automaticFiles["manifest.json"] ?? []).toString("utf8")),
+    );
+    object(automaticManifest.workflow).path = ".github/workflows/session-auto-e2e.yml";
+    automaticFiles["manifest.json"] = Buffer.from(JSON.stringify(automaticManifest));
+    expect(
+      automaticFixture.inspectCheckpointArchive(zipSync(automaticFiles), first.expected)
+        .attachmentSha256,
+    ).toBe(hash(imageBytes));
+    expect(fixture.inspectCheckpointArchive(first.archive, first.expected).attachmentSha256).toBe(
+      hash(imageBytes),
+    );
+    const resumed = checkpoint({ imageBytes, generation: 2, mode: "read-only" });
+    expect(
+      fixture.inspectCheckpointArchive(resumed.archive, resumed.expected).attachmentSha256,
+    ).toBe(hash(imageBytes));
+    const repeated = checkpoint({
+      imageBytes,
+      generation: 2,
+      mode: "read-only",
+      repeatedImageRead: true,
+    });
+    expect(() => fixture.inspectCheckpointArchive(repeated.archive, repeated.expected)).toThrow(
+      "SESSION_E2E_ONLY_NEW_TASK",
+    );
+    const corrupt = checkpoint({ imageBytes: Buffer.alloc(imageBytes.length) });
+    expect(() => fixture.inspectCheckpointArchive(corrupt.archive, corrupt.expected)).toThrow(
+      "SESSION_E2E_IMAGE_ATTACHMENT",
+    );
+    expect(() =>
+      fixture.inspectCheckpointArchive(first.archive, {
+        ...first.expected,
+        imageAttachment: false,
+      }),
+    ).toThrow("SESSION_E2E_ARCHIVE_FILES");
+    const task = fixture.buildSessionTask("resume", challenge, memory, true);
+    expect(task.prompt).not.toContain("solid.png");
+    expect(task.prompt).not.toContain("https://");
+    expect(task.prompt).not.toContain(memory);
+    expect(task.prompt).toContain("Do not call tools");
+  });
+
+  it("requires the Controlled save image receipt and rejects replayed reads on resume", () => {
+    const receipt = { id: "workspace.read", runtimeName: "read_image", completed: true, ok: true };
+    const expected = identity({ imageAttachment: true });
+    expect(fixture.resultChecks(successResult(), expected).noUnexpectedToolsOrWrites).toBe(false);
+    expect(
+      fixture.resultChecks(
+        successResult({ loop: { turns: 1, toolCalls: 0, dshToolReceipts: [receipt] } }),
+        expected,
+      ).noUnexpectedToolsOrWrites,
+    ).toBe(true);
+    expect(
+      fixture.resultChecks(
+        successResult({ loop: { turns: 1, toolCalls: 0, dshToolReceipts: [receipt] } }),
+        { ...expected, phase: "resume" },
+      ).noUnexpectedToolsOrWrites,
+    ).toBe(false);
+  });
+
   it("supplies a new challenge while withholding historical memory from every resume input", () => {
     const save = fixture.buildSessionTask("save", challenge, memory);
     const resume = fixture.buildSessionTask("resume", challenge, memory);
@@ -321,7 +468,7 @@ describe("independent Actions Session qualification fixture", () => {
     ).toBe(false);
     expect(
       fixture.resultChecks({ ...result, loop: { dshToolReceipts: [{ ok: true }] } }, expected)
-        .noToolsOrWrites,
+        .noUnexpectedToolsOrWrites,
     ).toBe(false);
     expect(fixture.resultChecks(result, { ...expected, runId: 10 }).newRun).toBe(false);
     expect(Object.values(fixture.resultChecks(undefined, expected)).every(Boolean)).toBe(false);

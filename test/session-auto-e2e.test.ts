@@ -331,7 +331,7 @@ describe("independent Actions Session qualification fixture", () => {
     ).toBe(false);
     expect(
       fixture.resultChecks({ ...result, loop: { dshToolReceipts: [{ ok: true }] } }, expected)
-        .noToolsOrWrites,
+        .noUnexpectedToolsOrWrites,
     ).toBe(false);
     expect(fixture.resultChecks(result, { ...expected, runId: 10 }).newRun).toBe(false);
     expect(Object.values(fixture.resultChecks(undefined, expected)).every(Boolean)).toBe(false);
