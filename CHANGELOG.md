@@ -5,6 +5,10 @@ versioning for published action releases.
 
 ## Unreleased
 
+- Prepares installer `0.7.1` targeting formal Action `v0.11.0` through
+  `DSH_ACTION_RELEASE_SHA`, with exact DSH `0.2.1-rc.2` and source tag
+  `create-deepseek-harness-action-v0.7.1`.
+
 ## [0.11.0]
 
 - Downloads bounded GitHub upload images from PRs, Issues and comments into the
