@@ -75,7 +75,7 @@ File-only and non-interactive setup remains available:
 npm.cmd create deepseek-harness-action@latest -- --mode both --dsh-mode native
 ```
 
-Controlled remains the default. Coding writes require explicit validation commands; the installer tells you where to configure them. Installer `0.7.0` targets Action `v0.10.3` and DSH `0.2.1-rc.2`. Its build binds the qualified Action commit through `DSH_ACTION_RELEASE_SHA`; its source tag is `create-deepseek-harness-action-v0.7.0`. See the [setup guide](docs/setup.md) for manual setup and recovery.
+Controlled remains the default. Coding writes require explicit validation commands; the installer tells you where to configure them. Installer `0.7.1` targets Action `v0.11.0` and DSH `0.2.1-rc.2`. Its build binds the qualified Action commit through `DSH_ACTION_RELEASE_SHA`; its source tag is `create-deepseek-harness-action-v0.7.1`. See the [setup guide](docs/setup.md) for manual setup and recovery.
 
 ### Manual installation
 

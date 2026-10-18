@@ -8,7 +8,7 @@ import { runGuidedSetup } from "./guided.mjs";
 import { canonicalWorkflowText } from "./workflow-text.mjs";
 
 const DOCUMENTATION_URL =
-  "https://github.com/Lixiaoyiao/deepseek-harness-action/blob/create-deepseek-harness-action-v0.7.0/docs/setup.md";
+  "https://github.com/Lixiaoyiao/deepseek-harness-action/blob/create-deepseek-harness-action-v0.7.1/docs/setup.md";
 const ACTION_REFERENCE_PATTERN = /uses: Lixiaoyiao\/deepseek-harness-action@[0-9a-f]{40}(?:\s|$)/gu;
 const MODES = new Set(["review", "commands", "both", "session"]);
 const DSH_MODES = new Set(["controlled", "native"]);
