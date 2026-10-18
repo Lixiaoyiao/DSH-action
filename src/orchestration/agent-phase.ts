@@ -1,4 +1,6 @@
 import * as core from "@actions/core";
+import { copyFile, mkdir } from "node:fs/promises";
+import { join } from "node:path";
 import { runAgentLoop, type AgentLoopStats } from "../agent/loop.js";
 import { publishTaskAnswer } from "../commands/task.js";
 import { DshAgentEngine } from "../dsh/engine.js";
@@ -194,10 +196,26 @@ export class AgentPhase {
         signal,
         ...(toolProvider === undefined ? {} : { toolProvider }),
         redact,
+        ...(session === undefined && execution.imageFiles === undefined
+          ? {}
+          : {
+              onRuntimeReady: async (runtime) => {
+                await session?.restore(runtime);
+                if (execution.imageFiles !== undefined) {
+                  const destination = join(runtime.dshHome, "github-images");
+                  await mkdir(destination, { mode: 0o700, recursive: true });
+                  for (const file of execution.imageFiles.files) {
+                    await copyFile(
+                      join(execution.imageFiles.directory, file),
+                      join(destination, file),
+                    );
+                  }
+                }
+              },
+            }),
         ...(session === undefined
           ? {}
           : {
-              onRuntimeReady: (runtime) => session.restore(runtime),
               onRuntimeCompleted: async (runtime, completed) => {
                 this.observe(completed.agent, completed.stats);
                 lifecycle.enter("publication");

@@ -35,6 +35,10 @@ on:
         description: Fresh logical key, identical for the two runs; choose a new key for another pair
         required: true
         type: string
+      image_attachment:
+        description: Read one repository PNG on save and restore its official attachment on resume
+        default: false
+        type: boolean
       dsh_mode:
         description: Keep the same runtime composition for the pair
         required: true
@@ -112,6 +116,7 @@ jobs:
       SOURCE_RUN_ID: ${{ inputs.source_run_id }}
       SESSION_KEY: ${{ inputs.session_key }}
       DSH_MODE: ${{ inputs.dsh_mode }}
+      IMAGE_ATTACHMENT: ${{ inputs.image_attachment }}
     steps:
       - name: Checkout permanent harness
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -163,6 +168,10 @@ jobs:
       - name: Prepare hidden memory and current challenge outside the worker
         id: task
         run: node .github/e2e/session-e2e-proof.mjs prepare
+
+      - name: Qualify a real GitHub upload with the candidate Controller
+        if: inputs.image_attachment && inputs.phase == 'save'
+        run: node --experimental-strip-types .github/e2e/session-image-download.mjs
 
       - name: Execute one live official Session task
         id: action

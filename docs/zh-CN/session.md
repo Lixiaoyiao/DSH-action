@@ -2,9 +2,10 @@
 
 [English](../session.md) · [配置](../configuration.md) · [安全边界](../../SECURITY.md)
 
-Session 是显式 opt-in，用于在后续 Actions run 中继续同一便携文本任务。它复用固定
+Session 是显式 opt-in，用于在后续 Actions run 中继续同一便携任务。它复用固定
 **DSH 0.2.1-rc.2** 的公开 JSONL persistence 和 `--session-id`。检查点保存完整的
-原始 v4 Session 日志及来源 manifest；headless NDJSON 事件投影、拼接历史评论都
+原始 v4 Session 日志、来源 manifest 及官方图片/文件引用对应的附件字节；
+headless NDJSON 事件投影、拼接历史评论都
 不能替代真实 Session 日志。
 
 把[可运行 dispatch 示例](../../examples/session.yml)复制到
@@ -31,7 +32,8 @@ generation 1；后续在**同一个 workflow** 中保持相同 key 和模式 dis
 
 controlled 和 native 都要求 `isolation: docker`、digest 锁定镜像及固定 worker
 工作目录 `/workspace`。host 执行不能提供跨 run 稳定的 cwd 身份。检查点最多保存
-**4 MiB** 原始日志、**16 KiB** manifest；保留真实记录及原始模型流结算，不静默
+**4 MiB** 原始日志、**16 KiB** manifest，以及最多 **20 个附件**，每个 **20 MiB**、
+合计 **50 MiB**；保留真实记录及原始模型流结算，不静默
 截断、脱敏改写或迁移原始日志。
 
 ## 工作流与来源绑定
@@ -123,21 +125,20 @@ permission、sandbox、approval 设置，不恢复旧授权。Controller 的 Git
 导出仅接受一个完整、已结算的顶级 Session。排队输入、未结束的 turn/request/
 tool 或其他已跟踪操作、child/fork 血缘、不兼容 cwd/preset、未知必需事件、损坏
 记录、额外 Session/generation、符号链接、硬链接以及超限 JSON 复杂度均拒绝。
-artifact 仅含 `manifest.json` 与 `session.jsonl`，不保存完整 worker home、配置
-或 lease 文件。导入校验完整性后写入新的专用目录，拒绝覆盖现有状态。
+artifact 包含 `manifest.json`、`session.jsonl`，有附件引用时另带有界的
+`attachment-<index>.bin` 字节条目；不保存完整 worker home、配置或 lease 文件。
+导入校验完整性后写入新的专用目录，拒绝覆盖现有状态。
 
-初版检查点只支持便携文本 Session。DSH 已发布的 attachment store 和 native
-`read_image` 等工具能创建持久图片或文件引用，其字节保存在
-`DSH_HOME/attachments/v1`，不在 raw JSONL 内。Action 的双文件 archive 不携带
-该存储，也未实现新 worker 的附件还原，因此导入 admission 和检查点收集都会
-拒绝 DSH 实际解释为图片/文件内容的持久引用，包括当前 run 工具生成的引用。
-保存会明确失败，不生成恢复后缺少附件字节的半套状态；诊断不回显引用的文件名
-或 attachment ID。文本中的文件名和普通业务 JSON 本身不是二进制附件。
+DSH 已发布的附件存储和 `read_image` 等工具创建的持久图片/文件引用，其字节
+保存在 `DSH_HOME/attachments/v1`，不在 raw JSONL 内。Controller 只收集已结算
+Session 实际引用的附件字节，校验不透明引用标识、摘要和字节数。恢复时先通过 DSH
+公开附件存储重建同一引用，再导入 Session。官方 Worker 在读取图片时校验媒体类型和尺寸；普通
+文件使用官方流式文件存储。DSH Session 格式保持不变。
 
-native 工具图继续可用，此限制不禁用 `read_image`，也不表示 DSH 没有图片能力。
-附件传输、存储生命周期及新 worker 还原是尚未完成的 Action 工程，与
-[运行时审计](../v0.9.2-runtime-audit.md#why-images-and-binary-attachments-are-deferred)
-记录的已发布 Headless 输入限制分别说明。
+附件字节缺失、超限或不一致时，保存或恢复明确失败；不会生成半套附件检查点，
+也不会下载历史 URL 来补齐字节。文本中的文件名和普通业务 JSON 不是附件引用。
+这里运输已有官方附件，PDF/Office 内容处理仍需要获准扩展，详见
+[文件支持](file-support.md)。
 
 初版不会自动快照 child Session。native 保留现有工具图；任务如果实际创建了
 subagent/child persistence，额外 Session 会使检查点收集失败并给出明确诊断，
@@ -148,8 +149,8 @@ subagent/child persistence，额外 Session 会使检查点收集失败并给出
 已知 token 格式及 private key。发现后给出不回显原文的诊断并拒绝，不改写 raw
 日志来获得成功。这些检查**不能证明已排除任意第三方事件数据中的所有秘密**。
 检查点会保留任务文本、仓库上下文、模型输出及工具结果；将 Actions artifact
-视为保留的任务数据，启用前审查扩展输出。该功能提供文本会话连续性，不代表
-原生图片或 Office 附件支持。
+视为保留的任务数据，启用前审查扩展输出。引用的附件字节同样属于保留的任务
+数据；附件运输不增加 PDF/Office 解析器。
 
 workflow/run/artifact 读取复用现有 Controller GitHub client 与配额诊断。SDK 上传
 使用独立的 job-scoped runtime 凭据；该 SDK 的传输请求数不计入主 client 审计。
@@ -159,7 +160,7 @@ workflow/run/artifact 读取复用现有 Controller GitHub client 与配额诊�
 
 通过 run 结果和 artifact receipt 核对 source run、generation、校验值。只从
 最新、兼容、成功 run 的检查点恢复。过期或不兼容时，用新的维护者 key 启动新
-任务。当前 worker 生成持久图片/文件引用时，检查点可能在工具执行后收集失败；
+任务。附件字节缺失或不一致时，检查点可能在工具执行后收集失败；
 先核对 tool receipts 和已经确认的外部副作用，再选择新的逻辑 Session，不会
 生成部分附件检查点。损坏状态或凭据拒绝时，修复生成配置或输出并创建新 Session。手工编辑
 原始记录会失去完整性和无损恢复保证。配置检查入口不会假装已经核验在线来源、

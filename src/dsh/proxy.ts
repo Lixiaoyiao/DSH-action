@@ -6,7 +6,8 @@ import type { AddressInfo } from "node:net";
 import { DshConfigurationError, DshProxyError } from "./errors.js";
 import { validatedControllerBaseUrl } from "./base-url.js";
 
-const DEFAULT_REQUEST_LIMIT = 8 * 1024 * 1024;
+// A single official read_image may carry 20 MiB of raster bytes as base64.
+const DEFAULT_REQUEST_LIMIT = 32 * 1024 * 1024;
 const DEFAULT_RESPONSE_LIMIT = 32 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 120_000;
 

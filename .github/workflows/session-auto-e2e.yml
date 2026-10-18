@@ -33,6 +33,10 @@ on:
         description: Maintainer-selected logical key; repeated runs automatically continue its Session
         required: true
         type: string
+      image_attachment:
+        description: Read one repository PNG on save and restore its official attachment on resume
+        default: false
+        type: boolean
       dsh_mode:
         description: Keep the same runtime composition for the pair
         required: true
@@ -146,6 +150,7 @@ jobs:
       PHASE: ${{ inputs.phase }}
       SESSION_KEY: ${{ inputs.session_key }}
       DSH_MODE: ${{ inputs.dsh_mode }}
+      IMAGE_ATTACHMENT: ${{ inputs.image_attachment }}
       EXPECTED_FAILURE: ${{ inputs.expected_failure }}
       FIXTURE_KIND: ${{ inputs.fixture_kind }}
       FIXTURE_TARGET_KEY: ${{ inputs.fixture_target_key }}
@@ -211,6 +216,10 @@ jobs:
           CANDIDATE_MODE: ${{ needs.gate.outputs.candidate_mode }}
           CANDIDATE_PR: ${{ needs.gate.outputs.pull_request }}
         run: bash .github/e2e/assert-candidate-binding.sh
+
+      - name: Qualify a real GitHub upload with the candidate Controller
+        if: inputs.image_attachment && steps.task.outputs.phase == 'save'
+        run: node --experimental-strip-types .github/e2e/session-image-download.mjs
 
       - name: Execute one live official Session task
         id: action

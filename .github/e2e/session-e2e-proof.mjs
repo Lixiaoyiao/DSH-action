@@ -7,6 +7,13 @@ import { fileURLToPath } from "node:url";
 
 import { sessionFormatCatalog } from "@deepseek-ai/dsh-session-format-catalog";
 import { unzipSync } from "fflate";
+import {
+  SESSION_IMAGE_BYTES,
+  SESSION_IMAGE_SHA256,
+  sessionImageInstruction,
+  inspectSessionImage,
+  sessionImageReceipts,
+} from "./session-image-proof.mjs";
 
 const MAX_ARCHIVE = 4 * 1024 * 1024 + 64 * 1024;
 const MAX_PAYLOAD = 4 * 1024 * 1024;
@@ -24,7 +31,7 @@ function requireCheck(condition, label) {
 }
 
 /** The fixture stores expected memory outside both checked-out repositories and the worker. */
-export function buildSessionTask(phase, challenge, memory) {
+export function buildSessionTask(phase, challenge, memory, imageAttachment = false) {
   requireCheck(["save", "resume"].includes(phase) && CHALLENGE.test(challenge), "TASK_IDENTITY");
   requireCheck(phase === "resume" || MEMORY.test(memory), "TASK_MEMORY");
   const instruction =
@@ -32,7 +39,7 @@ export function buildSessionTask(phase, challenge, memory) {
       ? `Remember this exact historical memory token for a future independent run: ${memory}.`
       : "Recall the exact 48-character historical memory token from the preceding task in this restored Session. The current task does not supply that token.";
   return {
-    prompt: `${instruction} The current challenge is ${challenge}. Return taskOutput with memory, challenge and phase (${phase}). Use only the actual remembered token. Do not call tools, read files, modify anything or make external requests. Return the final Action JSON contract.`,
+    prompt: `${instruction} The current challenge is ${challenge}. Return taskOutput with memory, challenge and phase (${phase}). Use only the actual remembered token. ${sessionImageInstruction(phase, imageAttachment)} Return the final Action JSON contract.`,
     schema: JSON.stringify({
       type: "object",
       properties: {
@@ -62,6 +69,11 @@ export function assertSourceProof(proof, expected) {
   ])
     requireCheck(proof[key] === expected[key], "SOURCE_BINDING");
   requireCheck(
+    (proof.imageAttachment === true) === (expected.imageAttachment === true) &&
+      (expected.imageAttachment !== true || proof.attachmentSha256 === SESSION_IMAGE_SHA256),
+    "SOURCE_IMAGE_BINDING",
+  );
+  requireCheck(
     MEMORY.test(proof.memory) &&
       CHALLENGE.test(proof.challenge) &&
       SESSION.test(proof.sessionId) &&
@@ -81,12 +93,16 @@ export function inspectCheckpointArchive(input, expected) {
       names.push(entry.name);
       return (
         (entry.name === "manifest.json" && entry.originalSize <= 16 * 1024) ||
-        (entry.name === "session.jsonl" && entry.originalSize <= MAX_PAYLOAD)
+        (entry.name === "session.jsonl" && entry.originalSize <= MAX_PAYLOAD) ||
+        (expected.imageAttachment === true &&
+          entry.name === "attachment-0.bin" &&
+          entry.originalSize === SESSION_IMAGE_BYTES)
       );
     },
   });
   requireCheck(
-    names.length === 2 &&
+    names.length === (expected.imageAttachment === true ? 3 : 2) &&
+      (expected.imageAttachment !== true || names.includes("attachment-0.bin")) &&
       names.includes("manifest.json") &&
       names.includes("session.jsonl") &&
       files["manifest.json"]?.length > 0 &&
@@ -155,10 +171,18 @@ export function inspectCheckpointArchive(input, expected) {
   requireCheck(
     events.filter((event) => event.type === "turn/start").length === expected.generation &&
       events.filter((event) => event.type === "turn/end").length === expected.generation &&
-      !events.some((event) => event.type === "tool/call"),
+      events.filter((event) => event.type === "tool/call").length ===
+        (expected.imageAttachment === true ? 1 : 0),
     "ONLY_NEW_TASK",
   );
+  const attachmentSha256 = inspectSessionImage(
+    files,
+    manifest,
+    events,
+    expected.imageAttachment === true,
+  );
   return {
+    ...(attachmentSha256 === undefined ? {} : { attachmentSha256 }),
     payload,
     payloadSha256: digest(payload),
     archiveSha256: digest(input),
@@ -196,11 +220,11 @@ export function resultChecks(result, expected) {
       (session?.sourceRunId === expected.sourceRunId && expected.runId !== expected.sourceRunId),
     sameSession: expected.phase === "save" || session?.sessionId === expected.sessionId,
     newCheckpoint: expected.phase === "save" || session?.payloadSha256 !== expected.payloadSha256,
-    noToolsOrWrites:
+    noUnexpectedToolsOrWrites:
       result?.loop?.turns === 1 &&
       result?.loop?.toolCalls === 0 &&
       (result?.loop?.toolReceipts ?? []).length === 0 &&
-      (result?.loop?.dshToolReceipts ?? []).length === 0 &&
+      sessionImageReceipts(result, expected) &&
       !result?.write?.commitSha &&
       !result?.write?.pullRequestNumber &&
       (result?.write?.changedPaths ?? []).length === 0 &&
@@ -230,6 +254,7 @@ function identity(env) {
     candidateSha: env.CANDIDATE_SHA,
     harnessSha: env.HARNESS_SHA,
     dshMode: env.DSH_MODE,
+    imageAttachment: env.IMAGE_ATTACHMENT === "true",
     sourceRunId: env.SOURCE_RUN_ID === "" ? undefined : Number(env.SOURCE_RUN_ID),
     keyHash: digest(env.SESSION_KEY ?? ""),
   };
@@ -344,7 +369,7 @@ async function prepare(env, directory) {
   await writeFile(join(directory, "expected.json"), JSON.stringify(expected) + "\n", {
     mode: 0o600,
   });
-  const task = buildSessionTask(current.phase, challenge, memory);
+  const task = buildSessionTask(current.phase, challenge, memory, current.imageAttachment);
   const delimiter = `session_task_${randomBytes(16).toString("hex")}`;
   await appendFile(
     env.GITHUB_OUTPUT,
@@ -376,6 +401,7 @@ async function verify(env, directory) {
     "sourceRunId",
   ])
     requireCheck(expected[key] === current[key], "CURRENT_BINDING");
+  requireCheck(expected.imageAttachment === current.imageAttachment, "CURRENT_IMAGE_BINDING");
   let result;
   try {
     result = JSON.parse(env.RESULT_JSON ?? "");
@@ -448,6 +474,9 @@ async function verify(env, directory) {
           archiveSha256: checkpoint.archiveSha256,
           eventCount: checkpoint.eventCount,
           generation: checkpoint.generation,
+          ...(checkpoint.attachmentSha256 === undefined
+            ? {}
+            : { attachmentSha256: checkpoint.attachmentSha256 }),
         }),
   };
   await writeFile(

@@ -9,7 +9,11 @@ export const SESSION_PAYLOAD_FILE = "session.jsonl";
 export const SESSION_MANIFEST_FILE = "manifest.json";
 export const MAX_SESSION_PAYLOAD_BYTES = 4 * 1024 * 1024;
 export const MAX_SESSION_MANIFEST_BYTES = 16 * 1024;
-export const MAX_SESSION_ARCHIVE_BYTES = MAX_SESSION_PAYLOAD_BYTES + 64 * 1024;
+export const MAX_SESSION_ATTACHMENTS = 20;
+export const MAX_SESSION_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+export const MAX_SESSION_ATTACHMENTS_BYTES = 50 * 1024 * 1024;
+export const MAX_SESSION_ARCHIVE_BYTES =
+  MAX_SESSION_PAYLOAD_BYTES + MAX_SESSION_ATTACHMENTS_BYTES + 64 * 1024;
 export const SESSION_CONCURRENCY_GROUP = "dsh-session";
 
 const sha256 = z.string().regex(/^[a-f0-9]{64}$/u);
@@ -65,10 +69,22 @@ export const sessionManifestSchema = z.strictObject({
     bytes: z.number().int().min(1).max(MAX_SESSION_PAYLOAD_BYTES),
     sha256,
   }),
+  // Transport metadata only. Official attachment references remain in the unmodified DSH log.
+  attachments: z
+    .array(
+      z.strictObject({
+        file: z.string().regex(/^attachment-(?:0|[1-9][0-9]?)\.bin$/u),
+        bytes: z.number().int().min(0).max(MAX_SESSION_ATTACHMENT_BYTES),
+        sha256,
+      }),
+    )
+    .min(1)
+    .max(MAX_SESSION_ATTACHMENTS)
+    .optional(),
 });
 
 export type SessionManifest = z.infer<typeof sessionManifestSchema>;
-export type SessionManifestWithoutPayload = Omit<SessionManifest, "payload">;
+export type SessionManifestWithoutPayload = Omit<SessionManifest, "payload" | "attachments">;
 export type SessionRepository = SessionManifest["repository"];
 export interface SessionBinding {
   readonly repository: SessionRepository;
@@ -88,6 +104,28 @@ export interface SessionRunIdentity {
 export interface SessionCheckpoint {
   readonly manifest: SessionManifest;
   readonly payload: Uint8Array;
+  readonly attachments?: Readonly<Record<string, Uint8Array>>;
+}
+
+/** Validate the existing artifact envelope without interpreting DSH attachment identities. */
+export function sessionAttachmentFiles(
+  checkpoint: SessionCheckpoint,
+): Readonly<Record<string, Uint8Array>> {
+  const entries = checkpoint.manifest.attachments ?? [];
+  const files = checkpoint.attachments ?? {};
+  if (
+    Object.keys(files).length !== entries.length ||
+    entries.some((entry, index) => {
+      const bytes = files[entry.file];
+      return (
+        entry.file !== `attachment-${String(index)}.bin` ||
+        bytes?.byteLength !== entry.bytes ||
+        createHash("sha256").update(bytes).digest("hex") !== entry.sha256
+      );
+    })
+  )
+    throw new PolicyDeniedError("Session attachment bytes do not match their manifest");
+  return files;
 }
 
 export function sessionKeyHash(key: string): string {
@@ -157,6 +195,17 @@ export function parseSessionManifest(value: unknown, now = Date.now()): SessionM
   const parsed = sessionManifestSchema.safeParse(value);
   if (!parsed.success) throw new PolicyDeniedError("Session manifest is malformed or incompatible");
   const manifest = parsed.data;
+  if (
+    (manifest.attachments ?? []).some(
+      (entry, index) => entry.file !== `attachment-${String(index)}.bin`,
+    ) ||
+    (manifest.attachments ?? []).reduce((total, entry) => total + entry.bytes, 0) >
+      MAX_SESSION_ATTACHMENTS_BYTES
+  ) {
+    throw new PolicyDeniedError(
+      "Session attachment manifest exceeds its bounds or has incompatible filenames",
+    );
+  }
   const created = Date.parse(manifest.createdAt);
   const expires = Date.parse(manifest.expiresAt);
   if (

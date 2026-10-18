@@ -298,8 +298,83 @@ beforeEach(async () => {
 
 afterEach(async () => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   vi.unstubAllEnvs();
   await rm(fixtureRoot, { recursive: true, force: true });
+});
+
+it.each(["prompt", "review"])(
+  "stages %s image bytes in the read-only runtime home and leaves repository publication unchanged",
+  async (source) => {
+    const imageUrl =
+      "https://github.com/user-attachments/assets/12345678-1234-1234-1234-123456789abc";
+    const imageBytes = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=",
+      "base64",
+    );
+    vi.stubEnv("INPUT_PROMPT", `Read this image: ![example](${imageUrl})`);
+    vi.stubEnv("INPUT_TASK-ACCESS", "read");
+    vi.stubEnv("INPUT_ALLOW-WRITE", "false");
+    if (source === "review") {
+      vi.stubEnv("INPUT_PROMPT", "");
+      vi.stubEnv("INPUT_COMMAND", "auto");
+      vi.stubEnv("GITHUB_EVENT_NAME", "pull_request_review");
+      await writeFile(
+        join(fixtureRoot, "event.json"),
+        JSON.stringify({
+          action: "submitted",
+          repository,
+          pull_request: pullRequest,
+          sender: { login: "alice" },
+          review: {
+            id: 1,
+            body: `@dsh task Read this image: ![example](${imageUrl})`,
+            user: { login: "alice" },
+            submitted_at: "2026-10-18T00:00:00Z",
+          },
+        }),
+      );
+    }
+    const download = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(imageBytes, { headers: { "content-type": "image/png" } }));
+    vi.stubGlobal("fetch", download);
+    ports.runDsh.mockImplementation(async (request, dependencies) => {
+      const runtime = dependencies?.runtime;
+      if (runtime === undefined) throw new Error("Missing Worker runtime");
+      const filename = `${createHash("sha256").update(imageBytes).digest("hex")}.png`;
+      expect(await readFile(join(runtime.dshHome, "github-images", filename))).toEqual(imageBytes);
+      expect(request.prompt).toContain(`/dsh-home/github-images/${filename}`);
+      expect(request.nativeTools).toContain("workspace.read");
+      expect(request.nativeTools).not.toContain("workspace.edit");
+      expect(request.prompt).not.toContain(controllerGitHubToken);
+      return readonlyWorkerResult("final");
+    });
+    const outcome = await runAction();
+    expect(outcome.conclusion, JSON.stringify(outcome.error)).toBe("success");
+    expect(download).toHaveBeenCalledTimes(1);
+    for (const effect of Object.values(created)) expect(effect).not.toHaveBeenCalled();
+  },
+);
+
+it("reports unavailable image reading without fetching or overriding an explicit read denial", async () => {
+  vi.stubEnv(
+    "INPUT_PROMPT",
+    "![example](https://github.com/user-attachments/assets/12345678-1234-1234-1234-123456789abc)",
+  );
+  vi.stubEnv("INPUT_TASK-ACCESS", "read");
+  vi.stubEnv("INPUT_ALLOW-WRITE", "false");
+  vi.stubEnv("INPUT_DISALLOWED-TOOLS", '["workspace.read"]');
+  const download = vi.fn<typeof fetch>();
+  vi.stubGlobal("fetch", download);
+  ports.runDsh.mockImplementation((request) => {
+    expect(request.prompt).toContain("Image reading requires effective workspace.read");
+    expect(request.nativeTools).not.toContain("workspace.read");
+    return Promise.resolve(readonlyWorkerResult("blocked"));
+  });
+  const outcome = await runAction();
+  expect(outcome.conclusion, JSON.stringify(outcome.error)).toBe("neutral");
+  expect(download).not.toHaveBeenCalled();
 });
 
 it.each([

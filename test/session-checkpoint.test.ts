@@ -5,8 +5,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { sessionFormatCatalog } from "@deepseek-ai/dsh-session-format-catalog";
+import { Context } from "@deepseek-ai/cordis";
+import { LocalAttachmentStore } from "@deepseek-ai/dsh-attachment-local";
+import { zipSync } from "fflate";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildDshPrompt } from "../src/dsh/prompt.js";
+import { decodeSessionArchive } from "../src/session/archive.js";
+import { rasterImages } from "./fixtures/raster-images.js";
 
 import {
   exportSessionCheckpoint,
@@ -807,6 +812,257 @@ describe("settled Session admission", () => {
         ]),
       ),
     ).toThrow(/not settled/u);
+  });
+});
+
+describe("official durable attachment checkpoint round trips", () => {
+  async function imageCheckpoint() {
+    const home = await directory();
+    const store = new LocalAttachmentStore(new Context(), { dshHome: home });
+    const image = rasterImages[0];
+    const ref = await store.saveImage({
+      data: Buffer.from(image.data, "base64"),
+      mediaType: image.mediaType,
+    });
+    const fixture = await stored(contentFixture("tool", { type: "image", attachment: ref }));
+    const exported = await exportSessionCheckpoint({
+      persistenceRoot: fixture.root,
+      dshHome: home,
+      manifest,
+      workspacePath,
+      knownSecrets: [],
+      now,
+    });
+    return { home, store, ref, fixture, exported };
+  }
+
+  async function restore(exported: SessionCheckpoint) {
+    const home = await directory();
+    const persistenceRoot = join(home, "sessions");
+    await mkdir(persistenceRoot);
+    const inspection = await importSessionCheckpoint({
+      persistenceRoot,
+      dshHome: home,
+      checkpoint: exported,
+      binding,
+      source,
+      workspacePath,
+      knownSecrets: [],
+      now,
+    });
+    return {
+      home,
+      persistenceRoot,
+      inspection,
+      store: new LocalAttachmentStore(new Context(), { dshHome: home }),
+    };
+  }
+
+  it.each(rasterImages)(
+    "preserves official $extension references and stored bytes through a ZIP and a fresh runtime home",
+    async (image) => {
+      const home = await directory();
+      const sourceStore = new LocalAttachmentStore(new Context(), {
+        dshHome: home,
+        normalizedImageMaxPixels: 4,
+      });
+      const ref = await sourceStore.saveImage({
+        data: Buffer.from(image.data, "base64"),
+        mediaType: image.mediaType,
+        name: `sample.${image.extension}`,
+      });
+      const original = await sourceStore.readImage(ref);
+      expect(ref.originalDimensions).toEqual({ width: 8, height: 6 });
+      const payload = contentFixture("tool", { type: "image", attachment: ref });
+      const fixture = await stored(payload);
+      const exported = await exportSessionCheckpoint({
+        persistenceRoot: fixture.root,
+        dshHome: home,
+        manifest,
+        workspacePath,
+        knownSecrets: [],
+        now,
+      });
+      expect(exported.manifest.attachments).toHaveLength(1);
+      const archive = zipSync({
+        "manifest.json": Buffer.from(JSON.stringify(exported.manifest)),
+        "session.jsonl": exported.payload,
+        ...exported.attachments,
+      });
+      const decoded = decodeSessionArchive(archive, now);
+      const restored = await restore(decoded);
+      expect(await restored.store.readImage(ref)).toEqual(original);
+      expect(
+        await readFile(
+          join(restored.persistenceRoot, "--workspace--", sessionId, SESSION_LOG_FILE),
+        ),
+      ).toEqual(payload);
+      expect(
+        await inspectStoredSession({
+          persistenceRoot: restored.persistenceRoot,
+          dshHome: restored.home,
+          sessionId,
+          workspacePath,
+          knownSecrets: [],
+        }),
+      ).toEqual(restored.inspection);
+      const continued = Buffer.concat([
+        payload,
+        Buffer.from(
+          JSON.stringify(opaque({ continuation: true }, restored.inspection.eventCount)) + "\n",
+        ),
+      ]);
+      expect(
+        validateSessionPayload({
+          payload: continued,
+          sessionId,
+          workspacePath,
+          knownSecrets: [],
+          allowAttachments: true,
+        }).eventCount,
+      ).toBe(restored.inspection.eventCount + 1);
+      expect(continued.subarray(0, payload.length)).toEqual(payload);
+    },
+  );
+
+  it.each([Buffer.from([0, 255, 128, 13, 10, 254, 65]), Buffer.alloc(0)])(
+    "preserves generic file bytes and the public file reference",
+    async (data) => {
+      const home = await directory();
+      const sourceStore = new LocalAttachmentStore(new Context(), { dshHome: home });
+      const ref = await sourceStore.saveFile({ data, name: "document.bin" });
+      const payload = contentFixture("user", { type: "file", attachment: ref });
+      const fixture = await stored(payload);
+      const exported = await exportSessionCheckpoint({
+        persistenceRoot: fixture.root,
+        dshHome: home,
+        manifest,
+        workspacePath,
+        knownSecrets: [],
+        now,
+      });
+      const decoded = decodeSessionArchive(
+        zipSync({
+          "manifest.json": Buffer.from(JSON.stringify(exported.manifest)),
+          "session.jsonl": payload,
+          ...exported.attachments,
+        }),
+        now,
+      );
+      const restored = await restore(decoded);
+      const chunks: Uint8Array[] = [];
+      for await (const chunk of restored.store.readFileStream(ref)) chunks.push(chunk);
+      expect(Buffer.concat(chunks)).toEqual(data);
+      expect(await restored.store.saveFile({ data, name: ref.name })).toEqual(ref);
+      expect(
+        await readFile(
+          join(restored.persistenceRoot, "--workspace--", sessionId, SESSION_LOG_FILE),
+        ),
+      ).toEqual(payload);
+    },
+  );
+
+  it.each(["missing", "changed", "extra", "metadata"])(
+    "validates %s attachment data at the Controller or official raster-reader boundary",
+    async (kind) => {
+      const fixture = await imageCheckpoint();
+      const exported = fixture.exported;
+      if (kind === "metadata") {
+        const payload = contentFixture("tool", {
+          type: "image",
+          attachment: { ...fixture.ref, width: fixture.ref.width + 1 },
+        });
+        exported.manifest.payload = {
+          file: "session.jsonl",
+          bytes: payload.length,
+          sha256: createHash("sha256").update(payload).digest("hex"),
+        };
+        const restored = await restore({ ...exported, payload });
+        // The Controller verifies identity and bytes; the official Worker-side
+        // provider is authoritative for raster media and dimension validation.
+        await expect(
+          restored.store.readImage({ ...fixture.ref, width: fixture.ref.width + 1 }),
+        ).rejects.toThrow(/metadata does not match/u);
+        return;
+      }
+      const files = { ...exported.attachments };
+      if (kind === "missing") delete files["attachment-0.bin"];
+      if (kind === "changed") files["attachment-0.bin"] = Buffer.from("wrong bytes");
+      if (kind === "extra") files["attachment-1.bin"] = Buffer.from("unreferenced");
+      await expect(restore({ ...exported, attachments: files })).rejects.toThrow(
+        /attachment bytes do not match/u,
+      );
+      expect(() =>
+        decodeSessionArchive(
+          zipSync({
+            "manifest.json": Buffer.from(JSON.stringify(exported.manifest)),
+            "session.jsonl": exported.payload,
+            ...files,
+          }),
+          now,
+        ),
+      ).toThrow(/attachment bytes do not match/u);
+    },
+  );
+
+  it("rejects unavailable and redirected official source objects without exporting a dangling reference", async () => {
+    const fixture = await imageCheckpoint();
+    const path = fixture.store.imageHostPath(fixture.ref);
+    await rm(path);
+    const options = {
+      persistenceRoot: fixture.fixture.root,
+      dshHome: fixture.home,
+      manifest,
+      workspacePath,
+      knownSecrets: [],
+      now,
+    };
+    await expect(exportSessionCheckpoint(options)).rejects.toThrow(
+      /could not read its dedicated storage/u,
+    );
+    await symlink(fixture.fixture.session, path, "junction");
+    await expect(exportSessionCheckpoint(options)).rejects.toThrow(/bounded regular file/u);
+  });
+
+  it("does not export known credentials embedded in generic bytes", async () => {
+    const secret = "private-fixture-credential-238452";
+    const home = await directory();
+    const store = new LocalAttachmentStore(new Context(), { dshHome: home });
+    const ref = await store.saveFile({
+      data: Buffer.from(`prefix\0${secret}\0suffix`),
+      name: "binary.dat",
+    });
+    const fixture = await stored(contentFixture("user", { type: "file", attachment: ref }));
+    await expect(
+      exportSessionCheckpoint({
+        persistenceRoot: fixture.root,
+        dshHome: home,
+        manifest,
+        workspacePath,
+        knownSecrets: [secret],
+        now,
+      }),
+    ).rejects.toThrow(/contains credential material/u);
+  });
+
+  it("bounds file references before reading provider-owned objects", () => {
+    const payload = contentFixture("user", {
+      type: "file",
+      attachment: {
+        attachmentId: `sha256:${"a".repeat(64)}`,
+        name: "large.bin",
+        bytes: 20 * 1024 * 1024 + 1,
+      },
+    });
+    expect(() =>
+      validateSessionPayload({
+        payload,
+        sessionId,
+        workspacePath,
+        knownSecrets: [],
+        allowAttachments: true,
+      }),
+    ).toThrow(/attachments exceed/u);
   });
 });
 

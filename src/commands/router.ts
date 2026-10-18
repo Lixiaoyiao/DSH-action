@@ -41,7 +41,7 @@ export function finalizeWorkflowRunRoute(
   return command;
 }
 
-function mentionBody(context: GitHubContext): string | undefined {
+export function mentionBody(context: GitHubContext): string | undefined {
   const payload = context.payload;
   if (context.rawEventName === "issue_comment") {
     const comment = payload.comment;

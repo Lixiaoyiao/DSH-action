@@ -151,7 +151,7 @@ DEEPSEEK_API_KEY
 为了便于阅读，示例使用当前发布 Tag：
 
 ```yaml
-uses: Lixiaoyiao/deepseek-harness-action@v0.10.3
+uses: Lixiaoyiao/deepseek-harness-action@v0.11.0
 ```
 
 生产环境应把 Tag 替换为从正式 `v0.10.3` 解析出的完整、不可变 commit SHA。
@@ -202,7 +202,7 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
           fetch-depth: 1
-      - uses: Lixiaoyiao/deepseek-harness-action@v0.10.3
+      - uses: Lixiaoyiao/deepseek-harness-action@v0.11.0
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           dsh-version: 0.2.1-rc.2

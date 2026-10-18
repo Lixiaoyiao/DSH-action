@@ -1,4 +1,8 @@
+import * as core from "@actions/core";
+import { join } from "node:path";
 import type { AgentToolManifest } from "../agent/contracts.js";
+import { mentionBody } from "../commands/router.js";
+import { prepareGitHubImages, type GitHubImage } from "../github/images.js";
 import { assertWriteTaskConfiguration } from "../configuration-check.js";
 import type { DshComposition } from "../dsh/composition.js";
 import { PolicyDeniedError } from "../errors.js";
@@ -27,10 +31,13 @@ import type { RunLifecycle } from "./lifecycle.js";
 import type { AuthorizedRun } from "./prepare.js";
 import type { PreparedWorkspace } from "./workspace.js";
 
-type ContextPacket = Awaited<ReturnType<typeof buildContextPacket>>;
+type ContextPacket = Awaited<ReturnType<typeof buildContextPacket>> & {
+  readonly images?: readonly GitHubImage[];
+};
 
 export interface PreparedExecution {
   readonly contextPacket: ContextPacket;
+  readonly imageFiles?: { readonly directory: string; readonly files: readonly string[] };
   readonly tools: EffectiveTools & {
     readonly extensions: ExtensionPlan;
     readonly manifests: readonly AgentToolManifest[];
@@ -76,7 +83,7 @@ export class ExecutionPreparation {
     const { client, context, command, snapshot, policy } = authorized;
     if (command.requestedAccess === "write") assertWriteTaskConfiguration(inputs);
     const { agentWorkspace, snapshot: workspaceSnapshot } = workspace;
-    const contextPacket = await buildContextPacket(
+    const baseContextPacket = await buildContextPacket(
       client,
       context,
       command,
@@ -85,10 +92,10 @@ export class ExecutionPreparation {
       workspace.boundWriteSha,
     );
     throwIfCancelled(signal);
-    if (command.instructionFile !== undefined || contextPacket.textFiles !== undefined) {
+    if (command.instructionFile !== undefined || baseContextPacket.textFiles !== undefined) {
       state.textSources = {
         ...(command.instructionFile === undefined ? {} : { instruction: command.instructionFile }),
-        contexts: (contextPacket.textFiles ?? []).map(
+        contexts: (baseContextPacket.textFiles ?? []).map(
           ({ repository, sourceSha, path, blobSha, bytes }) => ({
             repository,
             sourceSha,
@@ -107,6 +114,29 @@ export class ExecutionPreparation {
       ...(trustedGitHubBinding === undefined ? {} : { githubBinding: trustedGitHubBinding }),
       allowWrite: inputs.allowWrite,
     });
+    const imageDirectory = join(workspace.tempRoot, "github-images");
+    const imageAssets = await prepareGitHubImages({
+      texts: [
+        inputs.prompt,
+        command.instructions,
+        mentionBody(context) ?? "",
+        ...(snapshot === undefined
+          ? []
+          : [snapshot.body, ...snapshot.comments.map(({ body }) => body)]),
+      ],
+      directory: imageDirectory,
+      token: inputs.githubToken,
+      enabled: inputs.isolation === "docker" && resolvedTools.workspace.includes("workspace.read"),
+      signal,
+    });
+    for (const image of imageAssets.images) {
+      if (image.status !== "ready")
+        core.warning(`GitHub image: ${image.reason ?? image.status} (${image.source})`);
+    }
+    const contextPacket: ContextPacket = {
+      ...baseContextPacket,
+      ...(imageAssets.images.length === 0 ? {} : { images: imageAssets.images }),
+    };
     const deniedTools = new Set(resolvedTools.permission.disallowedTools);
     const extensionAllowedTools = resolvedTools.permission.requestedTools.filter(
       (id) => !deniedTools.has(id),
@@ -248,6 +278,9 @@ export class ExecutionPreparation {
 
     return {
       contextPacket,
+      ...(imageAssets.files.length === 0
+        ? {}
+        : { imageFiles: { directory: imageDirectory, files: imageAssets.files } }),
       tools: agentTools,
       ...(toolProvider === undefined ? {} : { toolProvider }),
       extensions,

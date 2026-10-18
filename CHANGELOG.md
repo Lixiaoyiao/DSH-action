@@ -5,6 +5,21 @@ versioning for published action releases.
 
 ## Unreleased
 
+## [0.11.0]
+
+- Downloads bounded GitHub upload images from PRs, Issues and comments into the
+  existing isolated Worker, then uses official DSH `read_image` for PNG, JPEG,
+  WebP and GIF. Existing tool grants, credentials and Docker isolation remain in force.
+  Download and unsupported-image failures are visible in logs and Agent context.
+- Preserves binary repository bytes through the existing workspace and Git Blob
+  Base64 publication path; omits invalid UTF-8 from PR text context.
+- Extends existing Session checkpoints with referenced official image/file bytes.
+  Restores the same canonical DSH log and attachment identities through official
+  storage APIs, with bounded integrity checks and current authorization.
+- Documents PDF/Office as opaque files with existing official Skill/MCP extension
+  paths; no document parser or conversion engine is added.
+- Retains the exact DSH `0.2.1-rc.2` runtime and the v0.10.2 Controller/Worker architecture.
+
 ## [0.10.3]
 
 - Upgrades the exact DSH package family to `0.2.1-rc.2`, adapts managed
