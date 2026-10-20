@@ -1,5 +1,6 @@
 import { mergeModelUsage, type ModelUsage } from "../dsh/usage.js";
-import type { DshRunResult, DshToolReceipt } from "../dsh/runner.js";
+import type { DshRunResult } from "../dsh/runner-types.js";
+import type { DshToolReceipt } from "../dsh/receipts.js";
 import type { DshFailureTelemetry } from "../dsh/errors.js";
 import type { AgentLoopStats, AgentToolReceipt } from "./loop-contracts.js";
 

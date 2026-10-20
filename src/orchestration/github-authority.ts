@@ -1,4 +1,4 @@
-import type { AgentToolReceipt } from "../agent/loop.js";
+import type { AgentToolReceipt } from "../agent/loop-contracts.js";
 import type { EntitySnapshot } from "../github/fetch.js";
 import type { parseGitHubContext } from "../github/context.js";
 import type { GitHubToolBackend } from "../tools/github-backend.js";

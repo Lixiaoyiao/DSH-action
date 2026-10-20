@@ -4,6 +4,10 @@ name: DSH commands
 on:
   issue_comment:
     types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
 
 permissions:
   actions: read
@@ -13,12 +17,14 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: dsh-command-${{ github.event.issue.number }}
+  group: dsh-command-${{ github.event.issue.number || github.event.pull_request.number }}
   cancel-in-progress: false
 
 jobs:
   command:
-    if: github.event.sender.id != 41898282 && contains(github.event.comment.body, '@dsh')
+    if: >-
+      github.event.sender.id != 41898282 &&
+      contains(github.event.comment.body || github.event.review.body, '@dsh')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -35,6 +41,9 @@ jobs:
           dsh-version: 0.2.1-rc.2
           permission-profile: standard
           isolation: docker
+          # Enable explicitly to accept clear requests such as
+          # "@dsh Please fix this bug and open a PR" through the validated write path.
+          natural-language-write: "false"
           allow-write: "true"
           run-tests: "true"
           validation-integrity: strict

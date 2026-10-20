@@ -58,12 +58,12 @@ function usage() {
     "  [--test-commands '<JSON argv arrays>'] [--container-image '<name>@sha256:<digest>']",
     "  [--import-plugins] [--dsh-home '<local DSH folder>']",
     "",
-    "Without flags, the guide sets up PR Review and your API key, then asks before committing and pushing.",
+    "Without flags, the guide sets up read-only @dsh chat, PR Review and your API key, then asks before committing and pushing.",
     "Use --advanced for interactive workflow/composition choices; explicit --mode generates files only.",
     "Use --import-plugins in a terminal to choose installed local DSH plugins for cloud installation.",
     "",
     "Workflow choices:",
-    "  1) PR Review",
+    "  1) Read-only @dsh chat + PR Review",
     "  2) @dsh Coding Commands",
     "  3) Both",
     "  4) Automatic Session",
@@ -288,7 +288,7 @@ async function promptForMode(readline, output) {
       await readline.question(
         [
           "Choose what to install:\n",
-          "  1) PR Review\n",
+          "  1) Read-only @dsh chat + PR Review\n",
           "  2) @dsh Coding Commands\n",
           "  3) Both\n",
           "  4) Automatic Session\n",
@@ -453,6 +453,16 @@ async function installWorkflows({
       await readFile(join(templateDirectory, definition.source), "utf8"),
     );
     assertReleaseBuiltTemplate(contents, definition.source);
+    // When both starters are installed, Commands owns interactive events.
+    // Keep automatic Review from answering the same mention a second time.
+    if (mode === "both" && definition.target.endsWith("dsh-review.yml")) {
+      contents = contents
+        .replace(
+          /^ {2}(?:issue_comment|pull_request_review_comment|pull_request_review):\r?\n {4}types: \[(?:created|submitted)\]\r?\n/gmu,
+          "",
+        )
+        .replace(/^ {2}issues: write\r?\n/mu, "");
+    }
     if (pluginImport)
       contents = (await import("./local-plugins.mjs")).addPluginInputs(
         contents,
@@ -557,8 +567,18 @@ function printSuccess(output, mode, dshMode, createdFiles, testCommands) {
   if (mode === "review" || mode === "both") {
     output.write("  Review: open or update a non-draft pull request.\n");
   }
+  if (mode === "review") {
+    output.write(
+      "  @dsh: comment @dsh Explain this issue in an Issue or PR. Requests are read-only.\n",
+    );
+  }
   if (mode === "commands" || mode === "both") {
-    output.write("  @dsh: start an Issue or pull request comment with an @dsh command.\n");
+    output.write(
+      "  @dsh: start a non-code line with @dsh and your request, or use an existing command.\n",
+    );
+    output.write(
+      "  Natural-language writes require natural-language-write: true, allow-write: true and a clear request to change code.\n",
+    );
   }
   if (mode === "session") {
     output.write(

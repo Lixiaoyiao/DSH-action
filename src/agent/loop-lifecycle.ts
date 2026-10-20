@@ -1,4 +1,5 @@
-import type { DshRunResult, DshRuntime } from "../dsh/runner.js";
+import type { DshRunResult } from "../dsh/runner-types.js";
+import type { DshRuntime } from "../dsh/runtime.js";
 import { throwIfCancelled } from "../lifecycle/cancellation.js";
 import { PHASE_TIMEOUTS, phaseTimeoutMs, settleWithin } from "../lifecycle/deadline.js";
 import { AgentDeadlineError } from "./loop-errors.js";

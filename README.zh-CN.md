@@ -49,19 +49,27 @@ gh auth login
 npm.cmd create deepseek-harness-action@latest
 ```
 
-默认引导安装**只读 PR Review**。安装器会显示目标仓库，在创建文件、设置密钥、提交和推送之前分别询问。在隐藏输入提示中粘贴 DeepSeek API Key，它会保存为该仓库的 `DEEPSEEK_API_KEY` Actions Secret。
+默认引导安装**只读 `@dsh` 对话和自动 PR Review**。安装器会显示目标仓库，在创建文件、设置密钥、提交和推送之前分别询问。在隐藏输入提示中粘贴 DeepSeek API Key，它会保存为该仓库的 `DEEPSEEK_API_KEY` Actions Secret。
 
 也可以手工添加：在 GitHub 仓库打开 **Settings → Secrets and variables → Actions → New repository secret**，名称填 `DEEPSEEK_API_KEY`，值填你的密钥。只在本地 DSH 中配置密钥，云端 Action 仍然无法使用它。
 
-### 4. 触发第一次 PR Review
+### 4. 直接向 `@dsh` 提问
 
 先让生成的 `.github/workflows/dsh-review.yml` 到达仓库默认分支，通常是 `main`。如果默认分支不能直接推送，先为工作流创建 PR 并合并。
 
-然后新建一个分支，做一个小改动，推送后创建**非草稿 PR**。Action 会把审查结果发到 PR 中。运行进度和失败原因可在仓库的 **Actions → DSH review** 查看。如果 PR 在安装前就已存在，向它推送一次新提交即可触发。Review 会评论代码，不会改动文件。
+具有仓库 write 权限的协作者可以直接在 Issue 或 PR 中评论：
+
+```text
+@dsh 帮我分析这个问题
+```
+
+让 `@dsh` 从引用、代码之外的一行开始即可，不需要固定子命令。Action 会在原讨论中回答。默认工作流中，即使写 `@dsh 修复这个 Bug`，也只会分析或提出修复建议，不会改动文件。运行进度和失败原因可在仓库的 **Actions → DSH review** 查看。
+
+需要自动审查时，创建**非草稿 PR**，或向已有 PR 推送一次新提交。Action 会发布审查结果，不改动 PR 文件。
 
 ### 可选：导入本地插件或安装其他功能
 
-需要选择 Review、Coding Commands、两者一起安装或自动 Session 时，使用 `--advanced`。已经有本地 DSH 插件时，再加 `--import-plugins`，安装器会列出已安装版本和兼容情况，让你选择并确认：
+需要选择只读对话与 Review、高级 Coding Commands、两者一起安装或自动 Session 时，使用 `--advanced`。已经有本地 DSH 插件时，再加 `--import-plugins`，安装器会列出已安装版本和兼容情况，让你选择并确认：
 
 ```powershell
 npm.cmd create deepseek-harness-action@latest -- --advanced --import-plugins
@@ -75,7 +83,7 @@ Native 模式可直接使用 DSH Bundle。Controlled 模式还会询问插件实
 npm.cmd create deepseek-harness-action@latest -- --mode both --dsh-mode native
 ```
 
-默认仍为 Controlled。需要自动修改代码时，还要配置明确的验证命令，安装器会给出提示。安装器 `0.7.1` 对应 Action `v0.11.0` 和 DSH `0.2.1-rc.2`；打包通过 `DSH_ACTION_RELEASE_SHA` 绑定已验证的 Action commit，源码 Tag 为 `create-deepseek-harness-action-v0.7.1`。手工安装和故障恢复见[安装指南](docs/setup.zh-CN.md)。
+默认仍为 Controlled。自然语言写入需要在支持写入的工作流中同时配置 `natural-language-write: "true"`、`allow-write: "true"`，提供适合项目的验证命令，并明确要求修改代码，例如 `@dsh 修复这个 Bug 并提交 PR`。高级 Commands 模板默认关闭自然语言写入这一独立开关；旧的 `fix`、`implement` 和 `task --write` 保留原有写入请求语义。安装器 `0.7.1` 对应 Action `v0.11.0` 和 DSH `0.2.1-rc.2`；打包通过 `DSH_ACTION_RELEASE_SHA` 绑定已验证的 Action commit，源码 Tag 为 `create-deepseek-harness-action-v0.7.1`。手工安装和故障恢复见[安装指南](docs/setup.zh-CN.md)。
 
 ### 手工安装
 
@@ -87,29 +95,48 @@ name: DSH review
 on:
   pull_request_target:
     types: [opened, synchronize, ready_for_review, reopened]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
 
 permissions:
   contents: read
+  issues: write
   pull-requests: write
+
+concurrency:
+  group: dsh-${{ github.event_name == 'pull_request_target' && 'review' || 'chat' }}-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
 
 jobs:
   review:
-    if: github.event.pull_request.draft == false
+    if: >-
+      (github.event_name == 'pull_request_target' && github.event.pull_request.draft == false) ||
+      (github.event.sender.type != 'Bot' &&
+      contains(github.event.comment.body || github.event.review.body, '@dsh'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Checkout trusted base or default branch only
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
           persist-credentials: false
           fetch-depth: 1
-      - uses: Lixiaoyiao/deepseek-harness-action@v0.11.0
+      - uses: Lixiaoyiao/deepseek-harness-action@v0.12.0
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           dsh-version: 0.2.1-rc.2
+          permission-profile: strict
+          isolation: docker
+          natural-language-write: "false"
+          allow-write: "false"
 ```
 
-打开一个非 draft PR。Action 只会检出受信任的 base SHA，通过 GitHub API 读取 PR，并且不会运行 fork 中的代码。
+在 Issue/PR 评论 `@dsh 帮我分析这个问题`，或打开非 draft PR 进行自动审查。Action 只检出受信任的 base/default branch，通过 GitHub API 读取 PR，不运行 fork 中的代码。`issues: write` 和 `pull-requests: write` 供 Controller 发布回复使用，代码仍然只读。
 
 生产环境应绑定对应 GitHub Release 公布的完整 commit。正式版本通过验证后，解析对应不可变 tag 的完整 SHA；安装器版本和其绑定的 Action commit 是独立的发布身份。权限、版本固定、安全检出规则和完整模板见[安装指南](docs/setup.zh-CN.md)。
 
@@ -151,20 +178,24 @@ Action 支持[按 key 自动创建或续接 Session](docs/zh-CN/session.md)，�
 | 在受信任写模式下修复并验证      | [Actions run](https://github.com/Lixiaoyiao/deepseek-harness-action/actions/runs/31761793492)                                                                         |
 | 实现 Issue 后创建 PR            | [Issue #4](https://github.com/Lixiaoyiao/deepseek-harness-action/issues/4) → [PR #5](https://github.com/Lixiaoyiao/deepseek-harness-action/pull/5)                    |
 
-## 常用 `@dsh` 命令
+## 自然语言与原有 `@dsh` 命令
 
-命令必须写在 Issue 或 PR 评论的第一行。
+在 Issue/PR 评论、PR review 或行内评论中，让 `@dsh` 从代码之外的一行开始，后面直接写需求即可。前面可以有背景说明或空行；每条评论使用一个实际调用。引用、代码块、行内代码和机器人发布的自然语言不会触发任务。`请让 @dsh 看一下` 这类句中提及也不会触发。
 
-| 命令                       | 用途                               |
-| -------------------------- | ---------------------------------- |
-| `@dsh task --read <问题>`  | 解释代码、检查仓库或回答通用问题   |
-| `@dsh task --write <任务>` | 请求编码任务；所有写入关卡仍须通过 |
-| `@dsh review`              | 重新审查当前 PR                    |
-| `@dsh diagnose`            | 诊断失败的检查和日志               |
-| `@dsh fix`                 | 在受信任写模式下修复同仓库 PR      |
-| `@dsh implement`           | 实现 Issue 并创建 PR               |
+| 命令                          | 用途                                                       |
+| ----------------------------- | ---------------------------------------------------------- |
+| `@dsh 帮我分析这个问题`       | 通用任务；默认只读，除非工作流明确启用写任务               |
+| `@dsh 修复这个 Bug 并提交 PR` | 仅在工作流开启自然语言写入并满足原有写入关卡时，请求写任务 |
+| `@dsh task --read <问题>`     | 解释代码、检查仓库或回答通用问题                           |
+| `@dsh task --write <任务>`    | 请求编码任务；所有写入关卡仍须通过                         |
+| `@dsh review`                 | 重新审查当前 PR                                            |
+| `@dsh diagnose`               | 诊断失败的检查和日志                                       |
+| `@dsh fix`                    | 在受信任写模式下修复同仓库 PR                              |
+| `@dsh implement`              | 实现 Issue 并创建 PR                                       |
 
-`--write`、`fix` 和 `implement` 只是请求能力，并不授予权限。workflow 必须显式启用写模式，并提供由 Controller 执行的验证命令。命令和自动化用法见[使用指南](docs/usage.zh-CN.md)，完整关卡见[配置参考](docs/configuration.md)。
+紧跟 `@dsh` 的首个词如果是 `task`、`review`、`diagnose`、`fix` 或 `implement`，仍按原有命令处理，不区分大小写。例如 `@dsh fix` 是显式写请求，不受自然语言写入开关控制；默认只读 starter 会拒绝它。自然语言可以使用 `@dsh 修复这个 Bug` 或 `@dsh Please fix this bug`。
+
+`--write`、`fix` 和 `implement` 只是请求能力，并不授予权限。workflow 必须显式启用写模式，并提供由 Controller 执行的验证命令。自然语言默认只读；只有启用 `natural-language-write` 且明确要求修改代码时，才会请求写入。`task-access` 不会启用自然语言写入。命令和自动化用法见[使用指南](docs/usage.zh-CN.md)，完整关卡见[配置参考](docs/configuration.md)。
 
 维护者可以修改 trigger phrase，添加 label/assignee 路由，过滤 actor 或历史评论，选择 base branch，并配置确定性 branch template。这些设置只改变路由和命名；GitHub authority 仍由 Controller policy 与 workflow token scope 决定。
 

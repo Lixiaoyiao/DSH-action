@@ -1,6 +1,6 @@
 import { isRecord } from "../security/record.js";
 import type { ActionInputs } from "../inputs.js";
-import { areContextActorsAllowed, normalizeActor } from "../github/actors.js";
+import { areContextActorsAllowed, isAllowedActor, normalizeActor } from "../github/actors.js";
 import type { GitHubContext } from "../github/context.js";
 import { isAutomaticReviewAction } from "../github/events.js";
 import { removeMarkdownImages } from "../security/redaction.js";
@@ -62,6 +62,19 @@ export function mentionBody(context: GitHubContext): string | undefined {
     }
   }
   return undefined;
+}
+
+function mentionBotActors(context: GitHubContext): readonly string[] {
+  const payload = context.payload;
+  const entry = context.rawEventName === "pull_request_review" ? payload.review : payload.comment;
+  const author = isRecord(entry) ? entry.user : undefined;
+  const actors = /\[bot\]$/iu.test(context.actor) ? [context.actor] : [];
+  for (const identity of [author, payload.sender]) {
+    if (!isRecord(identity)) continue;
+    const login = typeof identity.login === "string" ? identity.login : context.actor;
+    if (identity.type === "Bot" || /\[bot\]$/iu.test(login)) actors.push(login);
+  }
+  return actors;
 }
 
 function payloadStringProperty(
@@ -129,7 +142,12 @@ export function routeCommand(context: GitHubContext, inputs: ActionInputs): Rout
 
   const body = mentionBody(context);
   if (body !== undefined) {
-    const parsed = parseCommand(body, inputs.triggerPhrase);
+    const botActors = mentionBotActors(context);
+    if (botActors.some((actor) => !isAllowedActor(actor, inputs.allowedBots))) return null;
+    const parsed = parseCommand(body, inputs.triggerPhrase, {
+      naturalLanguageWrite: inputs.naturalLanguageWrite,
+      allowNaturalLanguage: botActors.length === 0,
+    });
     if (parsed !== null) {
       return {
         ...parsed,

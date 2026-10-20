@@ -2,7 +2,8 @@ import type { Operation, RequestedAccess } from "../commands/parse.js";
 import type { SecurityPolicy } from "../security/policy.js";
 import type { EffectiveTools } from "../tools/registry.js";
 import type { AgentEngine, ToolProvider } from "./contracts.js";
-import type { DshRunResult, DshRuntime } from "../dsh/runner.js";
+import type { DshRunResult } from "../dsh/runner-types.js";
+import type { DshRuntime } from "../dsh/runtime.js";
 import type { DshFailureTelemetry } from "../dsh/errors.js";
 import type { ValidationFailureError } from "../write/validate.js";
 

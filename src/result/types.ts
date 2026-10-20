@@ -1,8 +1,9 @@
 import type { ModelUsage } from "../dsh/usage.js";
 import type { Operation } from "../commands/parse.js";
-import type { AgentToolReceipt } from "../agent/loop.js";
+import type { AgentToolReceipt } from "../agent/loop-contracts.js";
 import type { ActionErrorCategory } from "../errors.js";
-import type { DshIsolationReport, DshToolReceipt } from "../dsh/runner.js";
+import type { DshIsolationReport } from "../dsh/runner-types.js";
+import type { DshToolReceipt } from "../dsh/receipts.js";
 import type { AnyExtensionAudit } from "../extensions/plan.js";
 import type { PermissionAudit, ToolPolicyAudit } from "../permissions/profile.js";
 import type { DshMode } from "../dsh/composition.js";

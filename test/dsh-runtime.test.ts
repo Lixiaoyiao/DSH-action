@@ -110,6 +110,55 @@ describe("run-scoped DSH runtime", () => {
     });
   });
 
+  it("preserves the released binding fingerprints across normalized runtime modes", () => {
+    const windows = process.platform === "win32";
+    const workspacePath = windows ? "C:\\dsh-workspace\\fixture" : "/dsh-workspace/fixture";
+    const base = binding({ workspacePath, dshVersion: "0.2.1-rc.2" });
+    // Captured from the released serializer before removing its duplicate projection.
+    const cases: readonly [DshRuntimeBinding, string][] = [
+      [
+        base,
+        windows
+          ? "4755230d78d0b604444d50616af9fb1bbef01b346a0e6b4e472a97bbbcb950ef"
+          : "6f5605b122f051c91c4f3735ad1a72d31f715ba70974cdc3f3678271d6910049",
+      ],
+      [
+        {
+          ...base,
+          compositionId: "dsh-native-headless",
+          webSearchProxy: true,
+          webSearchBaseUrl: "https://SEARCH.EXAMPLE.TEST:443/anthropic/v1///?ignored=yes#fragment",
+          nativeRuntimeTools: ["web_search", "read", "read", "bash"],
+          workspaceWrite: true,
+          network: true,
+        },
+        windows
+          ? "00bcf1b186913000de3f389cd1437cbc8cf6b78f3089215a2fc94f33d2419cb2"
+          : "54192446311f5f2e058a818affe59d07a6ec34981ddc50155d5150ea41bd9192",
+      ],
+      [
+        {
+          ...base,
+          isolation: "none",
+          dshExecutableIdentity: windows ? "C:\\dsh-runtime\\bin.js" : "/dsh-runtime/bin.js",
+          profileSchemaVersion: 2,
+        },
+        windows
+          ? "b42ba8fc666a1ed9a1aebc993bbad8fcd0a1e2cba28b13c909f7396149c9bddd"
+          : "a834970ede3c5fcb671530b33abe3c28164d1b64f93b180717d8956061c23db7",
+      ],
+    ];
+    for (const [requested, expected] of cases) {
+      expect(fingerprintDshRuntimeBinding(requested)).toBe(expected);
+      const runtime = runtimeStub();
+      expect(bindDshRuntime(runtime, requested).fingerprint).toBe(expected);
+      expect(bindDshRuntime(runtime, requested).fingerprint).toBe(expected);
+      expect(
+        fingerprintDshRuntimeBinding(Object.assign({}, requested, { ignored: "extra field" })),
+      ).toBe(expected);
+    }
+  });
+
   it("rejects every authorization-relevant field change with the field name", () => {
     const changes: readonly [
       keyof DshRuntimeBinding,

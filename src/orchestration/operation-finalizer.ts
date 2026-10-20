@@ -2,7 +2,7 @@ import { AgentDeadlineError } from "../agent/loop-errors.js";
 import { finishDiagnosis } from "../commands/diagnose.js";
 import { finishReview } from "../commands/review.js";
 import { publishTaskAnswer } from "../commands/task.js";
-import type { DshRunResult } from "../dsh/runner.js";
+import type { DshRunResult } from "../dsh/runner-types.js";
 import { PolicyDeniedError } from "../errors.js";
 import type { GitHubClient } from "../github/client.js";
 import type { PullRequestSnapshot } from "../github/fetch.js";

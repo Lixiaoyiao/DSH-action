@@ -49,19 +49,27 @@ Choose GitHub.com and browser sign-in. The `origin` remote should point to the r
 npm.cmd create deepseek-harness-action@latest
 ```
 
-The guide starts with **read-only PR Review**. It shows the target repository and asks before creating files, setting the key, committing and pushing. Paste your DeepSeek API key at the hidden prompt. It is saved as the repository Actions secret `DEEPSEEK_API_KEY`.
+The guide installs **read-only `@dsh` conversation and automatic PR Review**. It shows the target repository and asks before creating files, setting the key, committing and pushing. Paste your DeepSeek API key at the hidden prompt. It is saved as the repository Actions secret `DEEPSEEK_API_KEY`.
 
 To add it manually, open **Settings → Secrets and variables → Actions → New repository secret** on GitHub. Set the name to `DEEPSEEK_API_KEY` and paste the key as its value. A key stored in local DSH does not configure this secret.
 
-### 4. Trigger your first PR Review
+### 4. Ask `@dsh` a question
 
 Make sure `.github/workflows/dsh-review.yml` is on the default branch, usually `main`. If direct pushes are blocked, submit and merge a PR containing the workflow first.
 
-Create a branch, make a small change, push it and open a **non-draft pull request**. The Action posts a review on the PR. Follow progress or read failure details under **Actions → DSH review**. For a PR opened before installation, push a new commit to trigger it. Review comments on code without changing your files.
+As a repository collaborator with write access, add a comment in an Issue or PR:
+
+```text
+@dsh Help me understand this issue
+```
+
+You can also use `@dsh 帮我分析这个问题`. Start `@dsh` on a line outside quotes or code; a fixed subcommand is optional. The Action replies in the thread. Requests such as `@dsh Please fix this bug` remain read-only in this starter: they produce an analysis or proposed fix without editing files. Follow progress or read failure details under **Actions → DSH review**.
+
+For automatic review, open a **non-draft pull request** or push a new commit to an existing one. The Action reviews the PR without changing its files.
 
 ### Optional: local plugins and other workflows
 
-Choose Review, Coding Commands, both, or automatic Session with `--advanced`. If you already have local DSH plugins, add `--import-plugins` to list their installed versions and compatibility, select packages, and confirm:
+Choose read-only conversation + Review, advanced Coding Commands, both, or automatic Session with `--advanced`. If you already have local DSH plugins, add `--import-plugins` to list their installed versions and compatibility, select packages, and confirm:
 
 ```powershell
 npm.cmd create deepseek-harness-action@latest -- --advanced --import-plugins
@@ -75,7 +83,7 @@ File-only and non-interactive setup remains available:
 npm.cmd create deepseek-harness-action@latest -- --mode both --dsh-mode native
 ```
 
-Controlled remains the default. Coding writes require explicit validation commands; the installer tells you where to configure them. Installer `0.7.1` targets Action `v0.11.0` and DSH `0.2.1-rc.2`. Its build binds the qualified Action commit through `DSH_ACTION_RELEASE_SHA`; its source tag is `create-deepseek-harness-action-v0.7.1`. See the [setup guide](docs/setup.md) for manual setup and recovery.
+Controlled remains the default. Natural-language writes require both `natural-language-write: "true"` and `allow-write: "true"` in a write-capable workflow, repository-specific validation commands, and a clear request such as `@dsh Please fix this bug and open a PR`. The advanced Commands starter keeps the independent natural-language switch off; legacy `fix`, `implement` and `task --write` retain their existing write requests. Installer `0.7.1` targets Action `v0.11.0` and DSH `0.2.1-rc.2`. Its build binds the qualified Action commit through `DSH_ACTION_RELEASE_SHA`; its source tag is `create-deepseek-harness-action-v0.7.1`. See the [setup guide](docs/setup.md) for manual setup and recovery.
 
 ### Manual installation
 
@@ -87,29 +95,48 @@ name: DSH review
 on:
   pull_request_target:
     types: [opened, synchronize, ready_for_review, reopened]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
 
 permissions:
   contents: read
+  issues: write
   pull-requests: write
+
+concurrency:
+  group: dsh-${{ github.event_name == 'pull_request_target' && 'review' || 'chat' }}-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
 
 jobs:
   review:
-    if: github.event.pull_request.draft == false
+    if: >-
+      (github.event_name == 'pull_request_target' && github.event.pull_request.draft == false) ||
+      (github.event.sender.type != 'Bot' &&
+      contains(github.event.comment.body || github.event.review.body, '@dsh'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Checkout trusted base or default branch only
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
           persist-credentials: false
           fetch-depth: 1
-      - uses: Lixiaoyiao/deepseek-harness-action@v0.11.0
+      - uses: Lixiaoyiao/deepseek-harness-action@v0.12.0
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           dsh-version: 0.2.1-rc.2
+          permission-profile: strict
+          isolation: docker
+          natural-language-write: "false"
+          allow-write: "false"
 ```
 
-Open a non-draft pull request. The Action checks out only the trusted base SHA, reads the pull request through GitHub APIs, and never executes fork code.
+Comment `@dsh Help me understand this issue` in an Issue/PR, or open a non-draft PR for automatic review. The Action checks out only the trusted base/default branch, reads pull requests through GitHub APIs, and never executes fork code. `issues: write` and `pull-requests: write` let the Controller publish replies; code remains read-only.
 
 For production, pin the complete commit published in the corresponding GitHub Release. Resolve the corresponding immutable release tag to its full SHA after qualification; the installer version and its Action binding are independent release identities. See [Setup](docs/setup.md) for permissions, pinning, checkout rules, and complete templates.
 
@@ -152,20 +179,24 @@ These public runs show the comments and Actions logs produced by this repository
 | Fix and validation in trusted write mode                | [Actions run](https://github.com/Lixiaoyiao/deepseek-harness-action/actions/runs/31761793492)                                                                         |
 | Issue implementation followed by a pull request         | [Issue #4](https://github.com/Lixiaoyiao/deepseek-harness-action/issues/4) → [PR #5](https://github.com/Lixiaoyiao/deepseek-harness-action/pull/5)                    |
 
-## Common `@dsh` commands
+## Natural requests and existing `@dsh` commands
 
-Put the command on the first line of an Issue or pull request comment.
+Write `@dsh` followed by your request on a non-code line of an Issue or PR comment, PR review, or inline review comment. It may follow context or blank lines. Use one actionable mention per comment. Quoted examples, code blocks, inline code and bot-authored natural requests do not trigger a task. Mid-sentence mentions such as `Please ask @dsh about this` are ignored.
 
-| Command                       | Purpose                                                            |
-| ----------------------------- | ------------------------------------------------------------------ |
-| `@dsh task --read <question>` | Explain code, inspect the repository, or answer a general question |
-| `@dsh task --write <task>`    | Request a coding task; every write gate must still pass            |
-| `@dsh review`                 | Review the current pull request again                              |
-| `@dsh diagnose`               | Diagnose failed checks and logs                                    |
-| `@dsh fix`                    | Repair a same-repository pull request in trusted write mode        |
-| `@dsh implement`              | Implement an Issue and open a pull request                         |
+| Command                                  | Purpose                                                                                            |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `@dsh Explain this failure`              | Run a general task; read-only unless the workflow explicitly enables write tasks                   |
+| `@dsh Please fix this bug and open a PR` | Request a write task only when the workflow enables natural-language writes and normal write gates |
+| `@dsh task --read <question>`            | Explain code, inspect the repository, or answer a general question                                 |
+| `@dsh task --write <task>`               | Request a coding task; every write gate must still pass                                            |
+| `@dsh review`                            | Review the current pull request again                                                              |
+| `@dsh diagnose`                          | Diagnose failed checks and logs                                                                    |
+| `@dsh fix`                               | Repair a same-repository pull request in trusted write mode                                        |
+| `@dsh implement`                         | Implement an Issue and open a pull request                                                         |
 
-`--write`, `fix`, and `implement` request capabilities; they do not grant them. The workflow must explicitly enable write mode and provide Controller-run validation. See [Usage](docs/usage.md) for commands and automation, and [Configuration](docs/configuration.md) for the gates.
+The first words `task`, `review`, `diagnose`, `fix` and `implement` retain their existing command semantics, case-insensitively. For example, `@dsh fix` is an explicit write request even when natural-language writes are disabled; the read-only starter denies it. Use `@dsh Please fix this bug` for a natural request.
+
+`--write`, `fix`, and `implement` request capabilities; they do not grant them. The workflow must explicitly enable write mode and provide Controller-run validation. Natural requests are read-only unless `natural-language-write` is enabled and the request clearly asks to change code. `task-access` does not enable natural-language writes. See [Usage](docs/usage.md) for commands and automation, and [Configuration](docs/configuration.md) for the gates.
 
 Maintainers can change the trigger phrase, add label/assignee routes, filter actors or historical comments, select a base branch, and choose a deterministic branch template. These settings change routing and naming only; GitHub authority still comes from the Controller policy and workflow token scopes.
 

@@ -41,17 +41,18 @@ secret recipient.
 
 <!-- BEGIN GENERATED ACTION INPUTS: operation -->
 
-| Input                | Required/default | Description                                                                                                                                                                                                      |
-| -------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `allow-write`        | `false`          | Allow trusted same-repository task/fix/implement writes after all trust gates pass.                                                                                                                              |
-| `command`            | `auto`           | Optional explicit operation: task, review, diagnose, fix, implement, or auto.                                                                                                                                    |
-| `task-access`        | `read`           | Capability requested by an explicit task: read or write. Write still requires allow-write and every policy gate.                                                                                                 |
-| `prompt`             | Empty            | Trusted task prompt. With command=auto on dispatch/schedule events, a non-empty prompt selects generic task mode.                                                                                                |
-| `prompt-file`        | Empty            | Explicit maintainer-selected UTF-8 task file from the repository default branch, pinned to its resolved commit SHA. Mutually exclusive with prompt; interactive command instructions keep precedence. Text only. |
-| `context-files`      | `[]`             | JSON array of at most 8 explicit repository-relative text paths from the bound task revision. Attached as untrusted context, never authority; no globs, symlinks, runner paths, images, or Office files.         |
-| `task-output-schema` | Empty            | Optional bounded maintainer-owned JSON Schema for a Controller-validated final taskOutput. Strict envelope validation still applies; it never replaces result-json or grants authority.                          |
-| `max-findings`       | `20`             | Maximum high-confidence findings to publish.                                                                                                                                                                     |
-| `progress-comment`   | `true`           | Create or update one controller-owned sticky comment at major lifecycle stages, reusing the operation's result marker.                                                                                           |
+| Input                    | Required/default | Description                                                                                                                                                                                                                                        |
+| ------------------------ | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `allow-write`            | `false`          | Allow trusted same-repository task/fix/implement writes after all trust gates pass.                                                                                                                                                                |
+| `natural-language-write` | `false`          | Allow an explicit natural-language change request to request write access. Ambiguous requests stay read-only. This independent opt-in never replaces allow-write, actor trust, validation or Gateway authorization; legacy commands are unchanged. |
+| `command`                | `auto`           | Optional explicit operation: task, review, diagnose, fix, implement, or auto.                                                                                                                                                                      |
+| `task-access`            | `read`           | Capability requested by an explicit task: read or write. Natural-language mentions use their separate natural-language-write opt-in. Write still requires allow-write and every policy gate.                                                       |
+| `prompt`                 | Empty            | Trusted task prompt. With command=auto on dispatch/schedule events, a non-empty prompt selects generic task mode.                                                                                                                                  |
+| `prompt-file`            | Empty            | Explicit maintainer-selected UTF-8 task file from the repository default branch, pinned to its resolved commit SHA. Mutually exclusive with prompt; interactive command instructions keep precedence. Text only.                                   |
+| `context-files`          | `[]`             | JSON array of at most 8 explicit repository-relative text paths from the bound task revision. Attached as untrusted context, never authority; no globs, symlinks, runner paths, images, or Office files.                                           |
+| `task-output-schema`     | Empty            | Optional bounded maintainer-owned JSON Schema for a Controller-validated final taskOutput. Strict envelope validation still applies; it never replaces result-json or grants authority.                                                            |
+| `max-findings`           | `20`             | Maximum high-confidence findings to publish.                                                                                                                                                                                                       |
+| `progress-comment`       | `true`           | Create or update one controller-owned sticky comment at major lifecycle stages, reusing the operation's result marker.                                                                                                                             |
 
 <!-- END GENERATED ACTION INPUTS: operation -->
 
@@ -65,18 +66,18 @@ confirmed no-change task can publish only its answer and performs no mutation.
 
 <!-- BEGIN GENERATED ACTION INPUTS: routing -->
 
-| Input                       | Required/default | Description                                                                                                                                                 |
-| --------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `trigger-phrase`            | `@dsh`           | Maintainer-controlled literal used for first-line comment commands. Routing only; it never grants authority.                                                |
-| `label-trigger`             | Empty            | Optional exact label that routes Issue tasks or pull request reviews. Empty disables this route.                                                            |
-| `assignee-trigger`          | Empty            | Optional exact assignee login that routes Issue tasks or pull request reviews. Empty disables this route.                                                   |
-| `allowed-actors`            | `*`              | Comma-separated maintainer routing allowlist for originating actors. \* preserves the default route; authorization remains separate.                        |
-| `allowed-bots`              | Empty            | Comma-separated bot allowlist. Empty preserves the fail-closed bot write gate; listed bots still need repository write permission.                          |
-| `include-comments-by-actor` | Empty            | Optional comma-separated allowlist for historical comments included as untrusted context. The audited trigger comment is retained.                          |
-| `exclude-comments-by-actor` | Empty            | Optional comma-separated deny list for historical comment context. Exclusion wins over inclusion.                                                           |
-| `base-branch`               | Empty            | Maintainer-selected base branch for Issue and automation tasks. Empty uses the trusted repository default branch; PR fixes stay bound to their head.        |
-| `branch-prefix`             | `dsh/`           | Validated prefix for Controller-created task branches.                                                                                                      |
-| `branch-name-template`      | Empty            | Optional deterministic branch template using {{prefix}}, {{key}}, {{operation}}, {{entityType}}, and {{entityNumber}}; {{prefix}} and {{key}} are required. |
+| Input                       | Required/default | Description                                                                                                                                                                    |
+| --------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `trigger-phrase`            | `@dsh`           | Maintainer-controlled literal starting a direct, unquoted, non-code comment line. Accepts natural-language tasks and legacy commands. Routing only; it never grants authority. |
+| `label-trigger`             | Empty            | Optional exact label that routes Issue tasks or pull request reviews. Empty disables this route.                                                                               |
+| `assignee-trigger`          | Empty            | Optional exact assignee login that routes Issue tasks or pull request reviews. Empty disables this route.                                                                      |
+| `allowed-actors`            | `*`              | Comma-separated maintainer routing allowlist for originating actors. \* preserves the default route; authorization remains separate.                                           |
+| `allowed-bots`              | Empty            | Comma-separated bot allowlist. Empty preserves the fail-closed bot write gate; listed bots still need repository write permission.                                             |
+| `include-comments-by-actor` | Empty            | Optional comma-separated allowlist for historical comments included as untrusted context. The audited trigger comment is retained.                                             |
+| `exclude-comments-by-actor` | Empty            | Optional comma-separated deny list for historical comment context. Exclusion wins over inclusion.                                                                              |
+| `base-branch`               | Empty            | Maintainer-selected base branch for Issue and automation tasks. Empty uses the trusted repository default branch; PR fixes stay bound to their head.                           |
+| `branch-prefix`             | `dsh/`           | Validated prefix for Controller-created task branches.                                                                                                                         |
+| `branch-name-template`      | Empty            | Optional deterministic branch template using {{prefix}}, {{key}}, {{operation}}, {{entityType}}, and {{entityNumber}}; {{prefix}} and {{key}} are required.                    |
 
 <!-- END GENERATED ACTION INPUTS: routing -->
 

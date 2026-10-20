@@ -165,4 +165,5 @@ export class DshProxyError extends DshError {
   }
 }
 import type { AnyExtensionAudit } from "../extensions/plan.js";
-import type { DshIsolationReport, DshToolReceipt } from "./runner.js";
+import type { DshIsolationReport } from "./runner-types.js";
+import type { DshToolReceipt } from "./receipts.js";

@@ -9,6 +9,43 @@ permissions:
   contents: read
 
 jobs:
+  windows:
+    name: Windows full check
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify exact candidate checkout
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$(git rev-parse HEAD)" == "$CANDIDATE_SHA" ]]
+          ! git config --local --get-regexp '^(http\..*\.extraheader|credential\.)' >/dev/null 2>&1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Canonicalize Windows temporary directory
+        # Hosted Windows can expose TEMP through an 8.3 alias. Keep the same
+        # physical directory with the canonical spelling used by path checks.
+        shell: pwsh
+        run: |
+          @'
+          import { appendFile, realpath } from "node:fs/promises";
+          import { tmpdir } from "node:os";
+          const temporaryDirectory = await realpath(tmpdir());
+          await appendFile(process.env.GITHUB_ENV, `TEMP=${temporaryDirectory}\nTMP=${temporaryDirectory}\n`);
+          console.log(`Windows temporary directory: ${temporaryDirectory}`);
+          '@ | node --input-type=module
+      - run: npm ci
+      - run: npm run check
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 30

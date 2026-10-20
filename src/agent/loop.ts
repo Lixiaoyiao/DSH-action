@@ -1,8 +1,8 @@
 import { LoopTelemetry } from "./loop-telemetry.js";
 import { invokeControllerTool } from "./tool-invocation.js";
 import { AGENT_PROTOCOL_VERSION, type AgentEngine } from "./contracts.js";
-import { createDshRuntime, disposeDshRuntime, type DshRunResult } from "../dsh/runner.js";
-import { withDshRuntimeActivity } from "../dsh/runtime.js";
+import { createDshRuntime, disposeDshRuntime, withDshRuntimeActivity } from "../dsh/runtime.js";
+import type { DshRunResult } from "../dsh/runner-types.js";
 import { DshError, DshMalformedOutputError } from "../dsh/errors.js";
 import { parseDshOutput } from "../dsh/schema.js";
 import type { ActionInputs } from "../inputs.js";

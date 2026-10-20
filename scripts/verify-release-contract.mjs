@@ -306,7 +306,7 @@ assert.ok(
 );
 for (const expected of [
   "pull_request_target:",
-  "ref: ${{ github.event.pull_request.base.sha }}",
+  "ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}",
   "contents: read",
   "pull-requests: write",
   'allow-write: "false"',

@@ -322,6 +322,70 @@ describe("buildDshPrompt", () => {
     expect(prompt).not.toContain("delegate to one managed depth-1 subagent");
   });
 
+  it.each(["task", "fix", "implement"] as const)(
+    "distinguishes Worker tools from post-final Controller publication for trusted-write %s",
+    (operation) => {
+      for (const policyOwner of ["controller", "dsh"] as const) {
+        const prompt = buildDshPrompt({
+          operation,
+          prompt: "Complete the authorized workspace change.",
+          trust: "trusted-write",
+          toolPolicy:
+            policyOwner === "dsh"
+              ? { policyOwner }
+              : { policyOwner, nativeTools: ["workspace.edit"] },
+          toolCatalog: [],
+        });
+        expect(prompt).toContain("Complete authorized workspace edits");
+        expect(prompt).toContain("report only observed changes and validation results");
+        expect(prompt).toContain(
+          "After state=final, the Controller validates and publishes eligible changes",
+        );
+        expect(prompt).toContain(
+          "an empty Controller tool catalog does not disable that post-final publication",
+        );
+        expect(prompt).toContain(
+          "Do not claim that a commit, push, or pull request has succeeded or failed before the Controller reports its outcome",
+        );
+        expect(prompt).toContain(
+          "GitHub operations requested during Worker execution require an explicitly listed typed Controller tool",
+        );
+        expect(prompt).toContain("or perform GitHub commit/push/PR/release operations directly");
+        expect(prompt).toContain("<TRUSTED_TOOL_CATALOG_JSON>[]</TRUSTED_TOOL_CATALOG_JSON>");
+        expect(prompt).not.toContain(
+          "GitHub effects require an explicitly listed typed Controller tool",
+        );
+      }
+    },
+  );
+
+  it.each([
+    ["task", "trusted-read"],
+    ["fix", "trusted-read"],
+    ["implement", "trusted-read"],
+    ["task", "untrusted"],
+    ["fix", "untrusted"],
+    ["implement", "untrusted"],
+    ["review", "trusted-write"],
+    ["diagnose", "trusted-write"],
+  ] as const)("does not instruct %s/%s to rely on post-final writes", (operation, trust) => {
+    for (const policyOwner of ["controller", "dsh"] as const) {
+      const prompt = buildDshPrompt({
+        operation,
+        prompt: "Analyze the supplied context.",
+        trust,
+        toolPolicy: policyOwner === "dsh" ? { policyOwner } : { policyOwner, nativeTools: [] },
+        toolCatalog: [],
+      });
+      expect(prompt).not.toContain(
+        "After state=final, the Controller validates and publishes eligible changes",
+      );
+      expect(prompt).not.toContain(
+        "an empty Controller tool catalog does not disable that post-final publication",
+      );
+    }
+  });
+
   it("retains untrusted tool denial and native DSH inventory ownership under the final-text rule", () => {
     const untrusted = buildDshPrompt({
       operation: "review",
@@ -346,7 +410,9 @@ describe("buildDshPrompt", () => {
     expect(native).toContain("current DSH permission mode");
     expect(native).toContain("an empty array does not disable authorized DSH runtime tools");
     expect(native).toContain("Your final assistant text must be exactly one JSON object");
-    expect(native).toContain("GitHub effects require an explicitly listed typed Controller tool");
+    expect(native).toContain(
+      "GitHub operations requested during Worker execution require an explicitly listed typed Controller tool",
+    );
   });
 
   it("keeps trusted operator instructions outside the untrusted data envelope", () => {

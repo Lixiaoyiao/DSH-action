@@ -23,6 +23,7 @@ export function inputs(
     deepseekApiKey: "secret",
     githubToken: "token",
     allowWrite: false,
+    naturalLanguageWrite: false,
     command: "auto",
     taskAccess: "read",
     prompt: "",

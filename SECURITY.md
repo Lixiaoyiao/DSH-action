@@ -22,10 +22,12 @@ GitHub. A trusted actor never makes repository content trusted.
 ### 1. Actor and control-plane trust
 
 The checked-in workflow configuration and explicit action inputs are trusted
-control-plane configuration. An interactive command is recognized only from
-the first line of the triggering comment or review. After authorization, the
-parsed first-line remainder and all subsequent command-body lines are treated
-as operator instructions. An authorized operator must not paste untrusted
+control-plane configuration. An interactive request is recognized only from
+one direct, unquoted, non-code line starting with the configured trigger in
+the triggering comment or review. Quoted examples, code and natural-language
+requests from bots do not trigger work. After authorization, the request and
+its surrounding comment body are treated as operator instructions.
+An authorized operator must not paste untrusted
 Issue text, logs or third-party output into that command body without accepting
 that control-plane promotion.
 
@@ -42,6 +44,11 @@ that control-plane promotion.
   least one configured `test-commands` argv array, and successful execution of
   every validation command. `run-tests=false` denies the write and is not a
   waiver.
+- `natural-language-write` is a separate, default-off routing opt-in. Even when
+  enabled, only an explicit change request may request write access; ambiguous
+  or explanatory requests remain read-only. It cannot replace `allow-write`,
+  actor/origin checks, validation or the Gateway. Existing explicit commands
+  retain their current access semantics.
 - GitHub workflow token permissions are a separate gate. They grant the
   controller API access but cannot bypass actor, origin, event or policy checks.
 

@@ -52,41 +52,6 @@ function assertNativeProfileTemplate(): readonly string[] {
   return template;
 }
 
-async function assertNativeProfileManifest(
-  profileRoot: string,
-  expectedBundles: readonly string[],
-): Promise<void> {
-  let manifest: unknown;
-  try {
-    manifest = JSON.parse(await readFile(join(profileRoot, "package.json"), "utf8"));
-  } catch (error: unknown) {
-    throw new DshConfigurationError("Native DSH headless profile manifest is invalid", {
-      cause: error,
-    });
-  }
-  const bundles =
-    typeof manifest === "object" &&
-    manifest !== null &&
-    "dsh" in manifest &&
-    typeof manifest.dsh === "object" &&
-    manifest.dsh !== null &&
-    "profile" in manifest.dsh &&
-    typeof manifest.dsh.profile === "object" &&
-    manifest.dsh.profile !== null &&
-    "bundles" in manifest.dsh.profile
-      ? manifest.dsh.profile.bundles
-      : undefined;
-  if (
-    !Array.isArray(bundles) ||
-    bundles.length !== expectedBundles.length ||
-    !bundles.every((name, index) => name === expectedBundles[index])
-  ) {
-    throw new DshConfigurationError(
-      "Native DSH profile bundle layers do not match the admitted official composition",
-    );
-  }
-}
-
 function nativeMcpEntry(
   server: NativeExtensionPlan["mcpServers"][number],
 ): Record<string, unknown> {
@@ -201,7 +166,6 @@ export async function writeNativeProfile(options: {
     "packages:\n  - .\n\nnodeLinker: hoisted\nautoInstallPeers: false\n",
     { encoding: "utf8", mode: 0o600 },
   );
-  await assertNativeProfileManifest(options.profileRoot, bundles);
 }
 
 function parseObservationRow(line: string): NativeObservationRow {

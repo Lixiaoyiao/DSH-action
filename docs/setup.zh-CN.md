@@ -2,7 +2,7 @@
 
 [English](setup.md) · [项目首页](../README.zh-CN.md) · [使用指南](usage.zh-CN.md) · [配置参考](configuration.md)
 
-本指南从安装开始，带你建立第一个安全 workflow。建议先启用只读 PR 审查；只有仓库确实需要时，再加入命令或写模式。
+本指南从安装开始，带你启用只读 `@dsh` 对话和自动 PR Review。仓库需要修改代码时，再加入写入能力。
 
 ## 快速开始：安装器
 
@@ -12,7 +12,7 @@
 npm create deepseek-harness-action@latest
 ```
 
-终端中不传选项时，引导默认建立只读 PR Review。安装器找到 Git 根目录与
+终端中不传选项时，引导默认建立只读 `@dsh` 对话和 PR Review。安装器找到 Git 根目录与
 `github.com` origin，检查 `gh` 可用性和登录，再经确认创建
 `.github/workflows/dsh-review.yml`。它不创建远端仓库或更改 remote。
 引导要求已有 Git 仓库；还在准备仓库时可使用下方的手工文件生成方式。
@@ -34,6 +34,9 @@ Push 要求唯一且经过核验的目的地址与远端父 commit，仅非 forc
 已经发布的 commit 不会重复推送。Secret 请求失败或状态不确定时会给出恢复说明，
 不会打印进程输出；再次尝试前应检查 Secret 名称和权限。
 
+已有安装可更新 Action pin，并按下方模板补上评论事件和只读输入。安装器会保留旧
+workflow，不覆盖已有配置。旧命令语义保持不变；自然语言写入仍需明确开启。
+
 内置 starter 检查覆盖不可变 Action 引用、只读 worker 和受信 base checkout。
 凭据、Actions 权限/配额、Docker/镜像与实际审查仍须通过首个 Action 运行验证。
 
@@ -47,7 +50,7 @@ npm create deepseek-harness-action@latest -- --advanced
 
 | 选择                     | 创建的文件                           |
 | ------------------------ | ------------------------------------ |
-| **PR Review**            | `.github/workflows/dsh-review.yml`   |
+| **只读对话 + PR Review** | `.github/workflows/dsh-review.yml`   |
 | **@dsh Coding Commands** | `.github/workflows/dsh-commands.yml` |
 | **Both**                 | 以上两个 workflow 文件               |
 | **Automatic Session**    | `.github/workflows/dsh-session.yml`  |
@@ -87,8 +90,9 @@ GitHub Release 和 canary 身份一致后，打包才通过 `DSH_ACTION_RELEASE_
 
 1. 引导未配置时，在 **Settings → Secrets and variables → Actions** 中添加 `DEEPSEEK_API_KEY`。
 2. 把 workflow commit/push 到默认分支；使用 Review 时，打开或更新非 draft PR。
-3. 使用 Coding Commands 时，把 `@dsh` 命令写在 Issue 或 PR 评论的第一行。请求写入前，必须把 validation command 占位符替换为适合你项目的命令。
-4. 继续阅读本文的安全说明，并通过[使用指南](usage.zh-CN.md)了解所有受支持的命令。
+3. 具有仓库 write 权限的协作者可以在 Issue 或 PR 中评论 `@dsh 帮我分析这个问题`。让提及从引用和代码之外的一行开始，无需固定子命令。Review 模式也支持 PR review 正文和行内评论；安装两个模板时，仅由 Commands 处理评论，避免重复回答。
+4. 需要自然语言写入时，在高级 Commands 工作流中明确启用 `natural-language-write: "true"`，保留 `allow-write: "true"` 并配置项目验证命令，再使用 `@dsh 修复这个 Bug 并提交 PR` 这样的明确请求。默认 starter 仍只读，请求里写“修复”也不会改变权限。`task-access` 不会启用这个独立开关。
+5. 原有命令和自动化用法见[使用指南](usage.zh-CN.md)。
 
 本地只在运行安装器时需要 Node.js 和 npm；生成的 workflow 不会假定目标仓库是 Node.js 项目。
 
@@ -171,7 +175,7 @@ with:
 
 只有新的 DSH package family、Profile 和工具面完成复核并随新版本发布后，Action 才会接受不同版本。
 
-### 3. 添加安全的自动 PR 审查
+### 3. 添加只读对话和自动 PR Review
 
 创建 `.github/workflows/dsh-review.yml`：
 
@@ -181,36 +185,50 @@ name: DSH review
 on:
   pull_request_target:
     types: [opened, synchronize, ready_for_review, reopened]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
 
 permissions:
   contents: read
+  issues: write
   pull-requests: write
 
 concurrency:
-  group: dsh-review-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: dsh-${{ github.event_name == 'pull_request_target' && 'review' || 'chat' }}-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
 
 jobs:
   review:
-    if: github.event.pull_request.draft == false
+    if: >-
+      (github.event_name == 'pull_request_target' && github.event.pull_request.draft == false) ||
+      (github.event.sender.type != 'Bot' &&
+      contains(github.event.comment.body || github.event.review.body, '@dsh'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Checkout trusted base only
+      - name: Checkout trusted base or default branch only
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
           persist-credentials: false
           fetch-depth: 1
-      - uses: Lixiaoyiao/deepseek-harness-action@v0.11.0
+      - uses: Lixiaoyiao/deepseek-harness-action@v0.12.0
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           dsh-version: 0.2.1-rc.2
+          permission-profile: strict
+          isolation: docker
+          natural-language-write: "false"
+          allow-write: "false"
 ```
 
-`pull_request_target` 可以访问 Secret 和权限较高的 token，因此这个 workflow 只检出不可变、受信任的 base SHA。Action 通过 GitHub API 获取 PR diff 和变更文件上下文，不会检出或运行 fork revision。请保留 `persist-credentials: false`。
+`pull_request_target` 可以访问 Secret 和权限较高的 token，因此 PR 事件只检出不可变、受信任的 base SHA。Issue/PR 讨论评论使用受信任的默认分支。Action 通过 GitHub API 获取 PR diff 和变更文件上下文，不检出或运行 fork revision。请保留 `persist-credentials: false`。Issue/PR 写 scope 用于发布评论，`contents: read` 和 `allow-write: "false"` 仍使仓库代码保持只读。
 
-打开一个非 draft PR，检查 Actions 运行、审查汇总和行内问题。完整且持续维护的模板见 [`examples/fork-review.yml`](../examples/fork-review.yml)。
+在 Issue/PR 评论 `@dsh 帮我分析这个问题`，检查 **Actions → DSH review** 和回复。打开非 draft PR 可测试自动审查。仅需审查的工作流见 [`examples/fork-review.yml`](../examples/fork-review.yml)。
 
 ### 4. 只授予入口真正需要的 GitHub 权限
 

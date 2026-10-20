@@ -2,7 +2,7 @@
 
 [中文](usage.zh-CN.md) · [README](../README.md) · [Setup](setup.md) · [Configuration](configuration.md)
 
-DeepSeek Harness can run from automatic repository events, first-line `@dsh` commands, or an explicit prompt in a maintainer-authored automation workflow.
+DeepSeek Harness can run from automatic repository events, natural-language `@dsh` requests, existing commands, or an explicit prompt in a maintainer-authored automation workflow.
 
 ## How operations are selected
 
@@ -11,22 +11,50 @@ DeepSeek Harness can run from automatic repository events, first-line `@dsh` com
 | Pull request `opened`, `synchronize`, `ready_for_review`, or `reopened` with `command: auto` | `review`           |
 | Failed `workflow_run` with the diagnosis template                                            | `diagnose`         |
 | Failed `workflow_run` with the trusted auto-fix template                                     | `fix`              |
-| First-line `@dsh task ...`                                                                   | `task`             |
-| First-line `@dsh review`                                                                     | `review`           |
-| First-line `@dsh diagnose`                                                                   | `diagnose`         |
-| First-line `@dsh fix`                                                                        | `fix`              |
-| First-line `@dsh implement` on an Issue                                                      | `implement`        |
+| `@dsh Help me understand this issue`                                                         | `task`             |
+| `@dsh task ...`                                                                              | `task`             |
+| `@dsh review`                                                                                | `review`           |
+| `@dsh diagnose`                                                                              | `diagnose`         |
+| `@dsh fix`                                                                                   | `fix`              |
+| `@dsh implement` on an Issue                                                                 | `implement`        |
 | Maintainer-configured label or assignee on an Issue                                          | `task`             |
 | Maintainer-configured label or assignee on a pull request                                    | `review`           |
 | Dispatch or schedule with `command: auto` and a non-empty `prompt`                           | `task`             |
 
-For an interactive command, the command must begin on the first line of the triggering comment. Later lines may continue the instruction. The Controller authorizes every originating actor before treating that command body as trusted operator instruction; permission lookup failure denies the request.
+For an interactive request, start `@dsh` on an unquoted, non-code line, with at most three leading spaces. Earlier lines may supply context; later lines may continue the instruction. Use exactly one actionable mention in each comment. Mid-sentence mentions, Markdown quotes (including their continued paragraphs), fenced/indented code, inline code and HTML comments are ignored. A bare `@dsh` without a request does not start a task. The Controller authorizes every originating actor before treating the request as trusted operator instruction; permission lookup failure denies it.
+
+Issue/PR conversation comments, PR review bodies and inline review comments are supported when their events are subscribed by the workflow. Bot-authored natural requests are ignored. Explicitly allowed bots can continue to use existing commands under the normal authorization policy.
+
+For fork PRs, ask `@dsh` in a top-level **Conversation** comment. Review/inline comment events may lack the Actions secrets or token permissions needed to run the Action.
 
 The workflow's `if: contains(..., '@dsh')` expression is only a coarse job filter. Keep it aligned when changing `trigger-phrase`; the Action still performs exact parsing, context checks, and authorization. Label/assignee routes and actor/comment filters are maintainer-controlled routing only and never grant trust.
 
 ## General tasks
 
-Use `task` for repository questions, code analysis, or coding work that does not fit a specialized command.
+Ask directly for repository questions or code analysis:
+
+```text
+@dsh Help me understand this issue
+@dsh 帮我分析这个问题
+```
+
+Natural language selects a general `task` and defaults to read-only. `@dsh Please fix this bug` also stays read-only: the verb does not grant access or select the specialized `fix` operation. The guided installer enables these conversations and automatic PR Review without code-write authority.
+
+Natural-language writes have an independent `natural-language-write` switch, defaulting to `false`. Even with that switch enabled, a request must clearly ask to change code, for example:
+
+```text
+@dsh Please fix this bug and open a PR
+@dsh 修复这个 Bug 并提交 PR
+@dsh 修复这个 Bug
+```
+
+An explicit request to publish is optional; a direct change request is enough to request write access. The Controller still selects the permitted delivery path for the Issue or PR.
+
+Questions, ambiguous instructions and requests to explain how to make a change remain read-only. The workflow must also set `allow-write: "true"`, use a write-capable permission profile and keep all validation and authorization gates below. The advanced Commands starter leaves `natural-language-write: "false"`; enable it deliberately after configuring your project's validation. Setting `task-access: write` alone does not change natural-language access.
+
+The first word after `@dsh` reserves `task`, `review`, `diagnose`, `fix` and `implement` as existing commands, case-insensitively. `@dsh fix this bug` therefore requests the legacy `fix` operation, which the read-only starter denies; the natural-language switch does not change legacy commands. Use `@dsh Please fix this bug` for natural language.
+
+Existing explicit task commands remain available:
 
 ```text
 @dsh task --read Explain why this pull request needs a two-phase commit

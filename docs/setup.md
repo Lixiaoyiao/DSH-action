@@ -2,7 +2,7 @@
 
 [中文](setup.zh-CN.md) · [README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md)
 
-This guide takes you from installation to a safe first workflow. Start with read-only pull request review, then add commands or write mode only when the repository needs them.
+This guide takes you from installation to read-only `@dsh` conversation and automatic PR Review. Add code-write capabilities when the repository needs them.
 
 ## Quick Start: installer
 
@@ -12,7 +12,7 @@ From anywhere inside the existing GitHub repository you want to configure, run:
 npm create deepseek-harness-action@latest
 ```
 
-With no flags in a terminal, the installer guides read-only PR Review. It finds
+With no flags in a terminal, the installer guides read-only `@dsh` conversation and PR Review. It finds
 the Git root and the `github.com` origin, checks `gh` availability/login and asks
 before creating `.github/workflows/dsh-review.yml`. It creates no remote
 repository or remote configuration. Guided setup requires an existing Git
@@ -41,6 +41,11 @@ rechecked, a workflow-only commit is reused, and an already published commit is
 recognized. A failed or uncertain Secret request prints recovery guidance and
 does not expose transport output. Check Secret names/permissions before retrying.
 
+For an existing installation, update the Action pin and add the comment events
+and read-only inputs shown below. The installer preserves older workflows
+instead of overwriting their configuration. Existing commands keep their semantics;
+natural-language writes remain off until explicitly enabled.
+
 The built-in starter check validates the immutable Action reference, read-only
 worker and trusted base checkout. Credentials, Actions permissions/quota,
 Docker/image availability and the actual review still require a first Action run.
@@ -53,12 +58,12 @@ npm create deepseek-harness-action@latest -- --advanced
 
 The advanced/manual flow offers:
 
-| Choice                   | Files created                        |
-| ------------------------ | ------------------------------------ |
-| **PR Review**            | `.github/workflows/dsh-review.yml`   |
-| **@dsh Coding Commands** | `.github/workflows/dsh-commands.yml` |
-| **Both**                 | Both workflow files above            |
-| **Automatic Session**    | `.github/workflows/dsh-session.yml`  |
+| Choice                         | Files created                        |
+| ------------------------------ | ------------------------------------ |
+| **Read-only chat + PR Review** | `.github/workflows/dsh-review.yml`   |
+| **@dsh Coding Commands**       | `.github/workflows/dsh-commands.yml` |
+| **Both**                       | Both workflow files above            |
+| **Automatic Session**          | `.github/workflows/dsh-session.yml`  |
 
 Advanced setup and explicit flags only generate workflow files; they never set
 Secrets, commit, push or open PRs. In CI or another non-interactive environment,
@@ -98,8 +103,9 @@ After the installer succeeds:
 
 1. If guided setup did not configure it, add `DEEPSEEK_API_KEY` under **Settings → Secrets and variables → Actions**.
 2. Commit/push the workflow to the default branch; for Review, open or update a non-draft pull request.
-3. For Coding Commands, put an `@dsh` command on the first line of an Issue or pull request comment. Before requesting a write, replace the validation command placeholders with commands for your project.
-4. Continue with the security guidance in this document and read [Usage](usage.md) for every supported command.
+3. As a repository collaborator with write access, comment `@dsh Help me understand this issue` in an Issue or PR. Start the mention on a line outside quotes/code; no fixed subcommand is needed. Review mode also handles PR review bodies and inline review comments. When installing both starters, only Commands handles comments, preventing duplicate responses.
+4. For natural-language writes, explicitly enable `natural-language-write: "true"` in the advanced Commands workflow, retain `allow-write: "true"` and configure validation commands. Then use a clear request such as `@dsh Please fix this bug and open a PR`. The default starter remains read-only, even when a request says “fix”. `task-access` does not enable this independent switch.
+5. Continue with [Usage](usage.md) for existing commands and automation.
 
 Node.js and npm are needed locally only to run the installer. The generated workflows do not assume that the target repository is a Node.js project.
 
@@ -190,7 +196,7 @@ with:
 
 The Action rejects a different DSH version until that package family and its Profile/tool surface have been reviewed and released together.
 
-### 3. Add safe automatic pull request review
+### 3. Add read-only conversation and automatic PR Review
 
 Create `.github/workflows/dsh-review.yml`:
 
@@ -200,36 +206,50 @@ name: DSH review
 on:
   pull_request_target:
     types: [opened, synchronize, ready_for_review, reopened]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
 
 permissions:
   contents: read
+  issues: write
   pull-requests: write
 
 concurrency:
-  group: dsh-review-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: dsh-${{ github.event_name == 'pull_request_target' && 'review' || 'chat' }}-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
 
 jobs:
   review:
-    if: github.event.pull_request.draft == false
+    if: >-
+      (github.event_name == 'pull_request_target' && github.event.pull_request.draft == false) ||
+      (github.event.sender.type != 'Bot' &&
+      contains(github.event.comment.body || github.event.review.body, '@dsh'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Checkout trusted base only
+      - name: Checkout trusted base or default branch only
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
           persist-credentials: false
           fetch-depth: 1
-      - uses: Lixiaoyiao/deepseek-harness-action@v0.11.0
+      - uses: Lixiaoyiao/deepseek-harness-action@v0.12.0
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           dsh-version: 0.2.1-rc.2
+          permission-profile: strict
+          isolation: docker
+          natural-language-write: "false"
+          allow-write: "false"
 ```
 
-`pull_request_target` can access secrets and a privileged token, so this workflow checks out only the immutable trusted base SHA. The Action obtains the pull request diff and changed-file context through GitHub APIs; it does not check out or execute the fork revision. Preserve `persist-credentials: false`.
+`pull_request_target` can access secrets and a privileged token, so PR events check out only the immutable trusted base SHA. Issue/PR conversation comments use the trusted default branch. The Action obtains the pull request diff and changed-file context through GitHub APIs; it does not check out or execute the fork revision. Preserve `persist-credentials: false`. The Issue/PR write scopes publish comments; `contents: read` and `allow-write: "false"` keep repository code read-only.
 
-Open a non-draft pull request and inspect the Actions run, review summary, and any inline findings. The full maintained template is [`examples/fork-review.yml`](../examples/fork-review.yml).
+Comment `@dsh Help me understand this issue` in an Issue/PR, then inspect **Actions → DSH review** and its reply. Open a non-draft PR to test automatic review. For a review-only workflow, use [`examples/fork-review.yml`](../examples/fork-review.yml).
 
 ### 4. Grant only the GitHub permissions the entry point needs
 

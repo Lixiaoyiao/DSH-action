@@ -1,5 +1,5 @@
-import type { AgentToolReceipt } from "../agent/loop.js";
-import type { DshToolReceipt } from "../dsh/runner.js";
+import type { AgentToolReceipt } from "../agent/loop-contracts.js";
+import type { DshToolReceipt } from "../dsh/receipts.js";
 import type { RunOutcome } from "./types.js";
 import { actionStatus } from "./status.js";
 

@@ -494,7 +494,7 @@ describe("installer modes", () => {
       "Replace test-commands with the commands that build and test your project",
     );
     expect(output).toContain("digest-pinned container-image");
-    expect(output).toContain("start an Issue or pull request comment with an @dsh command");
+    expect(output).toContain("start a non-code line with @dsh and your request");
     expect(output).toContain("DEEPSEEK_API_KEY");
     expect(output).toContain("docs/setup.md");
   });
@@ -513,7 +513,7 @@ describe("installer modes", () => {
     expect(output).toContain("dsh-commands.yml");
     expect(output).toContain("DEEPSEEK_API_KEY");
     expect(output).toContain("open or update a non-draft pull request");
-    expect(output).toContain("start an Issue or pull request comment with an @dsh command");
+    expect(output).toContain("start a non-code line with @dsh and your request");
     expect(output).toContain("docs/setup.md");
   });
 
@@ -816,6 +816,38 @@ describe("safe filesystem and non-interactive behavior", () => {
 
 describe("generated workflow contracts", () => {
   it.each(["controlled", "native"] as const)(
+    "gives read-only %s users Issue/PR chat and assigns every interactive event to one workflow",
+    async (dshMode) => {
+      const events = (contents: string) =>
+        Object.keys(
+          z.looseObject({ on: z.record(z.string(), z.unknown()) }).parse(parse(contents)).on,
+        );
+      const interactive = ["issue_comment", "pull_request_review_comment", "pull_request_review"];
+      const readOnly = await install("review", dshMode);
+      const review = await workflow(readOnly.project, "dsh-review.yml");
+      expect(events(review)).toEqual(["pull_request_target", ...interactive]);
+      expect(review).toContain('natural-language-write: "false"');
+      expect(review).toContain('allow-write: "false"');
+      expect(review).toContain("issues: write");
+      expect(review).toContain("github.event.sender.type != 'Bot'");
+      expect(review).toContain("github.event.comment.body || github.event.review.body");
+      expect(readOnly.output).toContain("Requests are read-only");
+
+      const both = await install("both", dshMode);
+      expect(events(await workflow(both.project, "dsh-review.yml"))).toEqual([
+        "pull_request_target",
+      ]);
+      expect(events(await workflow(both.project, "dsh-commands.yml"))).toEqual(interactive);
+
+      const commands = await install("commands", dshMode);
+      const commandWorkflow = await workflow(commands.project, "dsh-commands.yml");
+      expect(events(commandWorkflow)).toEqual(interactive);
+      expect(commandWorkflow).toContain('natural-language-write: "false"');
+      expect(commands.output).toContain("natural-language-write: true, allow-write: true");
+    },
+  );
+
+  it.each(["controlled", "native"] as const)(
     "generates %s YAML 1.2 documents that preserve the consumer safety constraints",
     async (dshMode) => {
       const { project } = await install("both", dshMode);
@@ -852,7 +884,9 @@ describe("generated workflow contracts", () => {
       expect(review).toContain("contents: read");
       expect(review).not.toContain("contents: write");
       expect(review).toContain("pull-requests: write");
-      expect(review).toContain("ref: ${{ github.event.pull_request.base.sha }}");
+      expect(review).toContain(
+        "ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}",
+      );
       expect(review).not.toContain("pull_request.head");
       expect(review).toContain("persist-credentials: false");
       expect(review).toContain('allow-write: "false"');

@@ -1,7 +1,8 @@
 import * as core from "@actions/core";
 import { copyFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { runAgentLoop, type AgentLoopStats } from "../agent/loop.js";
+import { runAgentLoop } from "../agent/loop.js";
+import type { AgentLoopStats } from "../agent/loop-contracts.js";
 import { publishTaskAnswer } from "../commands/task.js";
 import { DshAgentEngine } from "../dsh/engine.js";
 import type { DshFailureTelemetry } from "../dsh/errors.js";

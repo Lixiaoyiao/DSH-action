@@ -303,6 +303,104 @@ afterEach(async () => {
   await rm(fixtureRoot, { recursive: true, force: true });
 });
 
+async function naturalComment(body: string, kind: "issue" | "pull_request" = "issue") {
+  vi.stubEnv("INPUT_COMMAND", "auto");
+  vi.stubEnv("INPUT_PROMPT", "");
+  vi.stubEnv("GITHUB_EVENT_NAME", "issue_comment");
+  await writeFile(
+    join(fixtureRoot, "event.json"),
+    JSON.stringify({
+      action: "created",
+      repository,
+      sender: { login: "alice", type: "User" },
+      issue: { ...issue, ...(kind === "pull_request" ? { pull_request: {} } : {}) },
+      comment: { id: 12, body, user: { login: "alice", type: "User" } },
+    }),
+  );
+}
+
+it.each([
+  ["controlled", "issue"],
+  ["native", "issue"],
+  ["controlled", "pull_request"],
+  ["native", "pull_request"],
+] as const)(
+  "keeps %s natural-language %s requests read-only without their own opt-in",
+  async (mode, kind) => {
+    await naturalComment("@dsh 修复这个 Bug 并提交 PR", kind);
+    vi.stubEnv("INPUT_DSH-MODE", mode);
+    // The fixture already has allow-write=true and task-access=write. Neither
+    // may turn a natural-language request into a write without its separate flag.
+    ports.runDsh.mockResolvedValue(readonlyWorkerResult("final", mode));
+    const outcome = await runAction();
+    expect(outcome, JSON.stringify(outcome.error)).toMatchObject({
+      conclusion: "success",
+      operation: "task",
+      policy: { capabilities: { modifyWorkspace: false, commit: false, push: false } },
+    });
+    expect(ports.runDsh).toHaveBeenCalledOnce();
+    expect(ports.process).not.toHaveBeenCalled();
+    for (const effect of Object.values(created)) expect(effect).not.toHaveBeenCalled();
+  },
+);
+
+it("routes an explicitly opted-in natural change request through validated PR publication", async () => {
+  await naturalComment("@dsh 修复这个 Bug 并提交 PR");
+  vi.stubEnv("INPUT_NATURAL-LANGUAGE-WRITE", "true");
+  vi.stubEnv("INPUT_TASK-ACCESS", "read");
+  const outcome = await runAction();
+  expect(outcome, JSON.stringify(outcome.error)).toMatchObject({
+    conclusion: "success",
+    operation: "task",
+    policy: { capabilities: { modifyWorkspace: true, createPullRequest: true } },
+    validation: { status: "passed", commandCount: 1 },
+    pullRequestNumber: 123,
+  });
+  expect(ports.process).toHaveBeenCalledOnce();
+  expect(created.commit).toHaveBeenCalledOnce();
+  expect(created.pull).toHaveBeenCalledOnce();
+});
+
+it("keeps ambiguous natural requests read-only even with both write opt-ins", async () => {
+  await naturalComment("@dsh 帮我看看这个问题");
+  vi.stubEnv("INPUT_NATURAL-LANGUAGE-WRITE", "true");
+  ports.runDsh.mockResolvedValue(readonlyWorkerResult("final"));
+  const outcome = await runAction();
+  expect(outcome).toMatchObject({
+    conclusion: "success",
+    policy: { capabilities: { modifyWorkspace: false, push: false } },
+  });
+  expect(ports.process).not.toHaveBeenCalled();
+  for (const effect of Object.values(created)) expect(effect).not.toHaveBeenCalled();
+});
+
+it.each(["allow-write", "actor", "validation", "revoked"] as const)(
+  "does not bypass the existing %s gate for natural-language writes",
+  async (gate) => {
+    await naturalComment("@dsh 修复这个 Bug 并提交 PR");
+    vi.stubEnv("INPUT_NATURAL-LANGUAGE-WRITE", "true");
+    if (gate === "allow-write") vi.stubEnv("INPUT_ALLOW-WRITE", "false");
+    if (gate === "actor") permission = "read";
+    if (gate === "validation")
+      ports.process.mockResolvedValue({ ...passedProcess, exitCode: 1, stderr: "suite failed" });
+    if (gate === "revoked") {
+      const execute = ports.runDsh.getMockImplementation();
+      ports.runDsh.mockImplementation(async (...args) => {
+        if (execute === undefined) throw new Error("Missing model adapter");
+        const result = await execute(...args);
+        permission = "read";
+        return result;
+      });
+    }
+    const outcome = await runAction();
+    expect(outcome).toMatchObject({ conclusion: "failure" });
+    if (gate === "allow-write" || gate === "actor") expect(ports.runDsh).not.toHaveBeenCalled();
+    if (gate === "validation") expect(outcome.validation).toMatchObject({ status: "failed" });
+    if (gate === "revoked") expect(outcome.validation).toMatchObject({ status: "passed" });
+    for (const effect of Object.values(created)) expect(effect).not.toHaveBeenCalled();
+  },
+);
+
 it.each(["prompt", "review"])(
   "stages %s image bytes in the read-only runtime home and leaves repository publication unchanged",
   async (source) => {

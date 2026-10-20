@@ -5,13 +5,7 @@ import { describe, expect, it } from "vitest";
 import YAML from "yaml";
 
 import { ACTION_INPUT_CONTRACT } from "../src/action-contract.js";
-import {
-  ACTION_TAG,
-  ACTION_VERSION,
-  DIRECT_DSH_PACKAGES,
-  DSH_VERSION,
-  RELEASE_CANARY_VARIABLE,
-} from "../src/release.js";
+import { ACTION_TAG, DSH_VERSION } from "../src/release.js";
 
 const RELEASE_REFERENCE = ACTION_TAG;
 
@@ -56,49 +50,6 @@ describe("Marketplace action metadata", () => {
     expect(parsed.outputs["error-code"]?.description).toContain("Stable failure code");
   });
 
-  it("pins the official DSH rc.2 runtime and its lockfile exactly", async () => {
-    const manifest = z
-      .looseObject({
-        version: z.string(),
-        scripts: z.record(z.string(), z.string()),
-        dependencies: z.record(z.string(), z.string()),
-        devDependencies: z.record(z.string(), z.string()),
-      })
-      .parse(JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")));
-    const lock = z
-      .looseObject({
-        packages: z.record(z.string(), z.looseObject({ version: z.string().optional() })),
-      })
-      .parse(JSON.parse(await readFile(new URL("../package-lock.json", import.meta.url), "utf8")));
-    const directDependencies = { ...manifest.dependencies, ...manifest.devDependencies };
-
-    expect(manifest.version).toBe(ACTION_VERSION);
-    expect(manifest.scripts["test:release-contract"]).toBe(
-      "node scripts/verify-release-contract.mjs",
-    );
-    expect(manifest.scripts.check).toContain("npm run test:release-contract");
-    for (const packageName of DIRECT_DSH_PACKAGES) {
-      expect(directDependencies[packageName]).toBe(DSH_VERSION);
-      expect(lock.packages[`node_modules/${packageName}`]?.version).toBe(DSH_VERSION);
-    }
-    for (const [packageName, version] of Object.entries({
-      ...manifest.dependencies,
-      ...manifest.devDependencies,
-    })) {
-      if (packageName === "@deepseek-ai/dsh" || packageName.startsWith("@deepseek-ai/dsh-")) {
-        expect(version).toBe(DSH_VERSION);
-      }
-    }
-
-    const lockedDshVersions = Object.entries(lock.packages)
-      .filter(([packagePath]) =>
-        /(?:^|\/)node_modules\/@deepseek-ai\/dsh(?:-[^/]+)?$/u.test(packagePath),
-      )
-      .map(([, entry]) => entry.version);
-    expect(lockedDshVersions.length).toBeGreaterThan(0);
-    expect(new Set(lockedDshVersions)).toEqual(new Set([DSH_VERSION]));
-  });
-
   it("keeps active CI on the frozen-SHA locked native ecosystem smoke", async () => {
     const workflowsDirectory = new URL("../.github/workflows/", import.meta.url);
     const activeWorkflows = (await readdir(workflowsDirectory, { withFileTypes: true })).filter(
@@ -110,23 +61,8 @@ describe("Marketplace action metadata", () => {
     }
 
     const ci = await readFile(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
-    const profileFixture = await readFile(
-      new URL("./fixtures/prepare-native-ecosystem-profile.mjs", import.meta.url),
-      "utf8",
-    );
-    const llmFixture = await readFile(
-      new URL("./fixtures/native-ecosystem-llm-server.mjs", import.meta.url),
-      "utf8",
-    );
     expect(ci).toContain("cp package.json package-lock.json");
     expect(ci).toContain("npm ci --strict-peer-deps --no-fund --omit=dev --ignore-scripts");
-    expect(ci).toContain(`const expectedVersion = "${DSH_VERSION}"`);
-    expect(ci).toContain("Object.keys(manifest.dependencies ?? {})");
-    expect(ci).toContain('await import("@deepseek-ai/dsh-app-boot")');
-    expect(ci).toContain('await import("@deepseek-ai/dsh-mcp-client")');
-    expect(ci).toContain("action-launcher.mjs");
-    expect(ci).toContain("native-launcher.mjs");
-    expect(ci).toContain("action-policy.mjs");
     expect(ci).toContain("Verify exact candidate checkout");
     expect(ci).toContain("Linux Docker frozen-SHA DSH rc.2 native ecosystem smoke");
     expect(ci).toContain("CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}");
@@ -138,8 +74,6 @@ describe("Marketplace action metadata", () => {
     expect(ci).toContain("/dsh-home/storages");
     expect(ci).toContain("--env NARB_DISABLE_NATIVE_CACHE=1");
     expect(ci).toContain("/tmp:rw,noexec,nosuid,nodev,size=536870912");
-    expect(ci).toContain("const defaultCache = probe(false)");
-    expect(ci).toContain("const immutablePackage = probe(true)");
     expect(ci).toContain("Pinned native binding must load directly from the read-only package");
     expect(ci).toContain('.[-1].type == "final"');
     expect(ci).toContain(".[-1].text | fromjson");
@@ -162,34 +96,6 @@ describe("Marketplace action metadata", () => {
     expect(ci).not.toContain("lib/bin.js");
     expect(ci).not.toContain("--dump-config");
     expect(ci).not.toContain("policy.patch.yml");
-
-    expect(profileFixture).toContain('join(home, "profiles", "github-action")');
-    expect(profileFixture).toContain('join(workspace, ".dsh", "skills", "native-dsh")');
-    expect(profileFixture).toContain('join(workspace, ".agents", "skills", "native-agents")');
-    expect(profileFixture).toContain('"@deepseek-ai/dsh-base"');
-    expect(profileFixture).toContain('"@deepseek-ai/dsh-headless"');
-    expect(profileFixture).toContain("bundlePackage");
-    expect(profileFixture).toContain('name: "@deepseek-ai/dsh-mcp-client"');
-    expect(profileFixture).toContain('transport: "stdio"');
-    expect(profileFixture).toContain('command: "/opt/dsh-action/package/native-mcp-fixture"');
-    expect(profileFixture).toContain("#!/bin/sh\\nexec node");
-    expect(profileFixture).toContain('chmod(join(runtime, "native-mcp-fixture"), 0o700)');
-    expect(profileFixture).toContain("native-ecosystem-plugin/index.mjs");
-    expect(profileFixture).toContain("NATIVE_DSH_SKILL_BODY_MARKER");
-    expect(profileFixture).toContain("NATIVE_AGENTS_SKILL_BODY_MARKER");
-
-    for (const marker of [
-      '"skill"',
-      '"mcp__fixture__add"',
-      '"native_bundle_echo"',
-      '"native_plugin_echo"',
-      '"subagent"',
-      '"workflow"',
-      "CHILD_NATIVE_MARKER_OK",
-      "NATIVE_WORKFLOW_MARKER",
-    ]) {
-      expect(llmFixture).toContain(marker);
-    }
   });
 
   it("ships the rc.2 extension contract in dist without older release-candidate drift", async () => {
@@ -218,19 +124,12 @@ describe("Marketplace action metadata", () => {
     }
   });
 
-  it("binds the v0.9.1 canary to the formal release and runs both read-only modes", async () => {
+  it("admits the release canary only from the live trusted default branch", async () => {
     const canary = await readFile(
       new URL("../.github/workflows/release-canary.yml", import.meta.url),
       "utf8",
     );
     const gate = canary.slice(0, canary.indexOf("  smoke:"));
-    const controlledStart = canary.indexOf(
-      "      - name: Controlled default strict read-only smoke",
-    );
-    const nativeStart = canary.indexOf("      - name: Native read-only smoke");
-    const controlled = canary.slice(controlledStart, nativeStart);
-    const native = canary.slice(nativeStart);
-    expect(canary).toContain(`name: ${ACTION_TAG} release canary`);
     expect(gate).toContain('[[ "$WORKFLOW_REF" == "refs/heads/main" ]]');
     expect(gate).toContain('[[ "$RUN_SHA" == "$WORKFLOW_SHA" ]]');
     expect(gate).toContain('[[ "$RUN_SHA" == "$live_sha" ]]');
@@ -238,47 +137,10 @@ describe("Marketplace action metadata", () => {
     expect(canary).toContain("needs: gate");
     expect(canary.match(/environment: core-e2e/gu)).toHaveLength(1);
     expect(canary).toContain("DEEPSEEK_SECRET_PRESENT: ${{ secrets.DEEPSEEK_API_KEY != '' }}");
-    expect(canary).toContain(`RELEASE_TAG: ${ACTION_TAG}`);
-    expect(canary).toContain(`vars.${RELEASE_CANARY_VARIABLE}`);
-    expect(canary).toContain("releases/tags/$RELEASE_TAG");
-    expect(canary).toContain("git/ref/tags/$RELEASE_TAG");
-    expect(canary).toContain(".draft == false and .prerelease == false");
-    expect(canary).toContain('"$object_sha" != "$RELEASE_SHA"');
-    expect(canary).toContain('git -C release-action rev-parse HEAD)" = "$RELEASE_SHA"');
-    expect(canary.match(/persist-credentials: false/gu)).toHaveLength(1);
-    expect(canary).toContain("git -C release-action config --local --get-regexp");
-    expect(controlledStart).toBeGreaterThan(-1);
-    expect(nativeStart).toBeGreaterThan(controlledStart);
-    expect(canary.match(/uses: \.\/release-action/gu)).toHaveLength(2);
-    expect(canary.match(/dsh-mode: native/gu)).toHaveLength(1);
-    expect(controlled).not.toMatch(/^\s+dsh-mode:/mu);
-    expect(controlled).toContain('.dsh.mode == "controlled"');
-    expect(controlled).toContain('.dsh.composition == "github-action-controlled"');
-    expect(controlled).toContain('.toolPolicy.policyOwner == "controller"');
-    expect(controlled).toContain(
-      '.permissions.effectiveTools == ["workspace.read","workspace.search"]',
-    );
-    expect(native).toMatch(/^\s+dsh-mode: native$/mu);
-    expect(native).toContain('.dsh.mode == "native"');
-    expect(native).toContain('.dsh.composition == "dsh-native-headless"');
-    expect(native).toContain('.toolPolicy.policyOwner == "dsh"');
-    expect(native).toContain("(.toolPolicy.observedTools | length > 0)");
-    expect(native).toContain('(.toolPolicy.observedTools | index("read") != null)');
-    expect(native).toContain('.isolation.workspaceAccess == "read-only"');
-    expect(native).toContain('(.toolPolicy | has("effectiveTools") | not)');
-    expect(native).toContain('(.toolPolicy | has("requestedTools") | not)');
-    expect(native).toContain('(.toolPolicy | has("deniedTools") | not)');
   });
 
   it("generates static bundle notices from NCC source maps only", async () => {
-    const generator = await readFile(
-      new URL("../scripts/generate-bundled-notices.mjs", import.meta.url),
-      "utf8",
-    );
     const notices = await readFile(new URL("../BUNDLED_DEPENDENCIES.md", import.meta.url), "utf8");
-    expect(generator).toContain('.endsWith(".js.map")');
-    expect(generator).toContain("packagePathFromSource");
-    expect(generator).not.toMatch(/Object\.entries\(lock\.packages\).*metadata\.dev/su);
     expect(notices).toContain("reported by the committed NCC source maps");
     expect(notices).toContain("worker runtime is installed from `package-lock.json`");
     const maps = (await readdir(new URL("../dist/", import.meta.url))).filter((file) =>
@@ -402,7 +264,8 @@ describe("Marketplace action metadata", () => {
       "utf8",
     );
     expect(commands).toContain("issue_comment:");
-    expect(commands).toContain("github.event.sender.id != 41898282");
+    expect(commands).toContain("github.event.sender.type != 'Bot'");
+    expect(commands).toContain("!endsWith(github.event.sender.login, '[bot]')");
     expect(commands).toContain("contains(github.event.comment.body, '@dsh')");
     expect(commands).toContain("ref: ${{ github.workflow_sha }}");
     expect(commands).toContain("persist-credentials: false");

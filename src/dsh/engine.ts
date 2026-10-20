@@ -1,5 +1,7 @@
 import type { ActionInputs } from "../inputs.js";
-import { runDsh, type DshRunResult, type DshRuntime } from "./runner.js";
+import { runDsh } from "./runner.js";
+import type { DshRunResult } from "./runner-types.js";
+import type { DshRuntime } from "./runtime.js";
 import type { SecurityPolicy } from "../security/policy.js";
 import { removeMarkdownImages } from "../security/redaction.js";
 import type { AgentEngine, AgentToolManifest, AgentTurnRequest } from "../agent/contracts.js";
