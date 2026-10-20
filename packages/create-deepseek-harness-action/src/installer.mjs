@@ -458,10 +458,10 @@ async function installWorkflows({
     if (mode === "both" && definition.target.endsWith("dsh-review.yml")) {
       contents = contents
         .replace(
-          /^  (?:issue_comment|pull_request_review_comment|pull_request_review):\r?\n    types: \[(?:created|submitted)\]\r?\n/gmu,
+          /^ {2}(?:issue_comment|pull_request_review_comment|pull_request_review):\r?\n {4}types: \[(?:created|submitted)\]\r?\n/gmu,
           "",
         )
-        .replace(/^  issues: write\r?\n/mu, "");
+        .replace(/^ {2}issues: write\r?\n/mu, "");
     }
     if (pluginImport)
       contents = (await import("./local-plugins.mjs")).addPluginInputs(
