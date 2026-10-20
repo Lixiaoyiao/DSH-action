@@ -153,6 +153,7 @@ export const actionInputsSchema = z.object({
   deepseekApiKey: z.string().min(8, "deepseek-api-key must be at least 8 characters"),
   githubToken: z.string().min(8, "github-token must be at least 8 characters"),
   allowWrite: booleanInput,
+  naturalLanguageWrite: booleanInput,
   command: z.enum(["auto", "task", "review", "diagnose", "fix", "implement"]),
   taskAccess: z.enum(["read", "write"]),
   prompt: z.string(),

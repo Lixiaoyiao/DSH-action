@@ -1,4 +1,4 @@
-import type { AgentToolReceipt } from "../agent/loop.js";
+import type { AgentToolReceipt } from "../agent/loop-contracts.js";
 import type { AgentToolResult } from "../agent/contracts.js";
 
 export interface GitHubToolFlushReceipt {

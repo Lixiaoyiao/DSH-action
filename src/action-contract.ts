@@ -57,6 +57,15 @@ export const ACTION_INPUT_CONTRACT = [
     docsGroup: "operation",
   },
   {
+    name: "natural-language-write",
+    runtimeKey: "naturalLanguageWrite",
+    required: false,
+    default: "false",
+    description:
+      "Allow an explicit natural-language change request to request write access. Ambiguous requests stay read-only. This independent opt-in never replaces allow-write, actor trust, validation or Gateway authorization; legacy commands are unchanged.",
+    docsGroup: "operation",
+  },
+  {
     name: "command",
     runtimeKey: "command",
     required: false,
@@ -70,7 +79,7 @@ export const ACTION_INPUT_CONTRACT = [
     required: false,
     default: "read",
     description:
-      "Capability requested by an explicit task: read or write. Write still requires allow-write and every policy gate.",
+      "Capability requested by an explicit task: read or write. Natural-language mentions use their separate natural-language-write opt-in. Write still requires allow-write and every policy gate.",
     docsGroup: "operation",
   },
   {
@@ -142,7 +151,7 @@ export const ACTION_INPUT_CONTRACT = [
     required: false,
     default: "@dsh",
     description:
-      "Maintainer-controlled literal used for first-line comment commands. Routing only; it never grants authority.",
+      "Maintainer-controlled literal starting a direct, unquoted, non-code comment line. Accepts natural-language tasks and legacy commands. Routing only; it never grants authority.",
     docsGroup: "routing",
   },
   {

@@ -5,6 +5,26 @@ versioning for published action releases.
 
 ## Unreleased
 
+## [0.12.0]
+
+- Accepts natural-language requests such as `@dsh explain this issue` on a
+  direct, unquoted, non-code line in Issue and PR comments. Existing commands
+  remain supported. Natural-language tasks default to read-only; write access
+  requires the separate default-off `natural-language-write` opt-in, clear
+  change intent, `allow-write`, and all existing Controller checks. Ambiguous
+  requests remain read-only and legacy command access is unchanged.
+- Extends the guided read-only installation with Issue/PR conversations while
+  retaining automatic PR Review, immutable Action binding and separate advanced
+  write configuration.
+- Removes redundant native manifest readback, duplicate runtime-binding
+  projection and normalization, identical JSON canonicalization and unused
+  Session code. Keeps Controller/Worker, Gateway, both DSH compositions,
+  Session/attachment formats and existing safety guarantees.
+- Reduces repeated release/source-spelling assertions and adds a Windows full
+  check alongside Linux checks and Docker integration coverage.
+
+## Installer 0.7.1
+
 - Prepares installer `0.7.1` targeting formal Action `v0.11.0` through
   `DSH_ACTION_RELEASE_SHA`, with exact DSH `0.2.1-rc.2` and source tag
   `create-deepseek-harness-action-v0.7.1`.

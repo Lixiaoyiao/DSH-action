@@ -64,6 +64,7 @@ export function loadInputs(reader: InputReader = core.getInput): ActionInputs {
     deepseekApiKey,
     githubToken,
     allowWrite: optionalInput(reader, "allowWrite"),
+    naturalLanguageWrite: optionalInput(reader, "naturalLanguageWrite"),
     command: optionalInput(reader, "command"),
     taskAccess: optionalInput(reader, "taskAccess"),
     prompt: optionalInput(reader, "prompt"),

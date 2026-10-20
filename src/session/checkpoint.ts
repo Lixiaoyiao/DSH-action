@@ -21,7 +21,6 @@ import {
   SESSION_PAYLOAD_FILE,
   type SessionBinding,
   type SessionCheckpoint,
-  type SessionManifest,
   type SessionManifestWithoutPayload,
   type SessionRunIdentity,
   validateSessionManifestBinding,
@@ -996,14 +995,4 @@ export async function importSessionCheckpoint(
     if (error instanceof PolicyDeniedError) throw error;
     denied("could not create fresh dedicated storage; refusing overwrite or reuse");
   }
-}
-
-export function sessionPayloadMatchesManifest(
-  payload: Uint8Array,
-  manifest: SessionManifest,
-): boolean {
-  return (
-    payload.byteLength === manifest.payload.bytes &&
-    createHash("sha256").update(payload).digest("hex") === manifest.payload.sha256
-  );
 }

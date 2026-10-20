@@ -18,12 +18,16 @@ inputs:
     description: "Allow trusted same-repository task/fix/implement writes after all trust gates pass."
     required: false
     default: "false"
+  natural-language-write:
+    description: "Allow an explicit natural-language change request to request write access. Ambiguous requests stay read-only. This independent opt-in never replaces allow-write, actor trust, validation or Gateway authorization; legacy commands are unchanged."
+    required: false
+    default: "false"
   command:
     description: "Optional explicit operation: task, review, diagnose, fix, implement, or auto."
     required: false
     default: "auto"
   task-access:
-    description: "Capability requested by an explicit task: read or write. Write still requires allow-write and every policy gate."
+    description: "Capability requested by an explicit task: read or write. Natural-language mentions use their separate natural-language-write opt-in. Write still requires allow-write and every policy gate."
     required: false
     default: "read"
   prompt:
@@ -55,7 +59,7 @@ inputs:
     required: false
     default: "3"
   trigger-phrase:
-    description: "Maintainer-controlled literal used for first-line comment commands. Routing only; it never grants authority."
+    description: "Maintainer-controlled literal starting a direct, unquoted, non-code comment line. Accepts natural-language tasks and legacy commands. Routing only; it never grants authority."
     required: false
     default: "@dsh"
   label-trigger:

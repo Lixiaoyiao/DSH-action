@@ -1,7 +1,7 @@
 import type { AuthorizedRun } from "./prepare.js";
 import { finishImplementation } from "../commands/implement.js";
 import { finishAutomationTask } from "../commands/task.js";
-import type { DshRunResult } from "../dsh/runner.js";
+import type { DshRunResult } from "../dsh/runner-types.js";
 import type { ActionInputs } from "../inputs.js";
 import { throwIfCancelled } from "../lifecycle/cancellation.js";
 import type { WorkspaceSnapshot } from "../write/workspace.js";

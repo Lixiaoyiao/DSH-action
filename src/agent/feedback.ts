@@ -1,5 +1,6 @@
 import { isRecord } from "../security/record.js";
 import { createHash } from "node:crypto";
+import { canonicalJson } from "../security/canonical-json.js";
 import { utf8Prefix, utf8Suffix } from "../security/utf8.js";
 import type { ValidationFailureError } from "../write/validate.js";
 
@@ -73,26 +74,6 @@ export function validationFeedback(
 
 export function feedbackFingerprint(value: unknown): string {
   return createHash("sha256").update(canonicalJson(value), "utf8").digest("hex");
-}
-
-function canonicalJson(value: unknown): string {
-  const normalize = (candidate: unknown): unknown => {
-    if (candidate === null || typeof candidate === "string" || typeof candidate === "boolean") {
-      return candidate;
-    }
-    if (typeof candidate === "number") return Number.isFinite(candidate) ? candidate : null;
-    if (Array.isArray(candidate)) return candidate.map((item) => normalize(item));
-    if (typeof candidate === "object") {
-      return Object.fromEntries(
-        Object.entries(candidate)
-          .filter(([, item]) => item !== undefined)
-          .sort(([left], [right]) => left.localeCompare(right))
-          .map(([key, item]) => [key, normalize(item)]),
-      );
-    }
-    return null;
-  };
-  return JSON.stringify(normalize(value));
 }
 
 export interface TaskContextAnchor {

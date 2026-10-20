@@ -7,7 +7,7 @@ Create safe starter workflows for
 npm create deepseek-harness-action@latest
 ```
 
-With no flags in a terminal, the installer guides a **read-only PR Review**
+With no flags in a terminal, the installer guides **read-only `@dsh` conversation and PR Review**
 setup. Start anywhere inside an existing Git repository with an `origin`
 remote on `github.com`. The installer finds the Git root, identifies the remote,
 and checks GitHub CLI availability/login before creating the pinned workflow.
@@ -40,7 +40,25 @@ objects automatically; if a partial clone lacks required objects, fetch them you
 rerunning. Push negotiation and recursive submodule publication are disabled.
 Git continues to use your trusted system/global authentication and SSH agent. Host-configured
 helpers remain your responsibility; the installer does not copy or log their configuration values.
-The workflow must reach the default branch before PR Review can start.
+The workflow must reach the default branch before conversation or PR Review can start.
+
+After installation, a repository collaborator with write access can comment
+`@dsh Help me understand this issue` or `@dsh 帮我分析这个问题` in an Issue or PR.
+No fixed subcommand is needed. A mention must start a non-code, unquoted line;
+context can precede it. The starter also handles PR review bodies and inline
+review comments. Natural requests from bots and mentions inside quotes or code
+are ignored. Existing `@dsh task`, `review`, `diagnose`, `fix` and `implement`
+commands remain available under their normal permission gates.
+
+The first words `task`, `review`, `diagnose`, `fix` and `implement` retain
+their command meaning, case-insensitively. `@dsh fix` is a legacy write request,
+which the read-only starter denies. The natural-language switch does not change
+these commands; use `@dsh Please fix this bug` for a natural request.
+
+The default starter has `contents: read`, `allow-write: "false"` and
+`natural-language-write: "false"`. Issue/PR comment permissions let the
+Controller reply; they do not allow code edits. Even `@dsh Please fix this bug` stays
+read-only. Automatic PR Review starts when a non-draft PR is opened or updated.
 
 Rerunning the same guided command resumes an identical generated workflow
 without overwriting it. Content matching treats Git's LF/CRLF checkout conversion
@@ -60,7 +78,7 @@ Timeout or oversized output terminates their process tree and releases inherited
 pipes with bounded cleanup. A failed OS tree-termination request is reported as
 uncertain transport cleanup; it never establishes a successful operation.
 
-Use `--advanced` for interactive **PR Review**, **@dsh Coding Commands**,
+Use `--advanced` for interactive **Read-only chat + PR Review**, **@dsh Coding Commands**,
 **Both**, or **Automatic Session** choices and the controlled/native composition
 choice. This advanced/manual flow generates files only:
 
@@ -81,6 +99,17 @@ To generate native-mode workflows explicitly:
 ```bash
 npm create deepseek-harness-action@latest -- --mode both --dsh-mode native
 ```
+
+`review` installs conversation plus automatic PR Review. With `both`, Review
+handles automatic PR events and Commands alone handles interactive comments,
+so a request receives one response. The advanced Commands starter retains its
+explicit legacy write commands and repository-validation placeholder. Natural
+requests stay read-only until a maintainer enables the independent
+`natural-language-write: "true"` switch alongside `allow-write: "true"` and
+configures validation. A natural write request must clearly ask to change
+code, such as `@dsh Please fix this bug` or
+`@dsh 修复这个 Bug 并提交 PR`; ambiguous requests remain read-only.
+`task-access: write` does not enable this switch.
 
 Valid workflow modes are `review`, `commands`, `both`, and `session`; valid DSH modes are
 `controlled` and `native`. Explicit flags and the advanced flow do not add

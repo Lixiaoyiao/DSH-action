@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   command:
-    if: contains(github.event.comment.body || github.event.review.body || '', '@dsh')
+    if: github.event.sender.type != 'Bot' && !endsWith(github.event.sender.login, '[bot]') && contains(github.event.comment.body || github.event.review.body || '', '@dsh')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -29,12 +29,15 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
           fetch-depth: 0
-      - uses: Lixiaoyiao/deepseek-harness-action@v0.11.0
+      - uses: Lixiaoyiao/deepseek-harness-action@v0.12.0
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           dsh-version: 0.2.1-rc.2
           permission-profile: standard
           allow-write: "true"
+          # Set true only to opt in explicit natural-language changes too.
+          # Ambiguous requests stay read-only; legacy commands are unchanged.
+          natural-language-write: "false"
           run-tests: "true"
           validation-integrity: strict
           # REQUIRED: Replace this fail-closed placeholder with your repository's

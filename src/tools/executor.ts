@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { AgentToolResult } from "../agent/contracts.js";
-import { assertPinnedContainerImage } from "../dsh/runner.js";
+import { assertPinnedContainerImage } from "../dsh/docker-policy.js";
 import { runCommand, type CommandResult } from "../security/argv.js";
 import type { CommandToolDefinition, CommandToolId } from "./schema.js";
 

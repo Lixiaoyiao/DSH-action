@@ -93,28 +93,6 @@ export function withDshRuntimeActivity<T>(
   return pending;
 }
 
-type JsonValue = null | boolean | number | string | readonly JsonValue[] | JsonObject;
-interface JsonObject {
-  readonly [key: string]: JsonValue;
-}
-
-function isJsonArray(value: JsonValue): value is readonly JsonValue[] {
-  return Array.isArray(value);
-}
-
-function canonicalJson(value: JsonValue): string {
-  const normalize = (candidate: JsonValue): JsonValue => {
-    if (candidate === null || typeof candidate !== "object") return candidate;
-    if (isJsonArray(candidate)) return candidate.map((item) => normalize(item));
-    return Object.fromEntries(
-      Object.entries(candidate)
-        .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-        .map(([key, item]) => [key, normalize(item)]),
-    );
-  };
-  return JSON.stringify(normalize(value));
-}
-
 function nonEmptyString(value: string, field: string): string {
   if (typeof value !== "string" || value.trim() === "") {
     throw new DshConfigurationError(`DSH runtime binding ${field} must be non-empty`);
@@ -222,35 +200,16 @@ function normalizedBinding(binding: DshRuntimeBinding): DshRuntimeBinding {
   });
 }
 
-function bindingJson(binding: DshRuntimeBinding): JsonObject {
-  return {
-    compositionId: binding.compositionId,
-    dshVersion: binding.dshVersion,
-    containerImage: binding.containerImage,
-    isolation: binding.isolation,
-    workspacePath: binding.workspacePath,
-    chatBaseUrl: binding.chatBaseUrl,
-    webSearchProxy: binding.webSearchProxy,
-    ...(binding.webSearchBaseUrl === undefined
-      ? {}
-      : { webSearchBaseUrl: binding.webSearchBaseUrl }),
-    ...(binding.dshExecutableIdentity === undefined
-      ? {}
-      : { dshExecutableIdentity: binding.dshExecutableIdentity }),
-    extensionConfigurationDigest: binding.extensionConfigurationDigest,
-    nativeRuntimeTools: binding.nativeRuntimeTools,
-    workspaceWrite: binding.workspaceWrite,
-    network: binding.network,
-    profileSchemaVersion: binding.profileSchemaVersion,
-  };
+function normalizedBindingFingerprint(binding: DshRuntimeBinding): string {
+  // Normalization owns the exact fields; its only nested value is a string array.
+  return createHash("sha256")
+    .update(JSON.stringify(binding, Object.keys(binding).sort()), "utf8")
+    .digest("hex");
 }
 
 /** Compute the stable identity used to authorize reuse of one run-scoped runtime. */
 export function fingerprintDshRuntimeBinding(binding: DshRuntimeBinding): string {
-  const normalized = normalizedBinding(binding);
-  return createHash("sha256")
-    .update(canonicalJson(bindingJson(normalized)), "utf8")
-    .digest("hex");
+  return normalizedBindingFingerprint(normalizedBinding(binding));
 }
 
 function changedBindingFields(
@@ -273,7 +232,7 @@ function changedBindingFields(
     ],
     [
       "nativeRuntimeTools",
-      canonicalJson(previous.nativeRuntimeTools) !== canonicalJson(requested.nativeRuntimeTools),
+      JSON.stringify(previous.nativeRuntimeTools) !== JSON.stringify(requested.nativeRuntimeTools),
     ],
     ["workspaceWrite", previous.workspaceWrite !== requested.workspaceWrite],
     ["network", previous.network !== requested.network],
@@ -291,11 +250,11 @@ export function bindDshRuntime(
   requestedBinding: DshRuntimeBinding,
 ): DshRuntimeBindingState {
   const binding = normalizedBinding(requestedBinding);
-  const fingerprint = fingerprintDshRuntimeBinding(binding);
+  const fingerprint = normalizedBindingFingerprint(binding);
   const current = runtime.binding;
   if (current !== undefined) {
     const currentBinding = normalizedBinding(current.binding);
-    const currentFingerprint = fingerprintDshRuntimeBinding(currentBinding);
+    const currentFingerprint = normalizedBindingFingerprint(currentBinding);
     if (current.fingerprint !== currentFingerprint) {
       throw new DshConfigurationError("Reused DSH runtime has an invalid binding fingerprint");
     }

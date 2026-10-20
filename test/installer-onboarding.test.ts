@@ -719,7 +719,7 @@ describe("installer guided first run", () => {
     const input = new TerminalInput();
     Object.defineProperty(io.output, "isTTY", { value: true });
     io.output.onChunk = (text) => {
-      if (text.startsWith("Create a read-only") || text.startsWith("Set DEEPSEEK_API_KEY"))
+      if (text.startsWith("Create read-only @dsh") || text.startsWith("Set DEEPSEEK_API_KEY"))
         setImmediate(() => input.write("y\r"));
       if (text.startsWith("DeepSeek API key")) setImmediate(() => input.write(`${key}\r`));
       if (text.startsWith("Commit only")) setImmediate(() => input.write("n\r"));
@@ -800,29 +800,32 @@ describe("installer guided first run", () => {
       releaseSha,
     );
   });
-  it("rejects a starter with write authority before creating a workflow or sending a Secret", async () => {
-    const root = await project();
-    const invalid = await mkdtemp(join(suite, "invalid-templates-"));
-    const source = await readFile(join(templates, "dsh-review.yml"), "utf8");
-    await writeFile(
-      join(invalid, "dsh-review.yml"),
-      source.replace('allow-write: "false"', 'allow-write: "true"'),
-    );
-    const io = adapters(["y", "y"]);
-    await expect(
-      runInstaller({
-        argv: [],
-        cwd: root,
-        input: Readable.from([]),
-        isTTY: true,
-        env: {},
-        templateDirectory: invalid,
-        ...io,
-      }),
-    ).rejects.toThrow(/read-only PR Review configuration/u);
-    await expect(readFile(join(root, ".github/workflows/dsh-review.yml"))).rejects.toThrow();
-    expect(io.calls.some((call) => call.args[0] === "secret")).toBe(false);
-  });
+  it.each(["allow-write", "natural-language-write"])(
+    "rejects a starter enabling %s before creating a workflow or sending a Secret",
+    async (input) => {
+      const root = await project();
+      const invalid = await mkdtemp(join(suite, "invalid-templates-"));
+      const source = await readFile(join(templates, "dsh-review.yml"), "utf8");
+      await writeFile(
+        join(invalid, "dsh-review.yml"),
+        source.replace(`${input}: "false"`, `${input}: "true"`),
+      );
+      const io = adapters(["y", "y"]);
+      await expect(
+        runInstaller({
+          argv: [],
+          cwd: root,
+          input: Readable.from([]),
+          isTTY: true,
+          env: {},
+          templateDirectory: invalid,
+          ...io,
+        }),
+      ).rejects.toThrow(/read-only PR Review configuration/u);
+      await expect(readFile(join(root, ".github/workflows/dsh-review.yml"))).rejects.toThrow();
+      expect(io.calls.some((call) => call.args[0] === "secret")).toBe(false);
+    },
+  );
   it("resumes its existing workflow commit and offers push separately without creating a duplicate commit", async () => {
     const root = await project();
     const first = adapters(["y", "y", "y", "n"]);
@@ -1097,6 +1100,11 @@ describe("installer guided first run", () => {
     expect(workflow).toContain(`deepseek-harness-action@${releaseSha}`);
     expect(workflow).toContain("contents: read");
     expect(workflow).toContain('allow-write: "false"');
+    expect(workflow).toContain('natural-language-write: "false"');
+    expect(workflow).toContain("issue_comment:");
+    expect(workflow).toContain("pull_request_review_comment:");
+    expect(workflow).toContain("pull_request_review:");
+    expect(io.output.text).toContain("comment @dsh Explain this issue");
     expect(io.questions.join("\n")).not.toMatch(/Controlled|Native|DSH mode/u);
     expect(io.output.text).toContain("gh auth login");
     expect(io.calls.some((call) => call.gitOperation === "push")).toBe(false);

@@ -19,7 +19,6 @@ import {
   inspectStoredSession,
   SESSION_CHECKPOINT_LIMITS,
   SESSION_LOG_FILE,
-  sessionPayloadMatchesManifest,
   validateSessionPayload,
 } from "../src/session/checkpoint.js";
 import type {
@@ -395,13 +394,6 @@ describe("genuine bounded Session persistence", () => {
       bytes: payload.length,
       sha256: createHash("sha256").update(payload).digest("hex"),
     });
-    expect(sessionPayloadMatchesManifest(payload, checkpoint(payload).manifest)).toBe(true);
-    expect(
-      sessionPayloadMatchesManifest(
-        Buffer.concat([payload, Buffer.from(" ")]),
-        checkpoint(payload).manifest,
-      ),
-    ).toBe(false);
   });
 
   it("keeps optional external events without substituting an event projection", () => {

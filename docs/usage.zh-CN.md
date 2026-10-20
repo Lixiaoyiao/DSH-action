@@ -2,7 +2,7 @@
 
 [English](usage.md) · [项目首页](../README.zh-CN.md) · [安装指南](setup.zh-CN.md) · [配置参考](configuration.md)
 
-DeepSeek Harness 可以由仓库自动事件、评论第一行的 `@dsh` 命令，或维护者编写的自动化 workflow 中的显式 prompt 启动。
+DeepSeek Harness 可以由仓库自动事件、自然语言 `@dsh` 请求、原有命令，或维护者编写的自动化 workflow 中的显式 prompt 启动。
 
 ## 如何选择操作
 
@@ -11,22 +11,50 @@ DeepSeek Harness 可以由仓库自动事件、评论第一行的 `@dsh` 命令�
 | PR 的 `opened`、`synchronize`、`ready_for_review` 或 `reopened` 事件，且 `command: auto` | `review`    |
 | 使用诊断模板的失败 `workflow_run`                                                        | `diagnose`  |
 | 使用受信任自动修复模板的失败 `workflow_run`                                              | `fix`       |
-| 第一行 `@dsh task ...`                                                                   | `task`      |
-| 第一行 `@dsh review`                                                                     | `review`    |
-| 第一行 `@dsh diagnose`                                                                   | `diagnose`  |
-| 第一行 `@dsh fix`                                                                        | `fix`       |
-| Issue 第一行 `@dsh implement`                                                            | `implement` |
+| `@dsh 帮我分析这个问题`                                                                  | `task`      |
+| `@dsh task ...`                                                                          | `task`      |
+| `@dsh review`                                                                            | `review`    |
+| `@dsh diagnose`                                                                          | `diagnose`  |
+| `@dsh fix`                                                                               | `fix`       |
+| Issue 中的 `@dsh implement`                                                              | `implement` |
 | 维护者配置的 Issue label 或 assignee                                                     | `task`      |
 | 维护者配置的 PR label 或 assignee                                                        | `review`    |
 | dispatch 或 schedule 中 `command: auto`，并提供非空 `prompt`                             | `task`      |
 
-交互命令必须从触发评论的第一行开始，后续行可以继续写说明。Controller 会先校验所有来源 actor，再把命令正文视为操作者的受信任指令；无法查询权限时会拒绝请求。
+交互请求中的 `@dsh` 必须从引用和代码之外的一行开始，前面最多允许三个空格。之前可以写背景，之后可以继续写说明。每条评论使用一个实际调用。句中提及、Markdown 引用及其延续段落、围栏/缩进代码、行内代码和 HTML 注释都会被忽略；只有 `@dsh` 而没有需求时也不会启动任务。Controller 会先校验所有来源 actor，再把请求视为操作者的受信任指令；无法查询权限时会拒绝请求。
+
+工作流订阅相应事件后，可从 Issue/PR 讨论评论、PR review 正文和行内评论触发。机器人发布的自然语言请求会被忽略；明确获准的机器人仍可在原有授权策略下使用旧命令。
+
+对于 fork PR，请在 **Conversation** 页的普通讨论评论中调用 `@dsh`；review/行内评论事件可能缺少 Action 所需的 Secrets 或 token 权限。
 
 workflow 中的 `if: contains(..., '@dsh')` 只是粗略的 job 过滤条件；修改 `trigger-phrase` 时也要同步该条件。Action 仍会执行精确解析、上下文检查和授权。Label/assignee 路由以及 actor/comment filters 只影响维护者控制的路由，绝不授予 trust。
 
 ## 通用 task
 
-仓库问答、代码分析或不适合专用命令的编码工作，都可以使用 `task`。
+仓库问答和代码分析可以直接说：
+
+```text
+@dsh 帮我分析这个问题
+@dsh Help me understand this issue
+```
+
+自然语言会选择通用 `task`，默认只读。`@dsh 修复这个 Bug` 也保持只读：“修复”不会授予权限，也不会选择专用 `fix` 操作。安装器默认启用这类对话和自动 PR Review，不授予修改代码的权限。
+
+自然语言写入由独立开关 `natural-language-write` 控制，默认 `false`。开启后，请求仍须明确要求修改代码，例如：
+
+```text
+@dsh 修复这个 Bug 并提交 PR
+@dsh Please fix this bug and open a PR
+@dsh 修复这个 Bug
+```
+
+无需额外写“提交 PR”：直接的修改请求即可请求写权限，实际交付仍遵循 Controller 对 Issue/PR 的既有规则。
+
+问题、含糊指令和“解释如何修改”仍然只读。工作流还必须设置 `allow-write: "true"`，使用支持写入的权限档位，并通过下述所有验证与授权。高级 Commands 模板仍保留 `natural-language-write: "false"`；配置项目验证后再明确开启。单独设置 `task-access: write` 不会改变自然语言访问模式。
+
+`@dsh` 后的首个词如果是 `task`、`review`、`diagnose`、`fix` 或 `implement`，仍按旧命令处理，不区分大小写。因此 `@dsh fix this bug` 请求的是旧 `fix` 操作，默认只读 starter 会拒绝；自然语言开关不改变旧命令。自然语言可使用 `@dsh 修复这个 Bug` 或 `@dsh Please fix this bug`。
+
+原有显式 task 命令继续可用：
 
 ```text
 @dsh task --read 解释这个 PR 为什么需要两阶段提交

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import type { AgentToolManifest } from "../agent/contracts.js";
 import { PolicyDeniedError } from "../errors.js";
+import { canonicalJson } from "../security/canonical-json.js";
 import type { SecurityPolicy } from "../security/policy.js";
 import {
   mcpToolId,
@@ -296,26 +297,6 @@ function manifest(grant: ExtensionToolGrant): AgentToolManifest {
     ],
     inputSchema: { type: "object" },
   };
-}
-
-function canonicalJson(value: unknown): string {
-  const normalize = (candidate: unknown): unknown => {
-    if (candidate === null || typeof candidate === "string" || typeof candidate === "boolean") {
-      return candidate;
-    }
-    if (typeof candidate === "number") return Number.isFinite(candidate) ? candidate : null;
-    if (Array.isArray(candidate)) return candidate.map((item) => normalize(item));
-    if (typeof candidate === "object") {
-      return Object.fromEntries(
-        Object.entries(candidate)
-          .filter(([, item]) => item !== undefined)
-          .sort(([left], [right]) => left.localeCompare(right))
-          .map(([key, item]) => [key, normalize(item)]),
-      );
-    }
-    return null;
-  };
-  return JSON.stringify(normalize(value));
 }
 
 function auditedTools(tools: readonly ExtensionToolGrant[]): ExtensionAuditEntry["tools"] {

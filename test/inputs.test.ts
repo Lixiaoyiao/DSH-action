@@ -33,6 +33,7 @@ describe("loadInputs", () => {
       }),
     );
     expect(result.allowWrite).toBe(false);
+    expect(result.naturalLanguageWrite).toBe(false);
     expect(result.progressComment).toBe(true);
     expect(result.triggerPhrase).toBe("@dsh");
     expect(result.labelTrigger).toBe("");
@@ -61,6 +62,22 @@ describe("loadInputs", () => {
       ["node", "script with spaces.js"],
     ]);
     expect(result.taskOutputSchema).toBeUndefined();
+  });
+
+  it("keeps natural-language writes a separate explicit opt-in", () => {
+    const credentials = { "deepseek-api-key": "deepseek-key", "github-token": "github-token" };
+    expect(loadInputs(reader({ ...credentials, "allow-write": "true" }))).toMatchObject({
+      allowWrite: true,
+      naturalLanguageWrite: false,
+    });
+    expect(loadInputs(reader({ ...credentials, "natural-language-write": "true" }))).toMatchObject({
+      allowWrite: false,
+      naturalLanguageWrite: true,
+      taskAccess: "read",
+    });
+    expect(() => loadInputs(reader({ ...credentials, "natural-language-write": "yes" }))).toThrow(
+      /Invalid action inputs/u,
+    );
   });
 
   it("validates base branch and deterministic branch naming configuration", () => {

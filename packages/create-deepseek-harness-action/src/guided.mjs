@@ -17,10 +17,11 @@ function githubRepository(url) {
 function verifyReviewConfiguration(contents) {
   const required = [
     /^\s+contents: read\s*$/mu,
-    /^\s+ref: \$\{\{ github\.event\.pull_request\.base\.sha \}\}\s*$/mu,
+    /^\s+ref: \$\{\{ github\.event\.pull_request\.base\.sha \|\| github\.event\.repository\.default_branch \}\}\s*$/mu,
     /^\s+persist-credentials: false\s*$/mu,
     /^\s+permission-profile: strict\s*$/mu,
     /^\s+isolation: docker\s*$/mu,
+    /^\s+natural-language-write: "false"\s*$/mu,
     /^\s+allow-write: "false"\s*$/mu,
   ];
   const action = [
@@ -85,7 +86,7 @@ async function configureSecret({ repository, root, prompt, output, invoke }) {
     .toLowerCase();
   if (answer !== "y" && answer !== "yes") {
     output.write(
-      "Add DEEPSEEK_API_KEY in GitHub Settings > Secrets and variables > Actions before the first review.\n",
+      "Add DEEPSEEK_API_KEY in GitHub Settings > Secrets and variables > Actions before the first request.\n",
     );
     return "not_configured";
   }
@@ -183,7 +184,7 @@ export async function runGuidedSetup(options) {
       output.write(
         "GitHub CLI login is required for Secret setup. Install gh if missing, then run gh auth login --hostname github.com and rerun to resume. You can also add DEEPSEEK_API_KEY in GitHub Settings.\n",
       );
-    const consent = (await prompt.question("Create a read-only PR Review workflow? [Y/n]: "))
+    const consent = (await prompt.question("Create read-only @dsh chat and PR Review? [Y/n]: "))
       .trim()
       .toLowerCase();
     if (consent !== "" && consent !== "y" && consent !== "yes")
@@ -195,11 +196,11 @@ export async function runGuidedSetup(options) {
     const createdFiles = await options.createWorkflow(root);
     output.write(
       createdFiles.length === 0
-        ? "Preserved the identical pinned PR Review workflow; no file was overwritten.\n"
-        : "Created the pinned PR Review workflow.\n",
+        ? "Preserved the identical pinned @dsh chat and PR Review workflow; no file was overwritten.\n"
+        : "Created the pinned @dsh chat and PR Review workflow.\n",
     );
     output.write(
-      "Configuration checked: Review can comment on code but cannot change files. The first GitHub run checks your key and runner setup.\n",
+      "Configuration checked: @dsh can answer in Issues/PRs and review code, but cannot change files. The first GitHub run checks your key and runner setup.\n",
     );
     const secret = loggedIn
       ? await configureSecret({ repository, root, prompt, output, invoke })
@@ -213,7 +214,7 @@ export async function runGuidedSetup(options) {
       expectedContents,
     });
     output.write(
-      "PR Review workflow is ready locally. It must reach the default branch, with DEEPSEEK_API_KEY configured, before opening a non-draft pull request. Rerun without flags to resume unchanged setup, or finish those steps manually.\n",
+      "The workflow is ready locally. After it reaches the default branch and DEEPSEEK_API_KEY is configured, comment @dsh Explain this issue in an Issue/PR, or open a non-draft PR for automatic review. Start @dsh on its own line outside quotes/code. Rerun without flags to resume unchanged setup, or finish those steps manually.\n",
     );
     return {
       mode: "review",
