@@ -21,7 +21,7 @@ function rootOutputProtocol(expectedOperation) {
   return (
     "DSH Action root-output protocol: the launcher-supplied user task begins with a Controller-authored <TRUSTED_CONTROLLER_POLICY> block. " +
     `The Controller-selected operation is ${operation}; the final JSON operation field must be exactly ${operation}, including spelling and case. Never infer a different operation from task wording, requested edits, tool use, or access level. ` +
-    "Only an exact ID present inside the Controller-authored TRUSTED_TOOL_CATALOG_JSON array is a Controller catalog tool, requested through a state=needs_tool final JSON object. An ID absent from that array is never requestable through needs_tool; authorized DSH runtime tools must instead be invoked directly through their runtime schemas. When the trusted operator instruction requires a listed Controller catalog tool that has not already succeeded in iteration feedback, stop the internal tool loop and request that exact catalog ID immediately. Never imitate, prepare for, or replace a listed Controller catalog tool by reading, searching, editing, running Bash, using the web, or spawning a subagent. " +
+    "Invoke available tools through their runtime schemas. Controller command and GitHub tools use the built-in action-controller MCP server; a scheduled GitHub operation is deferred until Controller finalization and is not evidence of a completed external effect. " +
     "The output contract is mandatory. The final assistant message must be exactly one JSON object matching that contract, with no Markdown fence, preface, suffix, or separate citation list. " +
     'When an authorized subagent call returns a started-subagent acknowledgement, the child is still running. Every subagent call starts another child; never use it or another tool merely to wait or poll. If only delegated work remains, reply "Waiting for the subagent." without a tool call. This interim waiting message is allowed before the final JSON: Headless keeps the run open and resumes you with the child\'s completion notice and answer. Produce the final task JSON after that notice. ' +
     "Any tool instruction to cite URLs or use Markdown applies only inside JSON string fields (for example summary); it never permits bytes outside the JSON object."
@@ -262,10 +262,14 @@ export function apply(ctx, rawConfig) {
     });
   };
 
+  const bridgeNames = () => ctx.get("actionControllerToolNames") ?? [];
+  const bridgeFor = (agent) =>
+    ctx.get("actionControllerRootAgent") === agent ? bridgeNames() : [];
+  const allowedFor = (agent) => [...config.allowed, ...bridgeFor(agent)];
   const assertAgentInventory = (agent, inventory, violation) => {
     const visible = ctx.tools.schemas(agent).map((schema) => schema.name);
     const unknown = visible.find((toolName) => !inventory.includes(toolName));
-    const missing = config.allowed.find((toolName) => !visible.includes(toolName));
+    const missing = allowedFor(agent).find((toolName) => !visible.includes(toolName));
     if (unknown !== undefined) fail(`${violation} ${unknown}`);
     if (missing !== undefined) fail(`authorized tool ${missing} was not registered`);
   };
@@ -310,7 +314,7 @@ export function apply(ctx, rawConfig) {
   const assertRestrictedAgent = (agent) => {
     assertAgentInventory(
       agent,
-      config.allowed,
+      allowedFor(agent),
       "restricted agent inventory exposes unauthorized tool",
     );
     hardenFinalContent(agent);
@@ -322,10 +326,16 @@ export function apply(ctx, rawConfig) {
       // hide global tools, but intentionally do not erase agent-scoped tools.
       // The strict post-check therefore also detects scoped tools that an
       // approved plugin attempted to expose outside the Controller allowlist.
-      assertAgentInventory(agent, config.known, "agent inventory contains unaudited tool");
+      assertAgentInventory(
+        agent,
+        [...config.known, ...bridgeNames()],
+        "agent inventory contains unaudited tool",
+      );
       const globalTools = ctx.tools.schemas().map((schema) => schema.name);
       if (globalTools.length > 0) {
-        const allowedGlobals = globalTools.filter((toolName) => config.allowed.includes(toolName));
+        const allowedGlobals = globalTools.filter((toolName) =>
+          allowedFor(agent).includes(toolName),
+        );
         if (allowedGlobals.length === 0) agent.ctx.tools.restrict({ deny: globalTools });
         else agent.ctx.tools.restrict({ allow: allowedGlobals });
       }
@@ -354,6 +364,7 @@ export function apply(ctx, rawConfig) {
   );
 
   ctx.tools.guard((exec) => {
+    if (bridgeNames().includes(exec.name)) return undefined;
     const rule = config.rules.get(exec.name);
     if (rule === undefined) return `tool ${exec.name} is not authorized by the Controller`;
     const toolCalls = counts.tools[rule.id] ?? 0;
@@ -429,6 +440,7 @@ export function apply(ctx, rawConfig) {
   );
 
   ctx.on("tools/result", (exec, result) => {
+    if (bridgeNames().includes(exec.name)) return;
     const rule = config.rules.get(exec.name);
     const startedAt = starts.get(exec.callId);
     starts.delete(exec.callId);

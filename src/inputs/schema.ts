@@ -204,7 +204,7 @@ export const actionInputsSchema = z.object({
   baseBranch: baseBranchInput,
   branchPrefix: validatedBranchInput("branch-prefix", validateBranchPrefix),
   branchNameTemplate: validatedBranchInput("branch-name-template", validateBranchNameTemplate),
-  maxTurns: integerInput(1, 10),
+  maxControllerSteps: integerInput(1, 10),
   permissionProfile: permissionProfileSchema,
   validationIntegrity: z.enum(["off", "warn", "strict"]),
   allowPluginInstall: booleanInput,

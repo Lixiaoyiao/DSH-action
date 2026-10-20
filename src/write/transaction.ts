@@ -14,12 +14,8 @@ import {
   type BoundPullRequestIdentity,
 } from "./pr.js";
 import { withinValidationDeadline, type ValidationDeadline } from "./validation-deadline.js";
-import {
-  type ValidationCommandCountObserver,
-  type CurrentWorkspaceValidation,
-} from "./validate.js";
 import { inspectWorkspaceChanges, type WorkspaceSnapshot } from "./workspace.js";
-import { validateWorkspaceRevision } from "./workspace-validation.js";
+import type { WorkspaceValidation } from "./workspace-validation.js";
 import {
   assertEquivalentOperationCommit,
   assertOwnedOperationCommit,
@@ -28,28 +24,27 @@ import {
   type BranchWriteOperationKind,
 } from "./operation-commit.js";
 
-export type RepositoryValidationProvenance =
-  CurrentWorkspaceValidation | { readonly kind: "completed-operation" };
-
-export interface ControllerWriteControl {
-  readonly revalidateAuthority: () => Promise<void>;
-  readonly validateWorkspace?: (budget: ValidationDeadline) => Promise<CurrentWorkspaceValidation>;
-  readonly onValidationPassed?: (validation: RepositoryValidationProvenance) => void;
-  /** Retain a confirmed ref even if subsequent PR publication fails. */
-  readonly onBranchConfirmed?: (receipt: {
-    readonly branchName: string;
-    readonly commitSha: string;
-  }) => void;
-  readonly onValidationCommandCount?: ValidationCommandCountObserver;
-  readonly validationDeadlineMs?: number;
-  readonly signal?: AbortSignal;
-  readonly onPhase?: (phase: "validation" | "write") => void;
+export interface RepositoryWriteContext {
+  readonly writer: RepositoryWriter;
+  readonly budget: ValidationDeadline;
 }
 
-interface WriteValidationConfiguration {
-  readonly runTests: boolean;
-  readonly commands: readonly (readonly string[])[];
-  readonly containerImage: string;
+interface RepositoryWriterOptions {
+  readonly client: GitHubClient;
+  readonly repository: { readonly owner: string; readonly repo: string };
+  readonly workspace: WorkspaceSnapshot;
+  readonly validation: WorkspaceValidation;
+  readonly revalidateAuthority: () => Promise<void>;
+  readonly signal?: AbortSignal;
+  readonly onPhase: (phase: "validation" | "write") => void;
+}
+
+export interface RepositoryWriteFacts {
+  readonly branchName?: string;
+  readonly commitSha?: string;
+  readonly changedPaths?: readonly string[];
+  readonly pullRequestNumber?: number;
+  readonly pullRequestUrl?: string;
 }
 
 interface BaseBranchWriteTarget {
@@ -73,13 +68,10 @@ export interface PullHeadWritePlan {
 }
 
 type RepositoryWritePlan = NewPullRequestWritePlan | PullHeadWritePlan;
-interface RepositoryWriteOptions {
-  readonly client: GitHubClient;
-  readonly repository: { readonly owner: string; readonly repo: string };
-  readonly workspace: WorkspaceSnapshot;
+interface RepositoryWriteOptions extends RepositoryWriterOptions {
   readonly plan: RepositoryWritePlan;
-  readonly validation: WriteValidationConfiguration;
-  readonly control: ControllerWriteControl;
+  readonly budget: ValidationDeadline;
+  readonly effects: { -readonly [K in keyof RepositoryWriteFacts]?: RepositoryWriteFacts[K] };
 }
 interface NewPullRequestWriteResult {
   readonly branch: string;
@@ -91,11 +83,26 @@ interface PullHeadWriteResult {
   readonly paths: readonly string[];
 }
 
-function controllerWriteDeadline(control: ControllerWriteControl): ValidationDeadline {
-  return {
-    deadlineMs: control.validationDeadlineMs ?? Date.now() + 10 * 60_000,
-    ...(control.signal === undefined ? {} : { signal: control.signal }),
-  };
+/** Bind validation and effect evidence once, rather than forwarding callbacks through commands. */
+export class RepositoryWriter {
+  private readonly effects: {
+    -readonly [K in keyof RepositoryWriteFacts]?: RepositoryWriteFacts[K];
+  } = {};
+  public constructor(private readonly options: RepositoryWriterOptions) {}
+  public get facts(): RepositoryWriteFacts {
+    return { ...this.effects };
+  }
+  public write(
+    plan: NewPullRequestWritePlan,
+    budget: ValidationDeadline,
+  ): Promise<NewPullRequestWriteResult>;
+  public write(plan: PullHeadWritePlan, budget: ValidationDeadline): Promise<PullHeadWriteResult>;
+  public async write(
+    plan: RepositoryWritePlan,
+    budget: ValidationDeadline,
+  ): Promise<NewPullRequestWriteResult | PullHeadWriteResult> {
+    return executeRepositoryWrite({ ...this.options, plan, budget, effects: this.effects });
+  }
 }
 
 async function revalidateWriteTarget(options: RepositoryWriteOptions): Promise<void> {
@@ -126,25 +133,6 @@ async function revalidateWriteTarget(options: RepositoryWriteOptions): Promise<v
   }
 }
 
-async function validateWriteTransaction(
-  options: RepositoryWriteOptions,
-  budget: ValidationDeadline,
-): Promise<void> {
-  const { validation, control } = options;
-  const receipt = await (control.validateWorkspace?.(budget) ??
-    validateWorkspaceRevision(
-      options.workspace,
-      validation,
-      budget,
-      control.onValidationCommandCount,
-    ));
-  control.onValidationPassed?.(receipt);
-  throwIfCancelled(control.signal);
-  await withinValidationDeadline(async () => revalidateWriteTarget(options), budget);
-  await withinValidationDeadline(control.revalidateAuthority, budget);
-  throwIfCancelled(control.signal);
-}
-
 async function persistNewPullRequest(
   options: RepositoryWriteOptions & { readonly plan: NewPullRequestWritePlan },
   candidateSha: string,
@@ -172,7 +160,7 @@ async function persistNewPullRequest(
       target.sha,
     );
   }
-  options.control.onBranchConfirmed?.({ branchName: operation.branch, commitSha });
+  Object.assign(options.effects, { branchName: operation.branch, commitSha });
   await assertRemoteBranchHead(client, owner, repo, operation.branch, commitSha);
   await revalidateWriteTarget(options);
   const pull = await createPullRequest(
@@ -188,24 +176,24 @@ async function persistNewPullRequest(
   return { branch: operation.branch, pullNumber: pull.number, url: pull.url };
 }
 
-/** One interface owns validation, current authority, binding and effect ordering for both real write adapters. */
-export function executeValidatedRepositoryWrite(
-  options: RepositoryWriteOptions & { readonly plan: NewPullRequestWritePlan },
-): Promise<NewPullRequestWriteResult>;
-export function executeValidatedRepositoryWrite(
-  options: RepositoryWriteOptions & { readonly plan: PullHeadWritePlan },
-): Promise<PullHeadWriteResult>;
-export async function executeValidatedRepositoryWrite(
+/** One owner enforces integrity, validation, fresh authority, target binding and reconciliation. */
+async function executeRepositoryWrite(
   options: RepositoryWriteOptions,
 ): Promise<NewPullRequestWriteResult | PullHeadWriteResult> {
   const {
     client,
     repository: { owner, repo },
     plan,
-    control,
+    budget,
+    validation,
+    signal,
   } = options;
-  const budget = controllerWriteDeadline(control);
-  control.onPhase?.("validation");
+  options.onPhase("validation");
+  const changes = await withinValidationDeadline(
+    () => inspectWorkspaceChanges(options.workspace),
+    budget,
+  );
+  const validateWorkspace = await validation.prepareWrite(changes, budget);
   let reconciledCommit: string | null = null;
   if (plan.kind === "new-pr") {
     const { operation, target } = plan;
@@ -240,7 +228,12 @@ export async function executeValidatedRepositoryWrite(
       );
       // The authenticated completed operation was already Controller-validated.
       // Preserve that successful evidence without rerunning tests or mutations.
-      control.onValidationPassed?.({ kind: "completed-operation" });
+      validation.completedOperation();
+      Object.assign(options.effects, {
+        branchName: operation.branch,
+        pullRequestNumber: completed.number,
+        pullRequestUrl: completed.url,
+      });
       return { branch: operation.branch, pullNumber: completed.number, url: completed.url };
     }
     reconciledCommit = await withinValidationDeadline(
@@ -250,16 +243,14 @@ export async function executeValidatedRepositoryWrite(
     );
   }
   await withinValidationDeadline(async () => revalidateWriteTarget(options), budget);
-  if (plan.kind === "pr-head") {
-    const changes = await withinValidationDeadline(
-      async () => inspectWorkspaceChanges(options.workspace),
-      budget,
-    );
-    if (changes.all.length === 0)
-      throw new Error("DSH reported a write but produced no file changes");
-  }
-  await validateWriteTransaction(options, budget);
-  control.onPhase?.("write");
+  if (plan.kind === "pr-head" && changes.all.length === 0)
+    throw new Error("DSH reported a write but produced no file changes");
+  await validateWorkspace();
+  throwIfCancelled(signal);
+  await withinValidationDeadline(() => revalidateWriteTarget(options), budget);
+  await withinValidationDeadline(options.revalidateAuthority, budget);
+  throwIfCancelled(signal);
+  options.onPhase("write");
   // The authority gate precedes every initial persistent effect, including blobs.
   // After this seam, finish the bounded transport's existing reconciliation sequence
   // if cancellation races it, without replaying a ref or PR mutation.
@@ -275,7 +266,17 @@ export async function executeValidatedRepositoryWrite(
   );
   await revalidateWriteTarget(options);
   if (plan.kind === "new-pr") {
-    return await persistNewPullRequest({ ...options, plan }, candidate.sha, reconciledCommit);
+    const result = await persistNewPullRequest(
+      { ...options, plan },
+      candidate.sha,
+      reconciledCommit,
+    );
+    Object.assign(options.effects, {
+      branchName: result.branch,
+      pullRequestNumber: result.pullNumber,
+      pullRequestUrl: result.url,
+    });
+    return result;
   }
   await assertRemoteBranchHead(
     client,
@@ -285,5 +286,6 @@ export async function executeValidatedRepositoryWrite(
     plan.target.identity.headSha,
   );
   await updateRemoteBranch(client, owner, repo, plan.target.identity.headRef, candidate.sha);
+  Object.assign(options.effects, { commitSha: candidate.sha, changedPaths: candidate.paths });
   return { commitSha: candidate.sha, paths: candidate.paths };
 }

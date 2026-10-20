@@ -221,6 +221,7 @@ jobs:
           for (const asset of [
             "action-launcher.mjs",
             "action-policy.mjs",
+            "action-controller.mjs",
             "action-workspace.mjs",
             "native-launcher.mjs",
           ]) {
@@ -318,7 +319,7 @@ jobs:
             any(.[]; .type == "status" and .phase == "turn_end" and .reason.kind == "completed") and
             .[-1].type == "final" and
             (.[-1].text | fromjson |
-              .protocolVersion == 1 and .operation == "review" and
+              .protocolVersion == 2 and .operation == "review" and
               .state == "final" and .summary == "native ecosystem booted")
           ' "$smoke_dir/native.stdout" >/dev/null
           jq -s -e '

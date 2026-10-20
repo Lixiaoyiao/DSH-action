@@ -91,7 +91,7 @@ function resumableResponses() {
       .join("\n") + "\n",
   );
   const manifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     repository: { owner: "octo", repo: "repo" },
     workflow: {
       path: ".github/workflows/session-auto-e2e.yml",

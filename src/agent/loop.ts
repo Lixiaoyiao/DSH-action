@@ -1,9 +1,13 @@
 import { LoopTelemetry } from "./loop-telemetry.js";
 import { invokeControllerTool } from "./tool-invocation.js";
-import { AGENT_PROTOCOL_VERSION, type AgentEngine } from "./contracts.js";
+import { AGENT_PROTOCOL_VERSION, type AgentEngine, type ToolProvider } from "./contracts.js";
 import { createDshRuntime, disposeDshRuntime, type DshRunResult } from "../dsh/runner.js";
 import { withDshRuntimeActivity } from "../dsh/runtime.js";
-import { DshError, DshMalformedOutputError } from "../dsh/errors.js";
+import {
+  attachDshFailureTelemetry,
+  dshFailureTelemetry,
+  DshMalformedOutputError,
+} from "../dsh/errors.js";
 import { parseDshOutput } from "../dsh/schema.js";
 import type { ActionInputs } from "../inputs.js";
 import { throwIfCancelled } from "../lifecycle/cancellation.js";
@@ -20,7 +24,6 @@ import type {
 } from "./loop-contracts.js";
 import {
   bounded,
-  boundedFeedbackData,
   feedbackFingerprint,
   validationFeedback,
   turnContext,
@@ -62,13 +65,31 @@ export async function runAgentLoop<TFinal>(
   let engine: AgentEngine<DshRunResult> | undefined;
   const feedback: LoopFeedback[] = [];
   const telemetry = new LoopTelemetry();
-  const taskScopeFingerprint = feedbackFingerprint({
-    operation: task.operation,
-    requestedAccess: task.requestedAccess,
-    instructions: task.instructions,
-    context: task.contextPacket,
-    tools: task.tools.manifests.map(({ id }) => id).sort(),
-  });
+  let steps = 0;
+  const reserveStep = (): void => {
+    if (steps >= inputs.maxControllerSteps)
+      throw new AgentLoopLimitError(inputs.maxControllerSteps);
+    steps += 1;
+  };
+  const provider = hooks.toolProvider;
+  const controllerTools: ToolProvider | undefined =
+    provider === undefined
+      ? undefined
+      : {
+          id: provider.id,
+          manifest: () => provider.manifest(),
+          invoke: async (call, context) => {
+            throwIfCancelled(hooks.signal);
+            reserveStep();
+            return await invokeControllerTool(
+              provider,
+              call,
+              context,
+              (receipt) => telemetry.recordTool(receipt),
+              now,
+            );
+          },
+        };
   const serializedTaskContext = JSON.stringify(task.contextPacket);
   const taskContextAnchor: TaskContextAnchor = {
     sha256: feedbackFingerprint(task.contextPacket),
@@ -88,16 +109,24 @@ export async function runAgentLoop<TFinal>(
         now,
       );
     engine =
-      (await dependencies.createEngine?.(runtime)) ??
-      new DshAgentEngine(inputs, task.policy, runtime, task.tools.extensions);
-    for (let turn = 1; turn <= inputs.maxTurns; turn += 1) {
+      (await dependencies.createEngine?.(runtime, controllerTools)) ??
+      new DshAgentEngine(
+        inputs,
+        task.policy,
+        runtime,
+        task.tools.extensions,
+        undefined,
+        controllerTools,
+      );
+    for (let turn = 1; ; turn += 1) {
+      reserveStep();
       throwIfCancelled(hooks.signal);
       if (hooks.deadlineMs - now() <= 0) throw new AgentDeadlineError();
       const onTurn = hooks.onTurn;
       if (onTurn !== undefined) {
         await runLifecycleHookWithinDeadline(
           "turn progress",
-          async () => onTurn(turn, inputs.maxTurns),
+          async () => onTurn(turn, inputs.maxControllerSteps),
           hooks,
           now,
         );
@@ -123,12 +152,16 @@ export async function runAgentLoop<TFinal>(
           now,
         );
       } catch (error: unknown) {
-        if (error instanceof DshError && error.telemetry !== undefined) {
-          const aggregateFailure = telemetry.observe(error.telemetry);
-          error.attachTelemetry(aggregateFailure);
+        const evidence = dshFailureTelemetry(error);
+        if (evidence !== undefined) {
+          const aggregateFailure = telemetry.observe(evidence);
+          attachDshFailureTelemetry(error, aggregateFailure);
           await hooks.onEngineFailure?.(aggregateFailure, stats(turn));
         }
-        if (pendingValidationFailure !== undefined && error instanceof DshMalformedOutputError) {
+        if (
+          pendingValidationFailure !== undefined &&
+          (error instanceof DshMalformedOutputError || error instanceof AgentLoopLimitError)
+        ) {
           throw pendingValidationFailure;
         }
         throw error;
@@ -144,43 +177,6 @@ export async function runAgentLoop<TFinal>(
       };
       const aggregate = telemetry.observe(result);
       await hooks.onState?.(aggregate, stats(turn));
-      const request = result.output.toolRequest;
-      if (request !== undefined) {
-        throwIfCancelled(hooks.signal);
-        if (hooks.toolProvider === undefined) {
-          throw new Error(`Agent requested unavailable tool: ${request.id}`);
-        }
-        const remainingBeforeTool = hooks.deadlineMs - now();
-        if (remainingBeforeTool <= 0) throw new AgentDeadlineError();
-        const input = request.input ?? {};
-        const callId = `call-${feedbackFingerprint({
-          taskScopeFingerprint,
-          turn,
-          id: request.id,
-          input,
-        }).slice(0, 40)}`;
-        let toolResult;
-        try {
-          toolResult = await invokeControllerTool(
-            hooks.toolProvider,
-            { callId, id: request.id, input },
-            {
-              workspacePath: task.workspacePath,
-              timeoutMs: remainingBeforeTool,
-              ...(hooks.signal === undefined ? {} : { signal: hooks.signal }),
-            },
-            (receipt) => telemetry.recordTool(receipt),
-            now,
-          );
-        } catch (error: unknown) {
-          await hooks.onState?.(aggregate, stats(turn));
-          throw error;
-        }
-        await hooks.onState?.(aggregate, stats(turn));
-        feedback.push({ kind: "tool", turn, data: boundedFeedbackData(toolResult) });
-        continue;
-      }
-
       if (result.output.state === "blocked") {
         throwIfCancelled(hooks.signal);
         if (pendingValidationFailure !== undefined) throw pendingValidationFailure;
@@ -232,10 +228,9 @@ export async function runAgentLoop<TFinal>(
         }
         lastValidationFingerprint = fingerprint;
         feedback.push({ kind: "validation", turn, data });
-        if (turn === inputs.maxTurns) throw error;
+        if (steps >= inputs.maxControllerSteps) throw error;
       }
     }
-    throw pendingValidationFailure ?? new AgentLoopLimitError(inputs.maxTurns);
   } finally {
     await disposeAgentLoop(
       [

@@ -171,34 +171,42 @@ describe("orchestrator DSH failure reporting", () => {
     const outputs = buildActionOutputs(outcome);
 
     expect(outcome).toMatchObject({
-      conclusion: "failure",
-      operation: "task",
-      authority: {
-        schemaVersion: 1,
-        scope: "action-known-sources",
-        knownSources: [
-          { kind: "controller-credential", service: "github" },
-          { kind: "controller-credential", service: "deepseek" },
-        ],
+      schemaVersion: 2,
+      termination: {
+        conclusion: "failure",
+        error: {
+          code: "POLICY_DENIED",
+          category: "policy",
+          phase: "context",
+          retryable: false,
+        },
       },
-      error: {
-        code: "POLICY_DENIED",
-        category: "policy",
-        phase: "context",
-        retryable: false,
+      operation: { kind: "task" },
+      context: {
+        authority: {
+          schemaVersion: 1,
+          scope: "action-known-sources",
+          knownSources: [
+            { kind: "controller-credential", service: "github" },
+            { kind: "controller-credential", service: "deepseek" },
+          ],
+        },
       },
     });
-    expect(outcome.authority?.knownSources).not.toContainEqual(
+    expect(outcome.context.authority?.knownSources).not.toContainEqual(
       expect.objectContaining({ kind: "extension-credential" }),
     );
-    expect(outcome.error?.code).not.toBe("CONTEXT_PREPARATION_FAILED");
+    expect(outcome.termination.error?.code).not.toBe("CONTEXT_PREPARATION_FAILED");
     expect(JSON.parse(String(outputs["result-json"]))).toMatchObject({
-      status: "denied",
-      error: {
-        code: "POLICY_DENIED",
-        category: "policy",
-        phase: "context",
-        retryable: false,
+      schemaVersion: 2,
+      termination: {
+        status: "denied",
+        error: {
+          code: "POLICY_DENIED",
+          category: "policy",
+          phase: "context",
+          retryable: false,
+        },
       },
     });
     expect(mocks.runAgentLoop).not.toHaveBeenCalled();
@@ -228,26 +236,27 @@ describe("orchestrator DSH failure reporting", () => {
     const outputs = buildActionOutputs(outcome);
 
     expect(outcome).toMatchObject({
-      conclusion: "failure",
-      operation: "task",
+      schemaVersion: 2,
+      termination: {
+        conclusion: "failure",
+        error: { code: "DSH_PROCESS_FAILED", phase: "agent" },
+      },
+      operation: { kind: "task" },
       agent: {
         durationMs: 25,
         extensionAudit,
         dshToolReceipts: [failureReceipt],
       },
-      error: { code: "DSH_PROCESS_FAILED", phase: "agent" },
     });
-    expect(outputs["extension-profile-digest"]).toBe(extensionAudit.digest);
-    expect(JSON.parse(String(outputs["tool-receipts"]))).toMatchObject({
-      dsh: [failureReceipt],
-      truncated: false,
-      droppedCount: 0,
-    });
+    expect(outcome.agent?.extensionAudit?.digest).toBe(extensionAudit.digest);
+    expect(outcome.agent?.receiptsDropped).toBeUndefined();
     expect(JSON.parse(String(outputs["result-json"]))).toMatchObject({
-      status: "failed",
-      extensions: extensionAudit,
-      loop: { dshToolReceipts: [failureReceipt] },
-      error: { code: "DSH_PROCESS_FAILED", phase: "agent" },
+      schemaVersion: 2,
+      termination: {
+        status: "failed",
+        error: { code: "DSH_PROCESS_FAILED", phase: "agent" },
+      },
+      agent: { extensionAudit, dshToolReceipts: [failureReceipt] },
     });
   });
 
@@ -257,12 +266,15 @@ describe("orchestrator DSH failure reporting", () => {
     const outcome = await runAction();
 
     expect(outcome).toMatchObject({
-      conclusion: "failure",
-      error: {
-        code: "DSH_PROCESS_FAILED",
-        category: "runtime",
-        phase: "agent",
-        retryable: true,
+      schemaVersion: 2,
+      termination: {
+        conclusion: "failure",
+        error: {
+          code: "DSH_PROCESS_FAILED",
+          category: "runtime",
+          phase: "agent",
+          retryable: true,
+        },
       },
     });
   });

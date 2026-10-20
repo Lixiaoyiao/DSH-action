@@ -24,7 +24,7 @@ const schemaJson = JSON.stringify({
 
 function taskEnvelope(extra: Readonly<Record<string, unknown>> = {}): Record<string, unknown> {
   return {
-    protocolVersion: 1,
+    protocolVersion: 2,
     operation: "task",
     state: "final",
     summary: "Task complete",

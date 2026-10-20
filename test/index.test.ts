@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { RunOutcome } from "../src/result.js";
+import { finishRunReport, type RunFacts, type RunReport } from "../src/result.js";
 
 const mocks = vi.hoisted(() => ({
-  runAction: vi.fn<(options: { readonly signal: AbortSignal }) => Promise<RunOutcome>>(),
+  runAction: vi.fn<(options: { readonly signal: AbortSignal }) => Promise<RunReport>>(),
   setOutput: vi.fn<(name: string, value: unknown) => void>(),
   setFailed: vi.fn(),
   warning: vi.fn(),
@@ -56,8 +56,7 @@ afterEach(() => {
 
 describe("action entrypoint finalization", () => {
   it("sets the complete result envelope before failing the step", async () => {
-    const failure: RunOutcome = {
-      schemaVersion: 1,
+    const failure: RunFacts = {
       conclusion: "failure",
       operation: "review",
       summary: "DeepSeek Harness timed out",
@@ -73,7 +72,7 @@ describe("action entrypoint finalization", () => {
         retryable: true,
       },
     };
-    mocks.runAction.mockResolvedValue(failure);
+    mocks.runAction.mockResolvedValue(finishRunReport(failure));
 
     await expect(import("../src/index.js")).rejects.toBe(exitBoundary);
     expect(mocks.exit).toHaveBeenCalledWith(0);
@@ -83,15 +82,16 @@ describe("action entrypoint finalization", () => {
     const outputs = Object.fromEntries(mocks.setOutput.mock.calls);
     expect(outputs).toMatchObject({
       conclusion: "failure",
-      operation: "review",
-      "error-code": "DSH_TIMEOUT",
-      "error-message": "DSH exceeded its timeout",
+      summary: "DeepSeek Harness timed out",
     });
     const structured: unknown = JSON.parse(String(outputs["result-json"]));
     expect(structured).toMatchObject({
-      schemaVersion: 1,
-      status: "timed_out",
-      error: { code: "DSH_TIMEOUT", phase: "agent", retryable: true },
+      schemaVersion: 2,
+      operation: { kind: "review" },
+      termination: {
+        status: "timed_out",
+        error: { code: "DSH_TIMEOUT", phase: "agent", retryable: true },
+      },
     });
     expect(mocks.setOutput.mock.invocationCallOrder.at(-1)).toBeLessThan(
       mocks.setFailed.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
@@ -99,16 +99,17 @@ describe("action entrypoint finalization", () => {
   });
 
   it("does not turn a successful mutation into failure when the step summary is unavailable", async () => {
-    mocks.runAction.mockResolvedValue({
-      schemaVersion: 1,
-      conclusion: "success",
-      operation: "implement",
-      summary: "Pull request created",
-      findingsCount: 0,
-      durationMs: 1_000,
-      branchName: "dsh/issue-7",
-      pullRequestUrl: "https://github.com/octo/repo/pull/8",
-    } satisfies RunOutcome);
+    mocks.runAction.mockResolvedValue(
+      finishRunReport({
+        conclusion: "success",
+        operation: "implement",
+        summary: "Pull request created",
+        findingsCount: 0,
+        durationMs: 1_000,
+        branchName: "dsh/issue-7",
+        pullRequestUrl: "https://github.com/octo/repo/pull/8",
+      } satisfies RunFacts),
+    );
     mocks.summaryWrite.mockRejectedValue(new Error("summary unavailable"));
 
     await expect(import("../src/index.js")).rejects.toBe(exitBoundary);
@@ -128,18 +129,20 @@ describe("action entrypoint finalization", () => {
     const outputs = Object.fromEntries(mocks.setOutput.mock.calls);
     expect(outputs).toMatchObject({
       conclusion: "failure",
-      operation: "none",
-      "error-code": "ACTION_RUNTIME_FAILED",
     });
-    expect(String(outputs["error-message"])).not.toContain(token);
-    expect(String(outputs["error-message"])).toContain("[REDACTED_GITHUB_TOKEN]");
+    expect(String(outputs["result-json"])).not.toContain(token);
+    expect(String(outputs["result-json"])).toContain("[REDACTED_GITHUB_TOKEN]");
     expect(JSON.parse(String(outputs["result-json"]))).toMatchObject({
-      status: "failed",
-      error: {
-        code: "ACTION_RUNTIME_FAILED",
-        category: "runtime",
-        phase: "entrypoint",
-        retryable: true,
+      schemaVersion: 2,
+      operation: { kind: "none" },
+      termination: {
+        status: "failed",
+        error: {
+          code: "ACTION_RUNTIME_FAILED",
+          category: "runtime",
+          phase: "entrypoint",
+          retryable: true,
+        },
       },
     });
   });

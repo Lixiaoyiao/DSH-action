@@ -69,7 +69,7 @@ describe("trusted core E2E workflow", () => {
 
     expect(integrity).toContain("permission-profile: custom");
     expect(integrity).toContain(`allowed-tools: '["workspace.edit","native.bash"]'`);
-    expect(integrity).toContain('max-turns: "1"');
+    expect(integrity).toContain('max-controller-steps: "1"');
     expect(integrity).not.toContain("permission-profile: standard");
     expect(integrity).toContain("deepseek-api-key: dsh-e2e-integrity-fixture-key");
     expect(integrity).toContain("base-url: ${{ steps.integrity_fixture.outputs.base_url }}");
@@ -108,8 +108,10 @@ describe("trusted core E2E workflow", () => {
     expect(launch).toContain('allow-write: "true"');
     expect(launch).toContain('run-tests: "true"');
     expect(launch).toContain('disallowed-tools: \'["native.bash","native.web-search"]\'');
-    expect(assertion).toContain('.policy.trust == "trusted-write"');
-    expect(assertion).toContain('.write.status == "no-changes" and .write.changedPaths == []');
+    expect(assertion).toContain('.context.policy.trust == "trusted-write"');
+    expect(assertion).toContain(
+      '.publication.writeStatus == "no-changes" and .publication.changedPaths == []',
+    );
     expect(assertion).toContain('.validation.status == "not-applicable"');
     expect(assertion).toContain('.id == "native.subagent" and .completed == true and .ok == true');
     expect(assertion).toContain("for component in main candidate prs comments task-refs task-prs");
@@ -236,15 +238,17 @@ describe("trusted core E2E workflow", () => {
     const mcp = stepBlock(workflow, "Assert MCP allow/deny and receipts");
 
     for (const assertion of [strict, mcp]) {
-      expect(assertion).toContain('.toolPolicy.policyOwner == "controller"');
-      expect(assertion).toContain(".toolPolicy.effectiveTools == .permissions.effectiveTools");
-      expect(assertion).toContain('(.toolPolicy | has("observedTools") | not)');
+      expect(assertion).toContain('.context.toolPolicy.policyOwner == "controller"');
+      expect(assertion).toContain(
+        ".context.toolPolicy.effectiveTools == .context.permission.effectiveTools",
+      );
+      expect(assertion).toContain('(.context.toolPolicy | has("observedTools") | not)');
     }
     expect(strict).toContain(
-      '.toolPolicy.requestedTools == ["workspace.edit","workspace.read","workspace.search"]',
+      '.context.toolPolicy.requestedTools == ["workspace.edit","workspace.read","workspace.search"]',
     );
     expect(mcp).toContain(
-      '.toolPolicy.requestedTools == ["mcp.fixture.echo","mcp.fixture.hidden","workspace.read","workspace.search"]',
+      '.context.toolPolicy.requestedTools == ["mcp.fixture.echo","mcp.fixture.hidden","workspace.read","workspace.search"]',
     );
   });
 
@@ -271,7 +275,8 @@ describe("trusted core E2E workflow", () => {
     expect(assertion).toContain("length == 1");
     expect(assertion).toContain('all(.id != "mcp.fixture.hidden")');
     expect(report).toContain("if: always()");
-    expect(report).not.toMatch(/RESULT_JSON|task-output|summary:|MCP_ENDPOINT|DEEPSEEK_API_KEY/u);
+    expect(report).toContain("RESULT_JSON: ${{ steps.mcp.outputs['result-json'] }}");
+    expect(report).not.toMatch(/task-output|summary:|MCP_ENDPOINT|DEEPSEEK_API_KEY/u);
     expect(artifact).toContain("if: always()");
     expect(artifact).toContain("dsh-e2e-mcp-evidence.json");
     expect(artifact).toContain("dsh-e2e-mcp-audit.jsonl");
@@ -296,8 +301,8 @@ describe("trusted core E2E workflow", () => {
       assertion.indexOf("jq -e"),
     );
     expect(assertion).toContain(".receiptCount == 1 and .completedWebSearchCount == 1");
-    expect(assertion).toContain('.permissions.network == "mediated-web"');
-    expect(assertion).toContain(".loop.dshToolReceipts // []");
+    expect(assertion).toContain('.context.permission.network == "mediated-web"');
+    expect(assertion).toContain(".agent.dshToolReceipts // []");
     expect(artifact).toContain("if: always()");
     expect(artifact).toContain("dsh-e2e-web-evidence.json");
     expect(artifact).not.toMatch(/result-json|\.log|\.stdout/u);
@@ -313,15 +318,15 @@ describe("trusted core E2E workflow", () => {
     expect(launch).not.toContain("mcp-config:");
     expect(launch).not.toContain("plugin-config:");
     for (const contract of [
-      '.dsh.mode == "native"',
-      '.dsh.composition == "dsh-native-headless"',
-      '.toolPolicy.policyOwner == "dsh"',
+      '.context.dsh.mode == "native"',
+      '.context.dsh.composition == "dsh-native-headless"',
+      '.context.toolPolicy.policyOwner == "dsh"',
       'index("read") != null',
       'index("glob") != null',
       'index("grep") != null',
       'index("workspace.read") == null',
-      '(.toolPolicy | has("effectiveTools") | not)',
-      '(.toolPolicy | has("requestedTools") | not)',
+      '(.context.toolPolicy | has("effectiveTools") | not)',
+      '(.context.toolPolicy | has("requestedTools") | not)',
       '.isolation.workspaceAccess == "read-only"',
       '.isolation.extensionProfile == "none"',
     ]) {
@@ -351,20 +356,20 @@ describe("trusted core E2E workflow", () => {
     expect(nativeWrite).toContain("dsh-mode: native");
     expect(nativeWrite).toContain("task-access: write");
     expect(nativeWrite).toContain(`allowed-tools: '["workspace.edit"]'`);
-    expect(nativeWriteAssertion).toContain('.policy.trust == "trusted-write"');
+    expect(nativeWriteAssertion).toContain('.context.policy.trust == "trusted-write"');
     expect(nativeWriteAssertion).toContain('.isolation.workspaceAccess == "read-write"');
-    expect(nativeWriteAssertion).toContain('.toolPolicy.policyOwner == "dsh"');
+    expect(nativeWriteAssertion).toContain('.context.toolPolicy.policyOwner == "dsh"');
     for (const contract of [
       "run_candidate native_write",
       "run_candidate native_checks",
       "INPUT_DSH-MODE=native",
       'INPUT_ALLOWED-TOOLS=["workspace.edit"]',
       'INPUT_ALLOWED-TOOLS=["github.checks.read"]',
-      '.dsh.composition == "dsh-native-headless"',
-      '.toolPolicy.policyOwner == "dsh"',
-      '(.toolPolicy | has("effectiveTools") | not)',
+      '.context.dsh.composition == "dsh-native-headless"',
+      '.context.toolPolicy.policyOwner == "dsh"',
+      '(.context.toolPolicy | has("effectiveTools") | not)',
       '.isolation.workspaceAccess == "read-write"',
-      '.permissions.effectiveTools == ["github.checks.read"]',
+      '.context.permission.effectiveTools == ["github.checks.read"]',
       'fixture_hash="$(printf',
       '[[ "$public_result" != *"$fixture_key"* ]]',
       '[[ "$public_result" != *"$fixture_hash"* ]]',
@@ -394,7 +399,7 @@ describe("trusted core E2E workflow", () => {
       '.category == "entrypoint"',
       '.risk == "dangerous"',
       'contains("no-op")',
-      '(has("write") | not)',
+      "(.publication // {} | del(.review,.commentId) | length == 0)",
     ]) {
       expect(assertion).toContain(contract);
     }
@@ -447,7 +452,7 @@ describe("trusted core E2E workflow", () => {
       'INPUT_ALLOWED-TOOLS=["github.checks.read"]',
       "INPUT_PROMPT=Update the bound draft PR metadata exactly as requested.",
       '.validation.status == "passed"',
-      '.taskOutput == {route:"github",accepted:true}',
+      '.operation.taskOutput == {route:"github",accepted:true}',
       "DSH_E2E_HISTORY_HIDDEN_",
       "DSH_E2E_TRIGGER_VISIBLE_",
       "[image removed]",
@@ -532,7 +537,7 @@ describe("trusted core E2E workflow", () => {
       "run_candidate review",
       "run_candidate fix",
       "run_candidate implement",
-      ".publication.inlinePublished == 1",
+      ".publication.review.inlinePublished == 1",
       "repos/$REPOSITORY/check-runs",
       "DSH_E2E_CI_FAILURE_",
       "INPUT_RUN-TESTS=true",

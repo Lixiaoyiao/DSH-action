@@ -45,7 +45,7 @@ describe("loadInputs", () => {
     expect(result.branchPrefix).toBe("dsh/");
     expect(result.branchNameTemplate).toBe("");
     expect(result.taskAccess).toBe("read");
-    expect(result.maxTurns).toBe(3);
+    expect(result.maxControllerSteps).toBe(3);
     expect(result.dshMode).toBe("controlled");
     expect(result.permissionProfile).toBe("strict");
     expect(result.allowedTools).toEqual([]);
@@ -179,7 +179,7 @@ describe("loadInputs", () => {
     ["max-findings", "101"],
     ["test-commands", '["npm test"]'],
     ["base-url", "not a url"],
-    ["max-turns", "11"],
+    ["max-controller-steps", "11"],
     ["dsh-mode", "unsafe"],
     ["permission-profile", "superuser"],
     ["allowed-tools", '["native.terminal"]'],
@@ -515,7 +515,7 @@ describe("loadInputs", () => {
         }),
       }),
     );
-    expect(result).toMatchObject({ taskAccess: "write", maxTurns: 3 });
+    expect(result).toMatchObject({ taskAccess: "write", maxControllerSteps: 3 });
     expect(result.toolConfig.commands[0]).toMatchObject({ name: "test", network: "none" });
   });
 

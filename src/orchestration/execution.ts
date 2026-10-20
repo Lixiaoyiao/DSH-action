@@ -11,7 +11,6 @@ import {
   resolveNativeExtensionPlan,
   type ExtensionPlan,
 } from "../extensions/plan.js";
-import { createOctokitGitHubToolBackend } from "../github/octokit-tool-backend.js";
 import type { ActionInputs } from "../inputs.js";
 import { throwIfCancelled } from "../lifecycle/cancellation.js";
 import { buildControllerToolPolicyAudit, buildPermissionAudit } from "../permissions/profile.js";
@@ -24,9 +23,9 @@ import {
 } from "../tools/registry.js";
 import { ToolRouter } from "../tools/router.js";
 import { buildContextPacket, taskIdentity } from "./context.js";
-import { createGitHubToolBinding, GitHubAuthoritySession } from "./github-authority.js";
-import { WorkspaceValidation } from "../write/workspace-validation.js";
-import type { RunOutcome } from "../result.js";
+import { createGitHubToolBinding } from "./github-authority.js";
+import { createPublication, type Publication } from "./operation-finalizer.js";
+import type { RunFacts } from "../result.js";
 import type { RunLifecycle } from "./lifecycle.js";
 import type { AuthorizedRun } from "./prepare.js";
 import type { PreparedWorkspace } from "./workspace.js";
@@ -36,6 +35,7 @@ type ContextPacket = Awaited<ReturnType<typeof buildContextPacket>> & {
 };
 
 export interface PreparedExecution {
+  readonly publication: Publication;
   readonly contextPacket: ContextPacket;
   readonly imageFiles?: { readonly directory: string; readonly files: readonly string[] };
   readonly tools: EffectiveTools & {
@@ -44,10 +44,6 @@ export interface PreparedExecution {
   };
   readonly toolProvider?: ToolRouter;
   readonly extensions: ExtensionPlan;
-  readonly operationIdentity: string;
-  readonly githubAuthority?: GitHubAuthoritySession;
-  readonly validation?: WorkspaceValidation;
-  readonly hasGitHubMutationTools: boolean;
   readonly selectedComposition: DshComposition;
   readonly redact: (value: string) => string;
 }
@@ -55,9 +51,9 @@ export interface PreparedExecution {
 /** Prepare capabilities and keep their observations local to this phase. */
 export class ExecutionPreparation {
   private readonly facts: {
-    -readonly [K in "permission" | "toolPolicy" | "authority" | "textSources"]?: RunOutcome[K];
+    -readonly [K in "permission" | "toolPolicy" | "authority" | "textSources"]?: RunFacts[K];
   } = {};
-  private workspaceValidation: WorkspaceValidation | undefined;
+  private publication: Publication | undefined;
   public constructor(
     private readonly options: {
       readonly lifecycle: RunLifecycle;
@@ -70,10 +66,7 @@ export class ExecutionPreparation {
     },
   ) {}
   public snapshot() {
-    return { ...this.facts };
-  }
-  public get validation(): WorkspaceValidation | undefined {
-    return this.workspaceValidation;
+    return { ...this.facts, ...this.publication?.facts };
   }
 
   public async run(): Promise<PreparedExecution> {
@@ -82,7 +75,7 @@ export class ExecutionPreparation {
     const state = this.facts;
     const { client, context, command, snapshot, policy } = authorized;
     if (command.requestedAccess === "write") assertWriteTaskConfiguration(inputs);
-    const { agentWorkspace, snapshot: workspaceSnapshot } = workspace;
+    const { agentWorkspace } = workspace;
     const baseContextPacket = await buildContextPacket(
       client,
       context,
@@ -189,69 +182,9 @@ export class ExecutionPreparation {
             containerImage: inputs.containerImage,
             redact,
           });
-    const githubMutationTools = tools.github.filter((id) => id !== "github.checks.read");
-    if (githubMutationTools.length > 0 && workspaceSnapshot === undefined) {
-      throw new PolicyDeniedError(
-        "GitHub mutation tools require an immutable Controller workspace snapshot",
-      );
-    }
-    const validation =
-      workspaceSnapshot === undefined ||
-      (githubMutationTools.length === 0 && command.requestedAccess !== "write")
-        ? undefined
-        : new WorkspaceValidation({
-            workspace: workspaceSnapshot,
-            configuration: {
-              runTests: inputs.runTests,
-              commands: inputs.testCommands,
-              containerImage: inputs.containerImage,
-            },
-            integrityMode: inputs.validationIntegrity,
-            deadlineMs,
-            signal,
-            onPhase: () => lifecycle.enter("validation"),
-          });
-    this.workspaceValidation = validation;
-    const githubAuthority =
-      tools.github.length === 0 || trustedGitHubBinding === undefined
-        ? undefined
-        : new GitHubAuthoritySession({
-            ids: tools.github,
-            binding: trustedGitHubBinding,
-            policy,
-            allowWrite: inputs.allowWrite,
-            expectedAuthorId: inputs.botUserId,
-            backend: createOctokitGitHubToolBackend(client),
-            revalidateAuthority: authorized.revalidateAuthority,
-            ...(validation === undefined
-              ? {}
-              : {
-                  validationGate: async () => {
-                    await validation.validate();
-                  },
-                }),
-            onPhase: () => lifecycle.enter("write"),
-            workspacePath: agentWorkspace,
-            deadlineMs,
-            signal,
-          });
-    const controllerProviders = [commandToolProvider, githubAuthority?.gateway].filter(
-      (provider) => provider !== undefined,
-    );
-    const toolProvider =
-      controllerProviders.length === 0 ? undefined : new ToolRouter(controllerProviders);
-    const agentTools = {
-      ...tools,
-      manifests: [
-        ...tools.manifests.filter(
-          ({ provider }) => provider !== "command" && provider !== "github",
-        ),
-        ...(toolProvider?.manifest() ?? []),
-      ],
-    };
     const permission = buildPermissionAudit({
       resolution: resolvedTools.permission,
-      manifests: agentTools.manifests,
+      manifests: tools.manifests,
       additionalDenials: resolvedTools.permissionDenials,
       ...(composition.actionManagedExtensionProfile || extensions.audit.entries.length > 0
         ? { extensions: extensions.audit }
@@ -270,13 +203,37 @@ export class ExecutionPreparation {
       contextPacket.textFiles,
     );
 
-    // Validate the immutable baseline before any model-controlled path can queue
-    // a mutation; the Gateway repeats the gate immediately before its flush.
-    if (githubMutationTools.length > 0) await validation?.validate();
+    const publication = createPublication({
+      authorized,
+      inputs,
+      workspace,
+      lifecycle,
+      deadlineMs,
+      signal,
+      taskIdentity: operationIdentity,
+      githubTools: tools.github,
+      ...(trustedGitHubBinding === undefined ? {} : { githubBinding: trustedGitHubBinding }),
+    });
+    this.publication = publication;
+    const controllerProviders = [commandToolProvider, publication.tools].filter(
+      (provider) => provider !== undefined,
+    );
+    const toolProvider =
+      controllerProviders.length === 0 ? undefined : new ToolRouter(controllerProviders);
+    const agentTools = {
+      ...tools,
+      manifests: [
+        ...tools.manifests.filter(
+          ({ provider }) => provider !== "command" && provider !== "github",
+        ),
+        ...(toolProvider?.manifest() ?? []),
+      ],
+    };
     state.authority = buildAuthorityAudit(extensions);
     const selectedComposition = composition;
 
     return {
+      publication,
       contextPacket,
       ...(imageAssets.files.length === 0
         ? {}
@@ -284,10 +241,6 @@ export class ExecutionPreparation {
       tools: agentTools,
       ...(toolProvider === undefined ? {} : { toolProvider }),
       extensions,
-      operationIdentity,
-      ...(githubAuthority === undefined ? {} : { githubAuthority }),
-      ...(validation === undefined ? {} : { validation }),
-      hasGitHubMutationTools: githubMutationTools.length > 0,
       selectedComposition,
       redact,
     };

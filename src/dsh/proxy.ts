@@ -5,6 +5,12 @@ import type { AddressInfo } from "node:net";
 
 import { DshConfigurationError, DshProxyError } from "./errors.js";
 import { validatedControllerBaseUrl } from "./base-url.js";
+import type { ToolProvider } from "../agent/contracts.js";
+import {
+  ControllerMcp,
+  CONTROLLER_MCP_PATH,
+  type ControllerBridgeHandle,
+} from "./controller-mcp.js";
 
 // A single official read_image may carry 20 MiB of raster bytes as base64.
 const DEFAULT_REQUEST_LIMIT = 32 * 1024 * 1024;
@@ -12,6 +18,10 @@ const DEFAULT_RESPONSE_LIMIT = 32 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 120_000;
 
 export interface DeepSeekProxyOptions {
+  readonly controllerTools?: ToolProvider;
+  readonly workspacePath?: string;
+  readonly deadlineMs?: number;
+  readonly signal?: AbortSignal;
   readonly apiKey: string;
   readonly baseUrl: string;
   /** Controller-selected Anthropic-compatible upstream used only by the web_search tool. */
@@ -28,6 +38,7 @@ export interface DeepSeekProxyOptions {
 }
 
 export interface DeepSeekProxyHandle {
+  readonly controllerBridge?: ControllerBridgeHandle;
   /** Controller-local address of the actual listener, independent of the worker route. */
   readonly controllerBaseUrl: string;
   readonly workerBaseUrl: string;
@@ -371,8 +382,39 @@ export async function startDeepSeekProxy(
     activeRequests,
   };
 
+  const controllerMcp =
+    options.controllerTools === undefined || options.controllerTools.manifest().length === 0
+      ? undefined
+      : new ControllerMcp({
+          provider: options.controllerTools,
+          workspacePath: options.workspacePath ?? process.cwd(),
+          deadlineMs: options.deadlineMs ?? Date.now() + runtime.timeoutMs,
+          maxOutputBytes: runtime.responseLimit,
+          ...(options.signal === undefined ? {} : { signal: options.signal }),
+        });
   const server = createServer((request, response) => {
-    void handleRequest(request, response, runtime);
+    if (request.url === CONTROLLER_MCP_PATH && controllerMcp !== undefined) {
+      void (async () => {
+        if (!controllerMcp.authorized(request.headers.authorization)) {
+          replyJson(response, 401, "unauthorized");
+          return;
+        }
+        if (request.method !== "POST") {
+          replyJson(response, 405, "method_not_allowed");
+          return;
+        }
+        let body: unknown;
+        try {
+          body = JSON.parse(
+            (await readBoundedBody(request, runtime.requestLimit)).toString("utf8"),
+          );
+        } catch {
+          replyJson(response, 400, "invalid_request");
+          return;
+        }
+        await controllerMcp.request(request, response, body);
+      })().catch(() => replyJson(response, 500, "controller_tool_failed"));
+    } else void handleRequest(request, response, runtime);
   });
   server.on("clientError", (_error, socket) => {
     socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
@@ -387,8 +429,15 @@ export async function startDeepSeekProxy(
 
   const { port } = address;
   const controllerHost = address.family === "IPv6" ? `[${address.address}]` : address.address;
-  let closed = false;
+  let closing: Promise<void> | undefined;
   return {
+    ...(controllerMcp === undefined
+      ? {}
+      : {
+          controllerBridge: controllerMcp.handle(
+            `http://${workerHost}:${String(port)}${CONTROLLER_MCP_PATH}`,
+          ),
+        }),
     controllerBaseUrl: `http://${controllerHost}:${String(port)}`,
     workerBaseUrl: `http://${workerHost}:${String(port)}`,
     ...(webSearchBase === undefined
@@ -403,20 +452,23 @@ export async function startDeepSeekProxy(
     workerToken: token,
     boundHost: bindHost,
     port,
-    async close(): Promise<void> {
-      if (closed) return;
-      closed = true;
-      for (const controller of activeRequests) controller.abort();
-      server.closeAllConnections();
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => {
-          if (error === undefined) resolve();
-          else
-            reject(
-              new DshProxyError("Failed to close the DeepSeek credential proxy", { cause: error }),
-            );
+    close(): Promise<void> {
+      return (closing ??= (async () => {
+        await controllerMcp?.close();
+        for (const controller of activeRequests) controller.abort();
+        server.closeAllConnections();
+        await new Promise<void>((resolve, reject) => {
+          server.close((error) => {
+            if (error === undefined) resolve();
+            else
+              reject(
+                new DshProxyError("Failed to close the DeepSeek credential proxy", {
+                  cause: error,
+                }),
+              );
+          });
         });
-      });
+      })());
     },
   };
 }

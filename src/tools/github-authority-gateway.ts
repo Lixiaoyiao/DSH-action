@@ -128,21 +128,6 @@ function equalSet(left: readonly string[], right: readonly string[]): boolean {
 
 export type GitHubMutationToolId = Exclude<GitHubToolId, "github.checks.read">;
 
-export interface GitHubMutationValidationRequest {
-  readonly workspacePath: string;
-  readonly timeoutMs: number;
-  readonly signal?: AbortSignal;
-  readonly mutations: readonly {
-    readonly callId: string;
-    readonly id: GitHubMutationToolId;
-  }[];
-}
-
-/** Controller-owned validation gate invoked once before a non-empty mutation flush. */
-export type GitHubMutationValidationGate = (
-  request: GitHubMutationValidationRequest,
-) => Promise<void>;
-
 export interface GitHubAuthorityGatewayOptions {
   readonly ids: readonly GitHubToolId[];
   readonly binding: GitHubToolBinding;
@@ -150,8 +135,7 @@ export interface GitHubAuthorityGatewayOptions {
   readonly allowWrite: boolean;
   readonly expectedAuthorId: number;
   readonly backend: GitHubToolBackend;
-  readonly validationGate?: GitHubMutationValidationGate;
-  /** Current actor authorization, independently repeated after Controller validation. */
+  /** Current actor authorization, repeated immediately before metadata effects. */
   readonly revalidateAuthority?: () => Promise<void>;
 }
 
@@ -171,12 +155,6 @@ export class GitHubAuthorityGateway implements ToolProvider {
     if (this.enabled.size !== options.ids.length) throw new Error("Duplicate GitHub tool id");
     if (options.ids.some((id) => !githubToolSchema.safeParse(id).success)) {
       throw new Error("Invalid GitHub tool id");
-    }
-    if (
-      options.ids.some((id) => id !== "github.checks.read") &&
-      options.validationGate === undefined
-    ) {
-      throw new Error("GitHub mutation authority requires a Controller validation gate");
     }
     if (
       options.ids.some((id) => id !== "github.checks.read") &&
@@ -248,17 +226,6 @@ export class GitHubAuthorityGateway implements ToolProvider {
     const deadlineMs = Date.now() + context.timeoutMs;
     this.flushing = true;
     try {
-      if (this.pending.size > 0 && this.options.validationGate !== undefined) {
-        await this.options.validationGate({
-          workspacePath: context.workspacePath,
-          timeoutMs: Math.max(0, deadlineMs - Date.now()),
-          ...(context.signal === undefined ? {} : { signal: context.signal }),
-          mutations: [...this.pending.values()].map((call) => ({
-            callId: call.callId,
-            id: mutationToolSchema.parse(call.id),
-          })),
-        });
-      }
       const revalidateAuthority = this.options.revalidateAuthority;
       if (this.pending.size > 0 && revalidateAuthority !== undefined) {
         try {
@@ -327,8 +294,8 @@ export class GitHubAuthorityGateway implements ToolProvider {
       }
       return;
     }
-    if (!policy.allowed || policy.trust !== "trusted-write" || !this.options.allowWrite) {
-      throw new Error("GitHub mutation authority requires trusted-write and allow-write=true");
+    if (!policy.allowed || policy.trust === "untrusted" || !this.options.allowWrite) {
+      throw new Error("GitHub metadata authority requires a trusted actor and allow-write=true");
     }
     if (binding.target === "workflow_run") {
       throw new Error("GitHub mutation authority is not bound to a current entity");

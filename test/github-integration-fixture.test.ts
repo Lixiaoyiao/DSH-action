@@ -6,6 +6,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
+import {
+  controllerToolName,
+  controllerToolReply,
+} from "../.github/e2e/controller-tool-fixture.mjs";
+import { mcpPublicToolName } from "../src/extensions/plan.js";
+import { githubToolSchema } from "../src/tools/schema.js";
 
 const fixtureKey = "dsh-github-fixture-test-key";
 
@@ -65,7 +71,9 @@ describe("trusted GitHub integration provider fixture", () => {
       const server = await fixture();
       const messagesProtocol = endpoint === "v1/messages";
       try {
+        const histories = new Map<string, Record<string, unknown>[]>();
         const request = async (route: string, title = false) => {
+          const history = title ? [] : (histories.get(route) ?? []);
           const response = await fetch(`${server.origin}/${route}/${endpoint}`, {
             method: "POST",
             headers: {
@@ -82,53 +90,160 @@ describe("trusted GitHub integration provider fixture", () => {
                     ? "Generate the session title"
                     : [{ type: "text", text: "Bound fixture task" }],
                 },
+                ...history,
               ],
+              tools: githubToolSchema.options.map((id) =>
+                messagesProtocol
+                  ? {
+                      name: controllerToolName(id),
+                      description: id,
+                      input_schema: { type: "object" },
+                    }
+                  : {
+                      type: "function",
+                      function: {
+                        name: controllerToolName(id),
+                        description: id,
+                        parameters: { type: "object" },
+                      },
+                    },
+              ),
               stream: true,
             }),
           });
           expect(response.status).toBe(200);
           const frames = (await response.text()).trim().split("\n\n");
+          let content: string | undefined;
+          let call: { id: string; name: string; arguments: string } | undefined;
           if (!messagesProtocol) {
             expect(frames).toHaveLength(3);
             expect(frames[2]).toBe("data: [DONE]");
             const first = z
               .looseObject({
-                choices: z.array(z.looseObject({ delta: z.looseObject({ content: z.string() }) })),
+                choices: z.array(
+                  z.looseObject({
+                    delta: z.looseObject({
+                      content: z.string().optional(),
+                      tool_calls: z
+                        .array(
+                          z.object({
+                            id: z.string(),
+                            function: z.object({ name: z.string(), arguments: z.string() }),
+                          }),
+                        )
+                        .optional(),
+                    }),
+                  }),
+                ),
               })
               .parse(JSON.parse(frames[0]?.slice("data: ".length) ?? "null"));
-            return z
-              .union([z.string(), z.record(z.string(), z.unknown())])
-              .parse(JSON.parse(first.choices[0]?.delta.content ?? "null"));
+            const delta = first.choices[0]?.delta;
+            content = delta?.content;
+            const tool = delta?.tool_calls?.[0];
+            if (tool !== undefined) call = { id: tool.id, ...tool.function };
+          } else {
+            const events = frames.map((frame) => {
+              const [name, data] = frame.split("\n");
+              const event = z
+                .looseObject({
+                  type: z.string(),
+                  delta: z
+                    .looseObject({
+                      text: z.string().optional(),
+                      partial_json: z.string().optional(),
+                      stop_reason: z.string().optional(),
+                    })
+                    .optional(),
+                  content_block: z
+                    .looseObject({ id: z.string().optional(), name: z.string().optional() })
+                    .optional(),
+                })
+                .parse(JSON.parse(data?.slice("data: ".length) ?? "null"));
+              expect(name).toBe(`event: ${event.type}`);
+              return event;
+            });
+            expect(events.map((event) => event.type)).toEqual([
+              "message_start",
+              "content_block_start",
+              "content_block_delta",
+              "content_block_stop",
+              "message_delta",
+              "message_stop",
+            ]);
+            content = events[2]?.delta?.text;
+            const block = events[1]?.content_block;
+            if (block?.id !== undefined && block.name !== undefined)
+              call = {
+                id: block.id,
+                name: block.name,
+                arguments: events[2]?.delta?.partial_json ?? "{}",
+              };
+            expect(events[4]?.delta?.stop_reason).toBe(
+              call === undefined ? "end_turn" : "tool_use",
+            );
           }
-          const events = frames.map((frame) => {
-            const [name, data] = frame.split("\n");
-            const event = z
-              .looseObject({
-                type: z.string(),
-                delta: z
-                  .looseObject({ text: z.string().optional(), stop_reason: z.string().optional() })
-                  .optional(),
-              })
-              .parse(JSON.parse(data?.slice("data: ".length) ?? "null"));
-            expect(name).toBe(`event: ${event.type}`);
-            return event;
-          });
-          expect(events.map((event) => event.type)).toEqual([
-            "message_start",
-            "content_block_start",
-            "content_block_delta",
-            "content_block_stop",
-            "message_delta",
-            "message_stop",
-          ]);
-          expect(events[4]?.delta?.stop_reason).toBe("end_turn");
+          if (call !== undefined) {
+            const invocation = call;
+            const input = z.record(z.string(), z.unknown()).parse(JSON.parse(call.arguments));
+            const id = githubToolSchema.options.find(
+              (id) => controllerToolName(id) === invocation.name,
+            );
+            if (id === undefined)
+              throw new Error("Fixture requested an unregistered Controller tool");
+            const value = JSON.stringify({
+              callId: `controller-${call.id}`,
+              id,
+              ok: true,
+              output: { effect: id === "github.checks.read" ? "read" : "scheduled" },
+            });
+            history.push(
+              messagesProtocol
+                ? {
+                    role: "assistant",
+                    content: [
+                      {
+                        type: "tool_use",
+                        id: call.id,
+                        name: call.name,
+                        input,
+                      },
+                    ],
+                  }
+                : {
+                    role: "assistant",
+                    tool_calls: [
+                      {
+                        id: call.id,
+                        type: "function",
+                        function: { name: call.name, arguments: call.arguments },
+                      },
+                    ],
+                  },
+            );
+            history.push(
+              messagesProtocol
+                ? {
+                    role: "user",
+                    content: [
+                      {
+                        type: "tool_result",
+                        tool_use_id: call.id,
+                        content: [{ type: "text", text: value }],
+                      },
+                    ],
+                  }
+                : { role: "tool", tool_call_id: call.id, content: value },
+            );
+            histories.set(route, history);
+            return { call: { name: call.name, input } };
+          }
           return z
             .union([z.string(), z.record(z.string(), z.unknown())])
-            .parse(JSON.parse(events[2]?.delta?.text ?? "null"));
+            .parse(JSON.parse(content ?? "null"));
         };
         for (const route of ["label", "assignee"]) {
           expect(await request(route)).toMatchObject({
-            protocolVersion: 1,
+            protocolVersion: 2,
             operation: "task",
             state: "final",
             taskOutput: { route, accepted: true },
@@ -141,15 +256,13 @@ describe("trusted GitHub integration provider fixture", () => {
           "github.issue.state.update",
         ]) {
           expect(await request("github")).toMatchObject({
-            state: "needs_tool",
-            toolRequest: { id },
+            call: { name: controllerToolName(id) },
           });
         }
         expect(await request("github")).toMatchObject({ state: "final" });
         expect(await request("metadata")).toMatchObject({
-          state: "needs_tool",
-          toolRequest: {
-            id: "github.pull.metadata.update",
+          call: {
+            name: controllerToolName("github.pull.metadata.update"),
             input: { title: "fixture pull title" },
           },
         });
@@ -157,9 +270,7 @@ describe("trusted GitHub integration provider fixture", () => {
         expect(await request("native-checks", true)).toBe("Native qualification");
         for (const route of ["checks", "native-checks"]) {
           expect(await request(route)).toMatchObject({
-            operation: "diagnose",
-            state: "needs_tool",
-            toolRequest: { id: "github.checks.read" },
+            call: { name: controllerToolName("github.checks.read") },
           });
           expect(await request(route)).toMatchObject({ operation: "diagnose", state: "final" });
         }
@@ -198,4 +309,15 @@ describe("trusted GitHub integration provider fixture", () => {
       }
     },
   );
+  it("uses the pinned MCP name mapping and refuses missing schemas or missing results", () => {
+    for (const id of githubToolSchema.options)
+      expect(controllerToolName(id)).toBe(mcpPublicToolName("action-controller", id));
+    const plan = [{ id: "github.checks.read", input: {} }];
+    expect(() => controllerToolReply({ messages: [] }, "checks", 1, plan)).toThrow(
+      /real admitted MCP tool schema/u,
+    );
+    expect(() => controllerToolReply({ messages: [] }, "checks", 2, plan)).toThrow(
+      /complete single-loop tool history/u,
+    );
+  });
 });

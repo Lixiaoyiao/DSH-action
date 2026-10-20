@@ -2,18 +2,17 @@ import { appendFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 
-import {
-  boot,
-  createRuntimeResolution,
-  installFailLoud,
-  loadProfile,
-  PluginPackages,
-} from "@deepseek-ai/dsh-app-boot";
-import { provideCmdline } from "@deepseek-ai/dsh-cmdline";
-import {
-  createLaunchEnvironmentSnapshot,
-  DSH_LAUNCH_ENVIRONMENT_KEY,
-} from "@deepseek-ai/dsh-launch-environment";
+const bridgeModule =
+  process.env.DSH_ACTION_CONTROLLER_INPUT === "1"
+    ? await import("./action-controller.mjs")
+    : undefined;
+delete process.env.DSH_ACTION_CONTROLLER_INPUT;
+const bridgeBootstrap = await bridgeModule?.consumeControllerBootstrap();
+const { boot, createRuntimeResolution, installFailLoud, loadProfile, PluginPackages } =
+  await import("@deepseek-ai/dsh-app-boot");
+const { provideCmdline } = await import("@deepseek-ai/dsh-cmdline");
+const { createLaunchEnvironmentSnapshot, DSH_LAUNCH_ENVIRONMENT_KEY } =
+  await import("@deepseek-ai/dsh-launch-environment");
 
 const NAME = "dsh-action-native";
 // The Action installs the locked runtime and any admitted out-of-tree packages
@@ -152,6 +151,7 @@ async function main() {
   const patches = [
     ...profile.layers.flatMap((layer) => layer.patches),
     ...profile.patches,
+    ...(bridgeModule?.controllerBridgePatches(bridgeBootstrap) ?? []),
     // Both web tools use the Controller's fixed DeepSeek API routes.
     { id: "web-fetch-http", disabled: true },
     { id: "mcp-resources", disabled: true },
@@ -249,12 +249,21 @@ async function main() {
       globalThis.structuredClone(patches),
       async (host) => {
         root = host;
+        if (bridgeBootstrap !== undefined)
+          bridgeModule.installControllerBootstrap(
+            host,
+            bridgeBootstrap,
+            await import("@deepseek-ai/dsh-mcp-client"),
+          );
         if (sessionPlan !== undefined)
           sessionModule.installSessionAdmission(host, sessionPlan, {
             auditPath: join(dshHome, "action-state", "session-admission.json"),
           });
         await host.plugin(PluginPackages, { resolution });
-        requireAdmittedExtensions(host, admittedExtensionSelectors(profile));
+        requireAdmittedExtensions(host, [
+          ...admittedExtensionSelectors(profile),
+          ...(bridgeBootstrap === undefined ? [] : [{ id: "dsh-action-controller" }]),
+        ]);
         observeRootAgent(host, observationPath);
         const signal = (code) => {
           if (exitStarted) process.exit(code);

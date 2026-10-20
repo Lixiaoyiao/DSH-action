@@ -194,8 +194,10 @@ describe("orchestrator cancellation finalization", () => {
     await vi.advanceTimersByTimeAsync(60_000);
 
     await expect(action).resolves.toMatchObject({
-      conclusion: "failure",
-      error: { code: "AGENT_TIMEOUT", phase: "authorization", retryable: true },
+      termination: {
+        conclusion: "failure",
+        error: { code: "AGENT_TIMEOUT", phase: "authorization", retryable: true },
+      },
     });
     expect(requestSignal?.aborted).toBe(true);
     expect(mocks.runAgentLoop).not.toHaveBeenCalled();
@@ -229,8 +231,10 @@ describe("orchestrator cancellation finalization", () => {
     controller.abort(cancellation);
 
     await expect(action).resolves.toMatchObject({
-      conclusion: "failure",
-      error: { code: "DSH_ABORTED", phase: "authorization" },
+      termination: {
+        conclusion: "failure",
+        error: { code: "DSH_ABORTED", phase: "authorization" },
+      },
     });
     expect(requestSignal?.reason).toBe(cancellation);
     expect(mocks.runAgentLoop).not.toHaveBeenCalled();
@@ -250,10 +254,12 @@ describe("orchestrator cancellation finalization", () => {
     const outcome = await runAction({ signal: controller.signal });
 
     expect(outcome).toMatchObject({
-      conclusion: "failure",
-      operation: "task",
-      commentId: 71,
-      error: { code: "DSH_ABORTED", phase: "agent" },
+      termination: {
+        conclusion: "failure",
+        error: { code: "DSH_ABORTED", phase: "agent" },
+      },
+      operation: { kind: "task" },
+      publication: { commentId: 71 },
     });
     expect(mocks.progressFail).toHaveBeenCalledWith(
       expect.objectContaining({ code: "DSH_ABORTED", phase: "agent" }),
@@ -277,8 +283,10 @@ describe("orchestrator cancellation finalization", () => {
     const outcome = await runAction({ signal: controller.signal });
 
     expect(outcome).toMatchObject({
-      conclusion: "failure",
-      error: { code: "DSH_ABORTED", phase: "agent" },
+      termination: {
+        conclusion: "failure",
+        error: { code: "DSH_ABORTED", phase: "agent" },
+      },
     });
     expect(mocks.progressFail).toHaveBeenCalledOnce();
     expect(mocks.progressFail).toHaveBeenCalledWith(
@@ -299,8 +307,10 @@ describe("orchestrator cancellation finalization", () => {
     const outcome = await runAction({ signal: controller.signal });
 
     expect(outcome).toMatchObject({
-      conclusion: "failure",
-      error: { code: "DSH_ABORTED", phase: "agent" },
+      termination: {
+        conclusion: "failure",
+        error: { code: "DSH_ABORTED", phase: "agent" },
+      },
     });
     expect(mocks.warning).toHaveBeenCalledWith(
       expect.stringContaining("progress comment finalization failed"),
@@ -330,7 +340,7 @@ describe("orchestrator cancellation finalization", () => {
 
     releaseCleanup?.();
     const outcome = await action;
-    expect(outcome.error?.code).toBe("DSH_ABORTED");
+    expect(outcome.termination.error?.code).toBe("DSH_ABORTED");
   });
 
   it("starts terminal publication before a failed workspace preparation finishes cleanup", async () => {
@@ -363,8 +373,10 @@ describe("orchestrator cancellation finalization", () => {
 
     releaseCleanup?.();
     await expect(action).resolves.toMatchObject({
-      conclusion: "failure",
-      error: { code: "ACTION_RUNTIME_FAILED", phase: "context" },
+      termination: {
+        conclusion: "failure",
+        error: { code: "ACTION_RUNTIME_FAILED", phase: "context" },
+      },
     });
     expect(mocks.runAgentLoop).not.toHaveBeenCalled();
   });
@@ -391,13 +403,14 @@ describe("orchestrator cancellation finalization", () => {
     const outcome = await runAction({ signal: controller.signal });
 
     expect(outcome).toMatchObject({
-      conclusion: "failure",
-      error: { code: "VALIDATION_INTEGRITY", category: "domain", phase: "agent" },
-      validation: {
-        status: "failed",
-        integrity: { mode: "strict", status: "blocked", dangerousChangeCount: 1 },
+      schemaVersion: 2,
+      termination: {
+        conclusion: "failure",
+        status: "validation_failed",
+        error: { code: "VALIDATION_INTEGRITY", category: "domain", phase: "agent" },
       },
     });
+    // Real owner-produced integrity facts are covered in action-validation-evidence.integration.test.ts.
     expect(mocks.progressFail).toHaveBeenCalledTimes(2);
     expect(mocks.progressFail).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -420,8 +433,10 @@ describe("orchestrator cancellation finalization", () => {
     const outcome = await runAction({ signal: controller.signal });
 
     expect(outcome).toMatchObject({
-      conclusion: "failure",
-      error: { code: "DSH_CREDENTIAL_LEAK", phase: "agent" },
+      termination: {
+        conclusion: "failure",
+        error: { code: "DSH_CREDENTIAL_LEAK", phase: "agent" },
+      },
     });
     expect(mocks.progressFail).toHaveBeenCalledTimes(2);
     expect(mocks.progressFail).toHaveBeenLastCalledWith(

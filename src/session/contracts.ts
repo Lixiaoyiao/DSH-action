@@ -43,7 +43,7 @@ const workflowIdentitySchema = z.strictObject({
 });
 
 export const sessionManifestSchema = z.strictObject({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(2),
   repository: repositorySchema,
   workflow: workflowIdentitySchema.extend({
     sourceSha: commit,
@@ -107,10 +107,88 @@ export interface SessionCheckpoint {
   readonly attachments?: Readonly<Record<string, Uint8Array>>;
 }
 
+function freezeManifest<T>(value: T): T {
+  if (typeof value === "object" && value !== null) {
+    for (const nested of Object.values(value)) freezeManifest(nested);
+    Object.freeze(value);
+  }
+  return value;
+}
+
+const admittedSnapshots = new WeakSet<object>();
+function isAdmittedCheckpoint(value: object): value is SessionCheckpoint {
+  return admittedSnapshots.has(value);
+}
+
+/** Own the admitted bytes. Consumers receive copies, never the bytes whose proof is reused. */
+function checkpointSnapshot(checkpoint: SessionCheckpoint): SessionCheckpoint {
+  const payload = checkpoint.payload;
+  const attachments = checkpoint.attachments ?? {};
+  const snapshot = Object.freeze({
+    manifest: freezeManifest(checkpoint.manifest),
+    get payload() {
+      return Buffer.from(payload);
+    },
+    get attachments() {
+      return Object.fromEntries(
+        Object.entries(attachments).map(([name, bytes]) => [name, Buffer.from(bytes)]),
+      );
+    },
+  });
+  admittedSnapshots.add(snapshot);
+  return snapshot;
+}
+
+/** Admit a transport envelope once; time remains a fresh check when the same snapshot is used. */
+export function admitSessionCheckpointEnvelope(
+  checkpoint: {
+    readonly manifest: unknown;
+    readonly payload: Uint8Array;
+    readonly attachments?: Readonly<Record<string, Uint8Array>>;
+  },
+  now = Date.now(),
+): SessionCheckpoint {
+  if (isAdmittedCheckpoint(checkpoint)) {
+    assertRetention(checkpoint.manifest, now);
+    return checkpoint;
+  }
+  const manifest = parseSessionManifest(checkpoint.manifest, now);
+  if (checkpoint.payload.byteLength !== manifest.payload.bytes)
+    throw new PolicyDeniedError(
+      "Session payload integrity size or SHA256 differs from its manifest",
+    );
+  const sourceAttachments = Object.entries(checkpoint.attachments ?? {});
+  if (
+    sourceAttachments.length !== (manifest.attachments?.length ?? 0) ||
+    sourceAttachments.some(
+      ([name, bytes]) =>
+        !manifest.attachments?.some(
+          (entry) => entry.file === name && entry.bytes === bytes.byteLength,
+        ),
+    )
+  )
+    throw new PolicyDeniedError("Session attachment bytes do not match their manifest");
+  const payload = Uint8Array.from(checkpoint.payload);
+  const attachments = Object.fromEntries(
+    sourceAttachments.map(([name, bytes]) => [name, Uint8Array.from(bytes)]),
+  );
+  if (
+    payload.byteLength !== manifest.payload.bytes ||
+    createHash("sha256").update(payload).digest("hex") !== manifest.payload.sha256
+  )
+    throw new PolicyDeniedError(
+      "Session payload integrity size or SHA256 differs from its manifest",
+    );
+  const admitted = { manifest, payload, attachments };
+  sessionAttachmentFiles(admitted);
+  return checkpointSnapshot(admitted);
+}
+
 /** Validate the existing artifact envelope without interpreting DSH attachment identities. */
 export function sessionAttachmentFiles(
   checkpoint: SessionCheckpoint,
 ): Readonly<Record<string, Uint8Array>> {
+  if (admittedSnapshots.has(checkpoint)) return checkpoint.attachments ?? {};
   const entries = checkpoint.manifest.attachments ?? [];
   const files = checkpoint.attachments ?? {};
   if (
@@ -206,6 +284,11 @@ export function parseSessionManifest(value: unknown, now = Date.now()): SessionM
       "Session attachment manifest exceeds its bounds or has incompatible filenames",
     );
   }
+  assertRetention(manifest, now);
+  return manifest;
+}
+
+function assertRetention(manifest: SessionManifest, now: number): void {
   const created = Date.parse(manifest.createdAt);
   const expires = Date.parse(manifest.expiresAt);
   if (
@@ -217,7 +300,6 @@ export function parseSessionManifest(value: unknown, now = Date.now()): SessionM
   ) {
     throw new PolicyDeniedError("Session checkpoint is expired or has an invalid retention window");
   }
-  return manifest;
 }
 
 export function validateSessionManifestBinding(

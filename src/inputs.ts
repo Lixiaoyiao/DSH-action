@@ -33,6 +33,9 @@ function configurationError(error: unknown): ActionConfigurationError {
 
 /** Parse and validate all action inputs before any external side effect occurs. */
 export function loadInputs(reader: InputReader = core.getInput): ActionInputs {
+  if (reader("max-turns").trim() !== "") {
+    throw new ActionConfigurationError("max-turns was removed in v0.12; use max-controller-steps");
+  }
   const deepseekApiKey = reader(actionInputName("deepseekApiKey"), { required: true });
   const githubToken = reader(actionInputName("githubToken"), { required: true });
   const baseBranch = optionalInput(reader, "baseBranch");
@@ -95,7 +98,7 @@ export function loadInputs(reader: InputReader = core.getInput): ActionInputs {
     baseBranch,
     branchPrefix,
     branchNameTemplate,
-    maxTurns: optionalInput(reader, "maxTurns"),
+    maxControllerSteps: optionalInput(reader, "maxControllerSteps"),
     permissionProfile: optionalInput(reader, "permissionProfile"),
     validationIntegrity: optionalInput(reader, "validationIntegrity"),
     allowPluginInstall: optionalInput(reader, "allowPluginInstall"),

@@ -5,19 +5,14 @@ import { runAgentLoop, type AgentLoopStats } from "../agent/loop.js";
 import { publishTaskAnswer } from "../commands/task.js";
 import { DshAgentEngine } from "../dsh/engine.js";
 import type { DshFailureTelemetry } from "../dsh/errors.js";
+import type { DshRunResult } from "../dsh/runner.js";
 import type { ActionInputs } from "../inputs.js";
 import { buildDshToolPolicyAudit } from "../permissions/profile.js";
-import type { RunOutcome, AgentRunSummary, ValidationSummary } from "../result.js";
+import type { RunFacts, AgentRunSummary, ValidationSummary } from "../result.js";
 import { createControllerSession, type ControllerSession } from "../session/controller.js";
 import type { PreparedExecution } from "./execution.js";
 import type { RunLifecycle } from "./lifecycle.js";
-import {
-  prepareDiagnosisOperation,
-  prepareReviewOperation,
-  prepareWorkspaceOperation,
-  type FinalizedOperation,
-  type PreparedOperation,
-} from "./operation-finalizer.js";
+import type { FinalizedOperation, Publication } from "./operation-finalizer.js";
 import type { AuthorizedRun } from "./prepare.js";
 import type { PreparedWorkspace } from "./workspace.js";
 
@@ -31,8 +26,9 @@ export interface AgentPhaseOptions {
   readonly deadlineMs: number;
 }
 
-type AgentPhaseSnapshot = ReturnType<PreparedOperation["snapshot"]> &
-  Pick<RunOutcome, "agent" | "toolPolicy" | "session" | "validation">;
+type AgentPhaseSnapshot = Publication["facts"] &
+  Pick<RunFacts, "agent" | "toolPolicy" | "session" | "validation"> &
+  Partial<Pick<RunFacts, "findingsCount" | "taskOutput">>;
 
 /** Project Controller and DSH evidence without mixing their receipt planes. */
 function agentSummary(evidence: DshFailureTelemetry, stats: AgentLoopStats): AgentRunSummary {
@@ -49,59 +45,18 @@ function agentSummary(evidence: DshFailureTelemetry, stats: AgentLoopStats): Age
   };
 }
 
-/** Bind only the dependencies used by the selected business operation. */
-function prepareOperation(options: AgentPhaseOptions): PreparedOperation {
-  const { authorized, inputs, workspace, execution, lifecycle, deadlineMs, signal } = options;
-  const publication = {
-    client: authorized.client,
-    repository: authorized.context.repository,
-    expectedAuthorId: inputs.botUserId,
-    runUrl: authorized.currentRunUrl,
-    revalidateAuthority: authorized.revalidateAuthority,
-    lifecycle,
-  };
-  if (authorized.command.operation === "review" && authorized.snapshot?.kind === "pull_request") {
-    return prepareReviewOperation({
-      ...publication,
-      snapshot: authorized.snapshot,
-      maxFindings: inputs.maxFindings,
-    });
-  }
-  if (authorized.command.operation === "diagnose") {
-    return prepareDiagnosisOperation({
-      ...publication,
-      ...(authorized.issueNumber === undefined ? {} : { issueNumber: authorized.issueNumber }),
-    });
-  }
-  return prepareWorkspaceOperation({
-    authorized,
-    inputs,
-    taskIdentity: execution.operationIdentity,
-    runUrl: authorized.currentRunUrl,
-    lifecycle,
-    deadlineMs,
-    signal,
-    ...(workspace.snapshot === undefined ? {} : { workspaceCopy: workspace.snapshot }),
-    ...(workspace.boundWriteSha === undefined ? {} : { boundWriteSha: workspace.boundWriteSha }),
-    ...(authorized.issueNumber === undefined ? {} : { issueNumber: authorized.issueNumber }),
-    ...(execution.validation === undefined ? {} : { validation: execution.validation }),
-    ...(execution.githubAuthority === undefined
-      ? {}
-      : { githubAuthority: execution.githubAuthority }),
-  });
-}
-
 /** Own turn telemetry and the selected operation through success, failure and checkpoint save. */
 export class AgentPhase {
-  private readonly operation: PreparedOperation;
+  private readonly publication: Publication;
   private readonly session: ControllerSession | undefined;
   private agent: AgentRunSummary | undefined;
-  private toolPolicy: RunOutcome["toolPolicy"];
+  private completedOutput: DshRunResult["output"] | undefined;
+  private toolPolicy: RunFacts["toolPolicy"];
   private blockedCommentId: number | undefined;
 
   public constructor(private readonly options: AgentPhaseOptions) {
     const { authorized, inputs, execution, deadlineMs, signal } = options;
-    this.operation = prepareOperation(options);
+    this.publication = execution.publication;
     this.session = createControllerSession({
       inputs,
       client: authorized.client,
@@ -120,13 +75,17 @@ export class AgentPhase {
   }
 
   public snapshot(): AgentPhaseSnapshot {
-    const { githubAuthority, validation } = this.options.execution;
     const agent = this.agent;
+    const publication = this.publication.facts;
+    const output = this.completedOutput;
     return {
-      ...(githubAuthority?.hasExternalEffect === true
-        ? { writeStatus: "partial-success" as const }
-        : {}),
-      ...this.operation.snapshot(),
+      ...publication,
+      ...(publication.publication === undefined && output === undefined
+        ? {}
+        : {
+            findingsCount: publication.publication?.selected ?? output?.findings.length ?? 0,
+          }),
+      ...(output?.taskOutput === undefined ? {} : { taskOutput: output.taskOutput }),
       ...(this.blockedCommentId === undefined ? {} : { commentId: this.blockedCommentId }),
       ...(agent === undefined
         ? {}
@@ -136,15 +95,12 @@ export class AgentPhase {
               ...(agent.toolReceipts === undefined
                 ? {}
                 : {
-                    toolReceipts:
-                      githubAuthority?.reconcileAgentReceipts(agent.toolReceipts) ??
-                      agent.toolReceipts,
+                    toolReceipts: this.publication.reconcileAgentReceipts(agent.toolReceipts),
                   }),
             },
           }),
       ...(this.toolPolicy === undefined ? {} : { toolPolicy: this.toolPolicy }),
-      ...(this.session === undefined ? {} : { session: this.session.snapshot() }),
-      ...(validation === undefined ? {} : { validation: validation.snapshot() }),
+      ...(this.session === undefined ? {} : { session: this.session.facts }),
     };
   }
 
@@ -154,29 +110,13 @@ export class AgentPhase {
     this.agent = agentSummary(evidence, stats);
   }
 
-  public async run(): Promise<Omit<RunOutcome, "schemaVersion" | "durationMs">> {
-    try {
-      return await this.execute();
-    } catch (error) {
-      this.session?.finish("failed");
-      throw error;
-    }
-  }
-
-  private async execute(): Promise<Omit<RunOutcome, "schemaVersion" | "durationMs">> {
+  public async run(): Promise<Omit<RunFacts, "durationMs">> {
     const { lifecycle, authorized, workspace, execution, inputs, signal, deadlineMs } =
       this.options;
     const { context, client, command, currentRunUrl, policy, issueNumber, deferWriteProgress } =
       authorized;
-    const {
-      contextPacket,
-      tools,
-      toolProvider,
-      extensions,
-      hasGitHubMutationTools,
-      selectedComposition,
-      redact,
-    } = execution;
+    const { contextPacket, tools, toolProvider, extensions, selectedComposition, redact } =
+      execution;
     const session = this.session;
     await session?.prepare();
     lifecycle.enter("agent");
@@ -218,15 +158,16 @@ export class AgentPhase {
           : {
               onRuntimeCompleted: async (runtime, completed) => {
                 this.observe(completed.agent, completed.stats);
+                this.completedOutput = completed.agent.output;
                 lifecycle.enter("publication");
                 await session.save(runtime);
               },
             }),
-        onTurn: async (turn, maxTurns) => {
+        onTurn: async (turn, maxControllerSteps) => {
           lifecycle.enter("agent");
           await lifecycle.update(
             "agent",
-            `The isolated worker is running turn ${String(turn)} of ${String(maxTurns)}. Repository, event, and tool output remain untrusted data.`,
+            `The isolated worker is running turn ${String(turn)} of ${String(maxControllerSteps)}. Repository, event, and tool output remain untrusted data.`,
           );
         },
         onValidationRetry: async (turn) => {
@@ -237,7 +178,6 @@ export class AgentPhase {
         },
         onState: (result, stats) => this.observe(result, stats),
         onEngineFailure: (failure, stats) => {
-          session?.finish("failed");
           this.observe(
             failure.extensionAudit === undefined &&
               (selectedComposition.actionManagedExtensionProfile ||
@@ -252,7 +192,6 @@ export class AgentPhase {
           core.warning(`Agent ${component} cleanup failed: ${redact(message)}`);
         },
         blocked: async (result) => {
-          session?.finish("not_saved");
           lifecycle.enter("publication");
           if (
             command.operation === "task" &&
@@ -271,11 +210,18 @@ export class AgentPhase {
           }
           return { kind: "blocked" };
         },
-        finalize: (result, remainingMs) => this.operation.finalize(result, remainingMs),
+        finalize: (result, remainingMs) => this.publication.attempt(result, remainingMs),
       },
       {
-        createEngine: (runtime) =>
-          new DshAgentEngine(inputs, policy, runtime, extensions, selectedComposition),
+        createEngine: (runtime, controllerTools) =>
+          new DshAgentEngine(
+            inputs,
+            policy,
+            runtime,
+            extensions,
+            selectedComposition,
+            controllerTools,
+          ),
       },
     );
 
@@ -307,21 +253,14 @@ export class AgentPhase {
         validation: { status: "not-applicable", commandCount: 0 },
       };
     }
-    const validation: ValidationSummary = execution.validation?.snapshot() ?? {
+    const validation: ValidationSummary = this.publication.facts.validation ?? {
       status: "not-applicable",
       commandCount: 0,
     };
     if (finalized.kind === "diagnose" || finalized.kind === "answer") {
       return {
         ...outcome,
-        validation:
-          finalized.kind === "answer" && hasGitHubMutationTools
-            ? { ...validation, status: "passed" }
-            : {
-                status: "not-applicable",
-                commandCount: 0,
-                ...(validation.integrity === undefined ? {} : { integrity: validation.integrity }),
-              },
+        validation,
         ...(finalized.kind !== "answer" || !finalized.noChanges
           ? {}
           : { writeStatus: "no-changes" as const, changedPaths: [] }),

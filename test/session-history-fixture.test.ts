@@ -88,7 +88,7 @@ async function fixture(extra: Record<string, string> = {}, now = Date.now()) {
       .join("\n") + "\n",
   );
   const manifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     repository: binding.repository,
     workflow: { ...binding.workflow, runId: 10, runAttempt: 1, sourceSha: "d".repeat(40) },
     task: binding.task,

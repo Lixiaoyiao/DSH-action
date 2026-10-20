@@ -1,6 +1,6 @@
-import type { ActionStatus, RunOutcome } from "./types.js";
+import type { ActionStatus, RunFacts } from "./types.js";
 
-export function actionStatus(outcome: RunOutcome): ActionStatus {
+export function actionStatus(outcome: RunFacts): ActionStatus {
   if (outcome.conclusion !== "failure") return outcome.conclusion;
   if (outcome.error?.category === "policy" || outcome.error?.code === "POLICY_DENIED") {
     return "denied";

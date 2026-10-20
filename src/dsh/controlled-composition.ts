@@ -185,6 +185,36 @@ export class ControlledComposition implements DshComposition {
     if (options.dshExecutableIdentity === undefined) {
       throw new DshConfigurationError("Controlled host composition requires a DSH executable");
     }
+    if ((options.controllerTools?.length ?? 0) > 0) {
+      const assets = controlledAssets(options.assetsDirectory);
+      await assertDshFile(
+        join(options.assetsDirectory, "action-controller.mjs"),
+        "DSH Controller tool adapter",
+      );
+      await prepareControlledProfile({
+        dshHome: options.runtime.dshHome,
+        plan: options.plan,
+        nativeTools: options.nativeTools,
+        workspaceWrite: options.workspaceWrite,
+        expectedOperation: options.expectedOperation,
+        task: options.task,
+        workerWorkspacePath: options.workspacePath,
+        workerAttachmentHome: join(options.runtime.dshHome, "attachments"),
+        policyPluginPath: assets.policyPluginPath,
+        workspacePluginPath: assets.workspacePluginPath,
+        workerStatePath: join(options.runtime.dshHome, "action-state", "tool-counts.json"),
+        workerAuditPath: join(options.runtime.dshHome, "action-state", "tool-receipts.jsonl"),
+        manifestBase: { private: true, dependencies: {} },
+      });
+      return {
+        isolation: "none",
+        launchPlan: {
+          command: process.execPath,
+          args: ["--expose-internals", assets.launcherPath, options.task],
+          cwd: options.workspacePath,
+        },
+      };
+    }
     const patchPath = await this.prepareBasePatch(options);
     const toolPolicyPath = await writeToolPolicy(options.runtime, options.nativeTools);
     return {
@@ -243,6 +273,7 @@ export class ControlledComposition implements DshComposition {
       launcherPath: assets.launcherPath,
       containerLauncher: CONTAINER_LAUNCHER,
       task: options.task,
+      controllerTools: (options.controllerTools?.length ?? 0) > 0,
     });
     const prepared: PreparedDockerDshComposition = {
       isolation: "docker",

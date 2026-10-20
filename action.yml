@@ -154,8 +154,8 @@ inputs:
     description: "Create or update one controller-owned sticky comment at major lifecycle stages, reusing the operation's result marker."
     required: false
     default: "true"
-  max-turns:
-    description: "Maximum fresh DSH turns across tool requests and validation repair attempts."
+  max-controller-steps:
+    description: "Run-scoped budget for the initial execution, Controller tool calls and validation repair attempts."
     required: false
     default: "3"
   permission-profile:
@@ -188,54 +188,12 @@ inputs:
     default: "false"
   # END GENERATED ACTION INPUTS
 outputs:
-  dsh-mode:
-    description: "Resolved DSH mode: controlled, native, or none"
-  dsh-composition:
-    description: "Stable selected DSH composition identity, or none"
   conclusion:
-    description: "success, neutral, or failure"
-  operation:
-    description: "Resolved operation: task, review, diagnose, fix, implement, or none"
+    description: "success, neutral, or failure."
   summary:
-    description: "Validated final summary for any operation, or a safe failure summary"
-  review-summary:
-    description: "Backward-compatible alias of summary"
-  findings-count:
-    description: "Selected review findings, or validated agent findings for other operations"
-  branch-name:
-    description: "Created or updated Controller task branch"
-  pull-request-url:
-    description: "Created pull request URL"
-  commit-sha:
-    description: "Commit created by a successful fix operation"
-  trust:
-    description: "Resolved execution profile: untrusted, trusted-read, trusted-write, or none"
-  permission-profile:
-    description: "Resolved Agent permission profile: strict, standard, custom, or none"
-  effective-tools:
-    description: "Backward-compatible Controller-plane canonical capability array. It is exact for controlled mode but never describes native DSH inventory; use result-json.toolPolicy.observedTools for native telemetry."
-  network-access:
-    description: "Effective worker network: host-gateway, mediated-web, bridge, or none before permission resolution"
-  workspace-write:
-    description: "Whether the effective Agent tools can modify the disposable workspace"
-  trusted-extensions:
-    description: "JSON array of Action-admitted MCP, Bundle, and Plugin owners; native network/write values describe shared worker authority, not per-tool grants"
-  duration-ms:
-    description: "Total controller duration in milliseconds"
-  comment-id:
-    description: "Sticky progress/result comment ID when progress tracking was available"
-  error-code:
-    description: "Stable failure code, empty on success or neutral completion"
-  error-message:
-    description: "Redacted and bounded failure message"
-  extension-profile-digest:
-    description: "SHA-256 digest of the redacted controlled extension profile or native admission audit, empty when unavailable"
-  tool-receipts:
-    description: "JSON object with bounded controller/DSH receipt arrays and truncation metadata; never an authorization input"
-  task-output:
-    description: "JSON-encoded maintainer-defined task output after Controller schema validation; empty when not configured or unavailable"
+    description: "Human-readable terminal summary."
   result-json:
-    description: "Versioned JSON envelope containing status, result, policy, permissions, tool-policy ownership audit, known-authority audit, extension audit, tool receipts, timing, publication, validation integrity, write, and error details"
+    description: "Canonical schemaVersion=2 RunReport including confirmed effects and diagnostics."
 
 runs:
   using: "node24"

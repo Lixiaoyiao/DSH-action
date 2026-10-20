@@ -1,10 +1,12 @@
 # Maintainer release guide
 
+> v0.12.0 is evaluation-only. Keep development on codex/v012-architecture. Do not merge main, create a Tag, or publish installer 0.7.2 without the user's final confirmation. The steps below apply after that confirmation.
+
 [README](../README.md) · [Contributing](../CONTRIBUTING.md) · [Security](../SECURITY.md) · [Changelog](../CHANGELOG.md)
 
 This guide is for repository maintainers qualifying and publishing an Action release. A successful run proves only the exact commit SHA it tested. After any candidate change, repeat every required check against the new latest SHA.
 
-For v0.11.0, retain the exact production DSH `0.2.1-rc.2` family. Qualify
+For v0.12.0, retain the exact production DSH `0.2.1-rc.2` family. Qualify
 `session-mode: auto` with fresh keys in controlled and native compositions.
 Use the trusted [automatic Session E2E workflow](../.github/workflows/session-auto-e2e.yml)
 on live `main`: first creation and an
@@ -32,8 +34,8 @@ The advisory stable/RC/alpha upstream canaries never replace these production ga
 Do not rerun task-bearing failures without first reconciling their diagnostics
 and confirmed effects; preserve a bounded continuation record for external blocks.
 
-The guided installer is prepared as an independently qualified `0.7.1` release
-after the v0.11.0 formal canary succeeds. Its first-repository qualification must
+The guided installer is prepared as an independently qualified `0.7.2` release
+after the v0.12.0 formal canary succeeds. Its first-repository qualification must
 exercise the real Git/gh path, Secret detection, readonly workflow generation,
 separate commit/push confirmations, configuration checks and first-run guidance.
 Keep cancelled confirmations and unrelated working-tree changes covered. Public
@@ -402,9 +404,9 @@ If the smoke fails after publication, keep the tag immutable. Diagnose the failu
 
 ## Publish the npm create package
 
-The independent installer is `0.7.1`, targeting formal Action `v0.11.0`
+The independent installer is `0.7.2`, targeting formal Action `v0.12.0`
 with exact DSH `0.2.1-rc.2`. Its source tag is
-`create-deepseek-harness-action-v0.7.1`. Keep the Action SHA and installer source
+`create-deepseek-harness-action-v0.7.2`. Keep the Action SHA and installer source
 SHA unresolved until their respective gates establish them. Do not copy a
 historical release SHA into the new binding.
 

@@ -19,7 +19,5 @@ export type {
   GitHubAuthorityGatewayOptions,
   GitHubAuthorityGatewayOptions as GitHubToolProviderOptions,
   GitHubMutationToolId,
-  GitHubMutationValidationGate,
-  GitHubMutationValidationRequest,
   GitHubToolFlushReceipt,
 } from "./github-authority-gateway.js";

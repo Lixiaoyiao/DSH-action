@@ -3,7 +3,7 @@ import * as core from "@actions/core";
 
 import { throwIfCancelled } from "../lifecycle/cancellation.js";
 import { PRODUCTION_DSH_COMPOSITION } from "./controlled-composition.js";
-import { DshError, DshTimeoutError } from "./errors.js";
+import { DshTimeoutError, attachDshFailureTelemetry, dshFailureTelemetry } from "./errors.js";
 import { admitDshRun, prepareDshContext } from "./runner-context.js";
 import { isolationReport, runtimeExtensionAudit } from "./runner-policy.js";
 import type { DshRunDependencies, DshRunRequest, DshRunResult } from "./runner-types.js";
@@ -69,15 +69,15 @@ export async function runDsh(
   try {
     return await new DshWorker(context, runtime, scope, dependencies).run();
   } catch (error: unknown) {
-    if (error instanceof DshError) {
+    if (error instanceof Error) {
       const extensionAudit = runtimeExtensionAudit(
         request,
         context.extensions,
         runtime,
         composition,
       );
-      error.attachTelemetry({
-        ...error.telemetry,
+      attachDshFailureTelemetry(error, {
+        ...dshFailureTelemetry(error),
         durationMs: Math.max(0, now() - startedAt),
         isolationReport: isolationReport(request, composition),
         ...(extensionAudit === undefined ? {} : { extensionAudit }),

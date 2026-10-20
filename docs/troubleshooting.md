@@ -10,7 +10,7 @@ Give the Action step an `id`, then inspect `result-json` even when the step
 fails:
 
 ```yaml
-- uses: Lixiaoyiao/deepseek-harness-action@v0.10.1
+- uses: Lixiaoyiao/deepseek-harness-action@v0.12.0
   id: dsh
   with:
     deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
@@ -24,24 +24,14 @@ fails:
 
 Useful fields are:
 
-- `status`: broad outcome (`denied`, `timed_out`, `validation_failed`, and so on);
-- `error.code`: stable specific classification;
-- `error.category`: stable `configuration`, `policy`, `domain`, or `runtime`
-  semantics for classified errors;
-- `error.phase`: `entrypoint`, `configuration`, `routing`, `authorization`,
-  `context`, `agent`, `validation`, `publication`, or `write`; this records
-  where the error surfaced and does not determine a classified error's
-  identity;
-- `error.message` and `error.guidance`: redacted, bounded diagnostics;
-- `.dsh.mode` and `.dsh.composition`: the selected composition mode and stable
-  identity;
-- `toolPolicy`: Controller-effective grants for controlled mode or DSH-observed
-  inventory telemetry for native mode;
-- `permissions`, `isolation`, `validation`, `validationIntegrity`, and `loop`:
-  Controller evidence for the effective run; and
-- scalar `trust`, `dsh-mode`, `dsh-composition`, `permission-profile`,
-  `effective-tools`, `network-access`, `workspace-write`, `error-code`, and
-  `error-message`: convenient summaries.
+- `termination.status`: broad outcome (`denied`, `timed_out`, `validation_failed`, and so on);
+- `termination.error`: stable code, category, phase, and bounded diagnostics;
+- `context.dsh`: selected composition mode and identity;
+- `context.toolPolicy` and `context.permission`: effective Controller grants or observed DSH inventory;
+- `agent`, `validation`, `publication`, and `session`: execution facts and confirmed effects.
+
+The scalar outputs are `conclusion` and `summary`; all detailed data is in
+`result-json`. See the [v0.12 migration](migration-v0.12.md) for old output paths.
 
 `result-json`, model text, and receipts are observability data, not
 authorization or tamper-proof security evidence. Keep their strings in data
@@ -50,7 +40,8 @@ source.
 
 ## The request is denied
 
-Typical signal: `status: denied` or `error-code: POLICY_DENIED`.
+Typical signal: `termination.status: denied` or
+`termination.error.code: POLICY_DENIED`.
 
 Check these in order:
 
@@ -96,7 +87,7 @@ rather than broadening permissions.
 ## A tool is missing or denied
 
 First inspect `dsh-mode`, `dsh-composition`, `trust`, `workspace-write`,
-`network-access`, and `result-json.toolPolicy`. For controlled mode, also inspect
+`context.permission.network`, and `result-json.context.toolPolicy`. For controlled mode, also inspect
 `permission-profile`, `effective-tools`, and the permission audit.
 
 Common causes:
@@ -232,13 +223,13 @@ which is not destination-restricted.
 
 Relevant codes include:
 
-| Code                 | Meaning                                                              | First response                                                                 |
-| -------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `DSH_TIMEOUT`        | A DSH process exceeded its deadline.                                 | Reduce repository/task scope or increase the Action deadline.                  |
-| `AGENT_TIMEOUT`      | The complete multi-turn Agent loop exhausted the remaining deadline. | Reduce task and validation work, or increase `timeout-minutes`.                |
-| `VALIDATION_TIMEOUT` | A Controller validation command timed out.                           | Reduce or split validation work; ensure the command does not wait for input.   |
-| `AGENT_TURN_LIMIT`   | The loop used `max-turns` before reaching a valid terminal result.   | Make the task narrower or raise `max-turns` within its 1–10 range.             |
-| `AGENT_NO_PROGRESS`  | The same workspace revision repeated the same validation failure.    | Fix the validation setup or give the Agent the specific tool/context it lacks. |
+| Code                 | Meaning                                                                       | First response                                                                 |
+| -------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `DSH_TIMEOUT`        | A DSH process exceeded its deadline.                                          | Reduce repository/task scope or increase the Action deadline.                  |
+| `AGENT_TIMEOUT`      | The complete multi-turn Agent loop exhausted the remaining deadline.          | Reduce task and validation work, or increase `timeout-minutes`.                |
+| `VALIDATION_TIMEOUT` | A Controller validation command timed out.                                    | Reduce or split validation work; ensure the command does not wait for input.   |
+| `AGENT_TURN_LIMIT`   | The loop used `max-controller-steps` before reaching a valid terminal result. | Make the task narrower or raise `max-controller-steps` within its 1–10 range.  |
+| `AGENT_NO_PROGRESS`  | The same workspace revision repeated the same validation failure.             | Fix the validation setup or give the Agent the specific tool/context it lacks. |
 
 `timeout-minutes` covers the overall setup/execution deadline. Runtime
 installation, extension installation, each Agent turn, and each validation
@@ -356,24 +347,24 @@ it does not repeat an Agent task or any GitHub mutation.
 Typical codes:
 
 - `DSH_MALFORMED_OUTPUT`: the root Agent did not return one complete
-  schema-v1 JSON object that matches the Controller-selected operation; or
+  protocol-v2 JSON object that matches the Controller-selected operation; or
 - `DSH_OUTPUT_LIMIT`: DSH output exceeded the bounded output limit.
 
-v0.9.1 can make one bounded, tool-free result-formatting request per worker
+The Action can make one bounded, tool-free result-formatting request per worker
 turn after an otherwise successful exit with malformed output. This does not restart
 the worker, repeat tools, or waive the strict schema. Do not blindly rerun a
 workflow that may already have performed extension-owned side effects. If the
 result still fails:
 
 1. Confirm `dsh-version` is exactly `0.2.1-rc.2` and the Action version is
-   v0.9.1.
-2. Inspect the schema error in the Actions log and the bounded `error-message`.
+   v0.12.0 when using this output contract.
+2. Inspect the schema error in the Actions log and the bounded
+   `result-json.termination.error.message`.
    A `diagnosis` value, when present, must be a non-empty string; omit optional
    fields when they do not apply. Do not substitute `null` or an empty string.
-   The entire `toolRequest` field is allowed only in `state=needs_tool`;
-   omit it for `final` and `blocked`, including after receiving tool feedback.
-   Terminal output repair may discard that residual field but cannot execute
-   it, repeat completed work, or change the terminal state.
+   Protocol v2 accepts only `final` and `blocked`. Tools run inside DSH through
+   MCP. Terminal output cannot request tools, repeat completed work, or change
+   an already known terminal state.
 3. Check that trusted prompts do not ask for fences, prefaces, suffixes, a
    separate citation list, or a different operation. Web Search Markdown
    citations may appear only inside JSON string fields.
@@ -500,26 +491,17 @@ the Controller.
 - Give the Action step an `id` and reference that exact ID in later steps.
 - Use an `always()` condition because a failed Action step still writes outputs
   before reporting failure.
-- `branch-name`, `pull-request-url`, `commit-sha`, and `comment-id` are empty when
-  they do not apply. Read-only tasks, entity-free answers, denied/failing writes,
-  and successful no-change writes commonly leave some or all of them empty.
-- `review-summary` is the backward-compatible alias; prefer `summary` for new
-  workflows.
-- `task-output` is empty unless a configured task reached a valid final value;
-  when present it is JSON data and remains untrusted.
-- `dsh-mode` and `dsh-composition` report `controlled` /
-  `github-action-controlled`, `native` / `dsh-native-headless`, or `none` when
-  composition selection did not complete. The same values appear under
-  `result-json.dsh` and in the step summary.
-- Parse `effective-tools`, `trusted-extensions`, `tool-receipts`, and
-  `result-json` as JSON. Do not treat their encoded text as shell source.
-- In native mode, `effective-tools` remains a backward-compatible Action
-  permission output and is not DSH inventory. Read
-  `result-json.toolPolicy.observedTools` for runtime observation, and never treat
-  either surface as a grant.
-- Receipt arrays may be truncated to the Action output budget. Check
-  `truncated` and `droppedCount`; truncation does not weaken or expand
-  authorization.
+- Only `conclusion`, `summary`, and `result-json` remain in v0.12. Read detailed
+  values from the report; old scalar output names were removed.
+- `publication` contains confirmed commit, branch, PR, and comment identities
+  when applicable. A failed run may still contain earlier confirmed effects.
+- `operation.taskOutput` exists only after a configured task produced a valid
+  final value. It remains untrusted data.
+- `context.dsh` records the selected mode and composition. In native mode,
+  `context.toolPolicy.observedTools` is observation, not an authority grant.
+- Parse `result-json` as JSON data. Do not interpolate its text into shell source.
+- Receipt arrays may be truncated to the report budget; inspect
+  `agent.receiptsDropped`. Truncation does not change authorization.
 
 If `result-json` itself is unexpectedly empty, inspect the earliest workflow
 failure. A runner/host kill before Action finalization can prevent any final

@@ -35,31 +35,17 @@ async function publishStatusComment(client, target, authorId, title, message, ru
     await (0,comments/* upsertTrackingComment */.k)(client, target, authorId, trackingKind, body);
 }
 
-// EXTERNAL MODULE: ./src/write/transaction.ts + 2 modules
-var transaction = __webpack_require__(88284);
 ;// CONCATENATED MODULE: ./src/commands/fix.ts
-
 
 
 async function finishFix(input) {
     const task = input.result.output.operation === "task";
     const label = task ? "task" : "fix";
-    const created = await (0,transaction/* executeValidatedRepositoryWrite */.L)({
-        client: input.client,
-        repository: { owner: input.target.owner, repo: input.target.repo },
-        workspace: input.snapshot,
-        plan: {
-            kind: "pr-head",
-            target: { number: input.target.issueNumber, identity: input.identity },
-            commitMessage: task ? "feat: apply DeepSeek Harness task" : "fix: apply DeepSeek Harness fix",
-        },
-        validation: {
-            runTests: input.inputs.runTests,
-            commands: input.inputs.testCommands,
-            containerImage: input.inputs.containerImage,
-        },
-        control: input,
-    });
+    const created = await input.writer.write({
+        kind: "pr-head",
+        target: { number: input.target.issueNumber, identity: input.identity },
+        commitMessage: task ? "feat: apply DeepSeek Harness task" : "fix: apply DeepSeek Harness fix",
+    }, input.budget);
     try {
         await publishStatusComment(input.client, input.target, input.expectedAuthorId, `DeepSeek Harness ${label} prepared`, `${input.result.output.summary}\n\nConfigured validation passed.\n\nCommit: \`${created.commitSha}\`\n\nChanged: ${created.paths.map((path) => `\`${path}\``).join(", ")}`, input.runUrl, task ? "task" : "write");
         return { commitSha: created.commitSha, paths: created.paths, status: "success" };

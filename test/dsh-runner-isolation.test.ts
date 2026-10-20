@@ -127,7 +127,7 @@ describe("runDsh isolation", () => {
           );
           return Promise.resolve({
             stdout: JSON.stringify({
-              protocolVersion: 1,
+              protocolVersion: 2,
               operation: "fix",
               state: "final",
               summary: "Fixed.",
@@ -264,7 +264,7 @@ describe("runDsh isolation", () => {
           return Promise.resolve({
             stdout: isDsh
               ? JSON.stringify({
-                  protocolVersion: 1,
+                  protocolVersion: 2,
                   operation: "review",
                   state: "final",
                   summary: "Done.",
@@ -330,7 +330,7 @@ describe("runDsh isolation", () => {
             return Promise.resolve({
               stdout: isDsh
                 ? JSON.stringify({
-                    protocolVersion: 1,
+                    protocolVersion: 2,
                     operation: "review",
                     state: "final",
                     summary: "Done.",
@@ -431,7 +431,7 @@ describe("runDsh isolation", () => {
         return Promise.resolve({
           stdout: isDsh
             ? JSON.stringify({
-                protocolVersion: 1,
+                protocolVersion: 2,
                 operation: "review",
                 state: "final",
                 summary: "Done.",

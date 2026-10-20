@@ -3,11 +3,15 @@
 Notable user-facing changes are recorded here. This project follows semantic
 versioning for published action releases.
 
-## Unreleased
+## Unreleased — v0.12.0
 
-- Prepares installer `0.7.1` targeting formal Action `v0.11.0` through
-  `DSH_ACTION_RELEASE_SHA`, with exact DSH `0.2.1-rc.2` and source tag
-  `create-deepseek-harness-action-v0.7.1`.
+- Keeps controlled/native, host compatibility, full Session auto/save/resume and attachment bytes on exact DSH `0.2.1-rc.2`.
+- Routes Controller tools through the official DSH MCP client and a run-scoped Controller bridge; removes the terminal `needs_tool` protocol.
+- Centralizes repository validation and confirmed effects in Publication; pure GitHub metadata no longer depends on repository tests.
+- Publishes one schema v2 RunReport through `conclusion`, `summary`, and `result-json`; replaces `max-turns` with `max-controller-steps`.
+- Uses immutable Session admission snapshots and manifest v2; v0.11 checkpoints require a new key rather than silent fallback.
+- Prepares installer `0.7.2` for Action `v0.12.0`, bound through `DSH_ACTION_RELEASE_SHA` and source tag `create-deepseek-harness-action-v0.7.2`.
+- This branch is under evaluation. No main merge, Tag or npm publication is authorized before the user's final review.
 
 ## [0.11.0]
 

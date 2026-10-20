@@ -153,7 +153,7 @@ const server = createServer((request, response) => {
         {
           role: "assistant",
           content: JSON.stringify({
-            protocolVersion: 1,
+            protocolVersion: 2,
             operation: "task",
             state: "final",
             summary: "The disposable integrity fixture was weakened for Controller rejection.",

@@ -236,7 +236,7 @@ function expectedGitHubIds(row: MatrixRow): GitHubToolId[] {
   if (row.githubAuthority === "read" && row.trust !== "untrusted") {
     return ["github.checks.read"];
   }
-  if (row.githubAuthority === "write" && row.trust === "trusted-write") {
+  if (row.githubAuthority === "write" && row.trust !== "untrusted") {
     return ["github.comment.create"];
   }
   return [];

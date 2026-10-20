@@ -62,7 +62,7 @@ const lock = JSON.parse(lockText);
 const installerManifest = JSON.parse(installerManifestText);
 const installerLock = JSON.parse(installerLockText);
 const installerVersion = installerManifest.version;
-const installerActionTag = "v0.11.0";
+const installerActionTag = ACTION_TAG;
 const installerSourceTag = `create-deepseek-harness-action-v${installerVersion}`;
 const installerReleaseBinding = "DSH_ACTION_RELEASE_SHA";
 const directDependencies = {
@@ -151,28 +151,7 @@ for (const expected of [
 ]) {
   assert.ok(canary.includes(expected), `release canary is missing a binding guard: ${expected}`);
 }
-const controlledAssertion = canarySteps.find((step) => step.id === "controlled_assert")?.run ?? "";
-const nativeAssertion = canarySteps.find((step) => step.id === "native_assert")?.run ?? "";
-for (const expected of [
-  '.toolPolicy.policyOwner == "controller"',
-  '.dsh.mode == "controlled"',
-  '.dsh.composition == "github-action-controlled"',
-  '.permissions.effectiveTools == ["workspace.read","workspace.search"]',
-]) {
-  assert.ok(controlledAssertion.includes(expected), `controlled canary is missing: ${expected}`);
-}
-for (const expected of [
-  '.toolPolicy.policyOwner == "dsh"',
-  '.dsh.mode == "native"',
-  '.dsh.composition == "dsh-native-headless"',
-  '.isolation.workspaceAccess == "read-only"',
-  '(.toolPolicy.observedTools | index("read") != null)',
-  '(.toolPolicy | has("effectiveTools") | not)',
-  '(.toolPolicy | has("requestedTools") | not)',
-  '(.toolPolicy | has("deniedTools") | not)',
-]) {
-  assert.ok(nativeAssertion.includes(expected), `native canary is missing: ${expected}`);
-}
+// Canary policy outcomes are executed by release-canary.test.ts; equivalent jq/source layouts are not contracts.
 
 assert.equal(
   installerManifest.name,

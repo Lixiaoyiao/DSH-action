@@ -19,8 +19,7 @@ untrusted and must pass Controller schemas and policy before it can influence a
 persistent effect.
 
 **Validation** is Controller-owned. It runs against the disposable workspace
-after an eligible change and before a commit, ref update, pull request, or typed
-GitHub mutation is flushed. A model response cannot waive it
+after an eligible change and before a commit, ref update or code-bearing pull request. Pure metadata effects require fresh authorization and target revalidation, without repository tests. A model response cannot waive it
 ([INV-004](docs/invariants.md#inv-004-githubmutationrequiresvalidation)).
 
 ## Controlled and native composition
@@ -113,17 +112,21 @@ outputs combine read-only snapshots; they do not grant authority.
 
 `runAgentLoop` owns turn/retry decisions. Its lifecycle module owns acquisition,
 bounded execution and disposal; feedback handles bounded, untrusted repair
-context. The selected `PreparedOperation` binds only its actual publication
-inputs. Review and diagnosis never receive write validation or Session state.
+context. The selected Publication adapter binds only its actual publication inputs. Review and diagnosis never receive write validation or Session state.
 Operations retain confirmed effects before another asynchronous step can fail.
 
-`WorkspaceValidation` owns command counts, integrity findings and accepted
-workspace revisions. Repository writes and the Gateway use that same owner.
-A matching revision can reuse its executed suite; permission and remote target
-checks still run at the effect seam. A completed historical operation is
-reportable validation evidence but cannot authorize a new workspace mutation.
+`Publication` binds operation plans, validation and typed GitHub effects once.
+Its interface exposes tools, read-only facts and an attempt. A repository writer
+owns confirmed refs and commits; metadata Gateway effects remain queued until
+Publication settles the operation and rechecks actor and target authority.
+Pure metadata effects do not depend on repository tests or a writable workspace.
 
-`ControllerSession` owns preparation, restore, save and settlement. The owner
+`WorkspaceValidation` owns command counts, integrity findings and revision-bound
+command analysis. A write uses one prepare/run path; it cannot fall back to an
+independent validator. Baseline replay reuses analysis only for the same revision.
+Historical completed-operation evidence cannot authorize a new workspace mutation.
+
+`ControllerSession` owns preparation, restore, save and settlement through prepare, restore, save and read-only facts. The owner
 exists before preparation starts, so an acknowledged artifact remains visible
 even if a subsequent metadata read fails. Session failure cannot erase a
 confirmed PR, comment or completed validation. Session transport and the pure
@@ -148,6 +151,36 @@ DSH resource ownership stays run-scoped. Controlled and native compositions may
 share installation and environment preparation, while their tool-policy owners
 and admission rules remain distinct. Cleanup uses one bounded grace period and
 attempts every acquired resource's disposer, preserving the primary outcome.
+
+## Controller tool execution and reporting
+
+DSH owns the model/tool loop in both compositions. A builtin adapter mounts the
+official MCP client against a Controller-owned typed tool endpoint on the existing
+proxy listener. Its worker-lease token is independent of the model proxy token.
+Only granted tools are exposed; argv, GitHub coordinates and final flush authority
+remain in the Controller. No-grant runs create no tool bridge.
+
+The launchers read bootstrap from bounded one-shot stdin, close that pipe, and
+keep it only in memory before loading DSH or capturing the environment. Tokens
+and endpoints never enter initial env, argv, Profile files, or history. A required
+Loader row waits for tools and MCP registration before Agent startup. Root Agents
+can use the bridge; non-root scopes explicitly deny inherited bridge tools.
+These are DSH scheduling restrictions, not process isolation from trusted plugins.
+Native remains Docker-only; existing restricted host compatibility remains.
+
+Controller budgets and receipts have one run-scoped owner. Initial execution,
+Controller tool calls and validation repair share max-controller-steps. Command
+failures can be repaired; Controller policy, quota, cancellation and infrastructure
+errors stop the worker and preserve their original identity. Tool calls are not
+automatically retried after uncertain transport outcomes.
+
+Only protocol v2 final/blocked text enters the business schema. There is no
+terminal tool-request protocol. The outer attempt loop only repairs failed
+validation. Worker shutdown and bridge settlement precede Publication and Session
+save. Restore rebuilds the current grant and never replays tools or effects.
+
+One bounded RunReport combines final owner facts. JSON output and Markdown read
+that report rather than reconstructing validation, Session or publication status.
 
 ## Installation design
 

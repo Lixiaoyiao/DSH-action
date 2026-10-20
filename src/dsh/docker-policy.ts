@@ -135,6 +135,7 @@ function containerEnvironment(
     NARB_DISABLE_NATIVE_CACHE: "1",
     DEEPSEEK_API_KEY: proxy.workerToken,
     DEEPSEEK_BASE_URL: proxy.workerBaseUrl,
+    ...(proxy.controllerBridge === undefined ? {} : { DSH_ACTION_CONTROLLER_INPUT: "1" }),
     ...(proxy.workerWebSearchBaseUrl === undefined
       ? {}
       : {
@@ -157,6 +158,7 @@ interface DockerWorkerSpecOptions {
   readonly workerEnvironment: NodeJS.ProcessEnv;
   readonly proxy: DeepSeekProxyHandle;
   readonly workspaceWrite: boolean;
+  readonly input?: string;
 }
 
 export function dockerWorkerSpec(options: DockerWorkerSpecOptions): DshProcessSpec {
@@ -171,6 +173,7 @@ export function dockerWorkerSpec(options: DockerWorkerSpecOptions): DshProcessSp
     "run",
     "--rm",
     "--init",
+    ...(options.input === undefined ? [] : ["-i"]),
     "--name",
     `dsh-action-${randomUUID()}`,
     "--read-only",
@@ -241,6 +244,7 @@ export function dockerWorkerSpec(options: DockerWorkerSpecOptions): DshProcessSp
     args,
     cwd: options.workspace,
     env: controllerEnv,
+    ...(options.input === undefined ? {} : { input: options.input }),
     termination: {
       command: "docker",
       args: ["kill", containerName],

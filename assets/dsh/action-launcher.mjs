@@ -1,22 +1,28 @@
-import {
-  boot,
-  createRuntimeResolution,
-  installFailLoud,
-  loadProfile,
-  PluginPackages,
-} from "@deepseek-ai/dsh-app-boot";
-import { provideCmdline } from "@deepseek-ai/dsh-cmdline";
-import {
-  createLaunchEnvironmentSnapshot,
-  DSH_LAUNCH_ENVIRONMENT_KEY,
-} from "@deepseek-ai/dsh-launch-environment";
 import { createRequire } from "node:module";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+
+const bridgeModule =
+  process.env.DSH_ACTION_CONTROLLER_INPUT === "1"
+    ? await import("./action-controller.mjs")
+    : undefined;
+delete process.env.DSH_ACTION_CONTROLLER_INPUT;
+const bridgeBootstrap = await bridgeModule?.consumeControllerBootstrap();
+const runtimeRequire = createRequire(process.env.DSH_ACTION_HOST_EXECUTABLE ?? import.meta.url);
+delete process.env.DSH_ACTION_HOST_EXECUTABLE;
+const runtimeModule = async (name) =>
+  await import(pathToFileURL(runtimeRequire.resolve(name)).href);
+const { boot, createRuntimeResolution, installFailLoud, loadProfile, PluginPackages } =
+  await runtimeModule("@deepseek-ai/dsh-app-boot");
+const { provideCmdline } = await runtimeModule("@deepseek-ai/dsh-cmdline");
+const { createLaunchEnvironmentSnapshot, DSH_LAUNCH_ENVIRONMENT_KEY } = await runtimeModule(
+  "@deepseek-ai/dsh-launch-environment",
+);
 
 const NAME = "dsh-action";
 const PROFILE = "github-action";
 const PROFILE_ROOT_FILENAME = "action-root.yml";
-const INSTALL_ANCHOR = createRequire(import.meta.url).resolve("@deepseek-ai/dsh/package.json");
+const INSTALL_ANCHOR = runtimeRequire.resolve("@deepseek-ai/dsh/package.json");
 
 function admittedExtensionSelectors(profile) {
   const selectors = [];
@@ -115,6 +121,7 @@ async function main() {
   const patches = [
     ...profile.layers.flatMap((layer) => layer.patches),
     ...profile.patches,
+    ...(bridgeModule?.controllerBridgePatches(bridgeBootstrap) ?? []),
     ...(process.env.DSH_ACTION_SEARCH_PROVIDER === "deepseek-official"
       ? [
           {
@@ -191,12 +198,21 @@ async function main() {
       globalThis.structuredClone(patches),
       async (host) => {
         root = host;
+        if (bridgeBootstrap !== undefined)
+          bridgeModule.installControllerBootstrap(
+            host,
+            bridgeBootstrap,
+            await runtimeModule("@deepseek-ai/dsh-mcp-client"),
+          );
         if (sessionPlan !== undefined)
           sessionModule.installSessionAdmission(host, sessionPlan, {
             auditPath: join(dshHome, "action-state", "session-admission.json"),
           });
         await host.plugin(PluginPackages, { resolution });
-        requireAdmittedExtensions(host, admittedExtensionSelectors(profile));
+        requireAdmittedExtensions(host, [
+          ...admittedExtensionSelectors(profile),
+          ...(bridgeBootstrap === undefined ? [] : [{ id: "dsh-action-controller" }]),
+        ]);
         const signal = (code) => {
           if (exitStarted) process.exit(code);
           requestExit(code);

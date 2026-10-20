@@ -71,6 +71,22 @@ export class DshError extends ClassifiedActionError<DshErrorCode> {
   }
 }
 
+const controllerFailureTelemetry = new WeakMap<Error, DshFailureTelemetry>();
+
+/** Retain worker evidence without replacing a Controller error's class or identity. */
+export function attachDshFailureTelemetry(error: unknown, telemetry: DshFailureTelemetry): void {
+  if (error instanceof DshError) error.attachTelemetry(telemetry);
+  else if (error instanceof Error) controllerFailureTelemetry.set(error, telemetry);
+}
+
+export function dshFailureTelemetry(error: unknown): DshFailureTelemetry | undefined {
+  return error instanceof DshError
+    ? error.telemetry
+    : error instanceof Error
+      ? controllerFailureTelemetry.get(error)
+      : undefined;
+}
+
 export class DshConfigurationError extends DshError {
   public constructor(message: string, options?: ErrorOptions) {
     super("DSH_CONFIGURATION", message, options);

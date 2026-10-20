@@ -1,6 +1,6 @@
 import type { Operation, RequestedAccess } from "../commands/parse.js";
 
-export const AGENT_PROTOCOL_VERSION = 1 as const;
+export const AGENT_PROTOCOL_VERSION = 2 as const;
 
 export interface AgentToolManifest {
   readonly id: string;
@@ -27,7 +27,7 @@ export interface AgentToolResult {
 }
 
 export interface AgentTurnRequest {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly operation: Operation;
   readonly requestedAccess: RequestedAccess;
   readonly instructions: string;

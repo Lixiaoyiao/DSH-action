@@ -37,6 +37,7 @@ export interface DshCompositionIsolationMetadata {
 }
 
 export interface PrepareDshCompositionOptions {
+  readonly controllerTools?: readonly string[];
   readonly isolation: "docker" | "none";
   readonly assetsDirectory: string;
   readonly runtime: DshRuntime;

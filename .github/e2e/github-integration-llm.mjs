@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 
 import { sendMessages } from "./messages-fixture.mjs";
 import { businessReply } from "./business-fixture.mjs";
+import { controllerToolReply } from "./controller-tool-fixture.mjs";
 
 const auditPath = process.env.DSH_E2E_GITHUB_AUDIT;
 const expectedKey = process.env.DSH_E2E_FIXTURE_KEY;
@@ -43,7 +44,7 @@ function messageText(body) {
 
 function finalTask(route) {
   return {
-    protocolVersion: 1,
+    protocolVersion: 2,
     operation: "task",
     state: "final",
     summary: `Deterministic ${route} route completed.`,
@@ -52,96 +53,76 @@ function finalTask(route) {
   };
 }
 
-function fixtureOutput(route, index) {
-  if (route === "github" && index <= 4) {
-    const requests = [
-      {
-        id: "github.issue.labels.set",
-        input: { labels: [issueLabel] },
-        reason: "Exercise the Controller-owned exact label replacement path.",
-      },
-      {
-        id: "github.issue.assignees.set",
-        input: { assignees: [issueAssignee] },
-        reason: "Exercise the Controller-owned exact assignee replacement path.",
-      },
-      {
-        id: "github.comment.create",
-        input: { body: "DSH E2E typed GitHub tool completed for @maintainers." },
-        reason: "Exercise the Controller-owned reconciled comment path.",
-      },
-      {
-        id: "github.issue.state.update",
-        input: { state: "closed", stateReason: "completed" },
-        reason: "Exercise the Controller-owned bounded Issue state path last.",
-      },
-    ];
-    return {
-      protocolVersion: 1,
-      operation: "task",
-      state: "needs_tool",
-      summary: `Schedule typed GitHub Issue operation ${String(index)}.`,
-      findings: [],
-      toolRequest: requests[index - 1],
-    };
+function fixtureMessage(route, index, body) {
+  if (["github", "metadata", "checks", "native-checks"].includes(route)) {
+    const requests =
+      route === "github"
+        ? [
+            {
+              id: "github.issue.labels.set",
+              input: { labels: [issueLabel] },
+              reason: "Exercise the Controller-owned exact label replacement path.",
+            },
+            {
+              id: "github.issue.assignees.set",
+              input: { assignees: [issueAssignee] },
+              reason: "Exercise the Controller-owned exact assignee replacement path.",
+            },
+            {
+              id: "github.comment.create",
+              input: { body: "DSH E2E typed GitHub tool completed for @maintainers." },
+              reason: "Exercise the Controller-owned reconciled comment path.",
+            },
+            {
+              id: "github.issue.state.update",
+              input: { state: "closed", stateReason: "completed" },
+              reason: "Exercise the Controller-owned bounded Issue state path last.",
+            },
+          ]
+        : route === "metadata"
+          ? [{ id: "github.pull.metadata.update", input: { title: pullTitle } }]
+          : [{ id: "github.checks.read", input: {} }];
+    const call = controllerToolReply(body, route, index, requests);
+    if (call !== undefined) return call;
   }
   if (route === "label" || route === "assignee" || route === "github") {
-    return finalTask(route);
+    return { role: "assistant", content: JSON.stringify(finalTask(route)) };
   }
   if (route === "native-write") {
     return {
-      protocolVersion: 1,
-      operation: "task",
-      state: "final",
-      summary: "Native trusted-write workspace qualification completed without changes.",
-      findings: [],
-    };
-  }
-  if ((route === "checks" || route === "native-checks") && index === 1) {
-    return {
-      protocolVersion: 1,
-      operation: "diagnose",
-      state: "needs_tool",
-      summary: "Read the Controller-bound checks and statuses.",
-      findings: [],
-      toolRequest: {
-        id: "github.checks.read",
-        input: {},
-        reason: "Exercise the immutable-head typed read path.",
-      },
+      role: "assistant",
+      content: JSON.stringify({
+        protocolVersion: 2,
+        operation: "task",
+        state: "final",
+        summary: "Native trusted-write workspace qualification completed without changes.",
+        findings: [],
+      }),
     };
   }
   if (route === "checks" || route === "native-checks") {
     return {
-      protocolVersion: 1,
-      operation: "diagnose",
-      state: "final",
-      summary: "Deterministic check/status read completed.",
-      findings: [],
-      diagnosis: "The typed Controller check/status response was available as bounded data.",
-    };
-  }
-  if (route === "metadata" && index === 1) {
-    return {
-      protocolVersion: 1,
-      operation: "task",
-      state: "needs_tool",
-      summary: "Schedule the exact typed pull request metadata operation.",
-      findings: [],
-      toolRequest: {
-        id: "github.pull.metadata.update",
-        input: { title: pullTitle },
-        reason: "Exercise the Controller-owned bounded pull request metadata path.",
-      },
+      role: "assistant",
+      content: JSON.stringify({
+        protocolVersion: 2,
+        operation: "diagnose",
+        state: "final",
+        summary: "Deterministic check/status read completed.",
+        findings: [],
+        diagnosis: "The typed Controller check/status response was available as bounded data.",
+      }),
     };
   }
   if (route === "metadata") {
     return {
-      protocolVersion: 1,
-      operation: "task",
-      state: "final",
-      summary: "Deterministic pull request metadata update completed.",
-      findings: [],
+      role: "assistant",
+      content: JSON.stringify({
+        protocolVersion: 2,
+        operation: "task",
+        state: "final",
+        summary: "Deterministic pull request metadata update completed.",
+        findings: [],
+      }),
     };
   }
   throw new Error(`unexpected fixture route: ${route}`);
@@ -229,12 +210,10 @@ const server = createServer((request, response) => {
       );
       sendSse(
         response,
-        business?.message ?? {
-          role: "assistant",
-          content: JSON.stringify(
-            titleRequest ? "Native qualification" : fixtureOutput(route, index),
-          ),
-        },
+        business?.message ??
+          (titleRequest
+            ? { role: "assistant", content: JSON.stringify("Native qualification") }
+            : fixtureMessage(route, index, body)),
         messagesProtocol,
       );
     })

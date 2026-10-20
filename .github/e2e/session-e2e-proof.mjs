@@ -118,7 +118,7 @@ export function inspectCheckpointArchive(input, expected) {
   const manifest = JSON.parse(utf8.decode(files["manifest.json"]));
   const payload = Buffer.from(files["session.jsonl"]);
   requireCheck(
-    manifest.schemaVersion === 1 &&
+    manifest.schemaVersion === 2 &&
       manifest.payload.file === "session.jsonl" &&
       manifest.payload.bytes === payload.length &&
       manifest.payload.sha256 === digest(payload) &&
@@ -199,20 +199,24 @@ export function inspectCheckpointArchive(input, expected) {
 export function resultChecks(result, expected) {
   const session = result?.session;
   return {
-    liveTask: result?.conclusion === "success" && result?.operation === "task",
-    memory: result?.taskOutput?.memory === expected.memory,
+    liveTask:
+      result?.schemaVersion === 2 &&
+      result?.termination?.conclusion === "success" &&
+      result?.operation?.kind === "task",
+    memory: result?.operation?.taskOutput?.memory === expected.memory,
     newChallenge:
-      result?.taskOutput?.challenge === expected.challenge &&
-      result?.taskOutput?.phase === expected.phase,
+      result?.operation?.taskOutput?.challenge === expected.challenge &&
+      result?.operation?.taskOutput?.phase === expected.phase,
     currentTrust:
-      result?.policy?.trust === (expected.phase === "save" ? "trusted-write" : "trusted-read"),
-    currentPermission: result?.permissions?.workspaceWrite === (expected.phase === "save"),
+      result?.context?.policy?.trust ===
+      (expected.phase === "save" ? "trusted-write" : "trusted-read"),
+    currentPermission: result?.context?.permission?.workspaceWrite === (expected.phase === "save"),
     currentIsolation:
-      result?.isolation?.backend === "docker" &&
-      result?.isolation?.processIsolated === true &&
-      result?.isolation?.workspaceAccess ===
+      result?.agent?.isolation?.backend === "docker" &&
+      result?.agent?.isolation?.processIsolated === true &&
+      result?.agent?.isolation?.workspaceAccess ===
         (expected.phase === "save" ? "read-write" : "read-only"),
-    mode: result?.dsh?.mode === expected.dshMode,
+    mode: result?.context?.dsh?.mode === expected.dshMode,
     checkpoint:
       session?.mode === expected.phase &&
       session?.status === "saved" &&
@@ -226,14 +230,14 @@ export function resultChecks(result, expected) {
     sameSession: expected.phase === "save" || session?.sessionId === expected.sessionId,
     newCheckpoint: expected.phase === "save" || session?.payloadSha256 !== expected.payloadSha256,
     noUnexpectedToolsOrWrites:
-      result?.loop?.turns === 1 &&
-      result?.loop?.toolCalls === 0 &&
-      (result?.loop?.toolReceipts ?? []).length === 0 &&
+      result?.agent?.turns === 1 &&
+      result?.agent?.toolCalls === 0 &&
+      (result?.agent?.toolReceipts ?? []).length === 0 &&
       sessionImageReceipts(result, expected) &&
-      !result?.write?.commitSha &&
-      !result?.write?.pullRequestNumber &&
-      (result?.write?.changedPaths ?? []).length === 0 &&
-      (expected.phase !== "save" || result?.write?.status === "no-changes"),
+      !result?.publication?.commitSha &&
+      !result?.publication?.pullRequestNumber &&
+      (result?.publication?.changedPaths ?? []).length === 0 &&
+      (expected.phase !== "save" || result?.publication?.writeStatus === "no-changes"),
     noValidationExecution:
       result?.validation?.status === "not-applicable" && result?.validation?.commandCount === 0,
   };
@@ -477,7 +481,9 @@ async function verify(env, directory) {
     ...current,
     ...(imageWorkspace === undefined ? {} : { imageWorkspace }),
     actionOutcome: outcome(env.ACTION_OUTCOME),
-    errorCode: /^[A-Z][A-Z0-9_]{0,79}$/u.test(result?.error?.code ?? "") ? result.error.code : null,
+    errorCode: /^[A-Z][A-Z0-9_]{0,79}$/u.test(result?.termination?.error?.code ?? "")
+      ? result.termination.error.code
+      : null,
     checks,
     fixtureRequests: reader.audit,
     ...(archiveError === undefined ? {} : { archiveError }),

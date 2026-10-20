@@ -178,7 +178,7 @@ export function describeActionFailure(error: unknown, phase: ActionPhase): Actio
       guidance:
         error instanceof AgentNoProgressError
           ? "Inspect the repeated validation failure and adjust the task, tools, or repository setup."
-          : "Increase max-turns or reduce the task scope, then rerun.",
+          : "Increase max-controller-steps or reduce the task scope, then rerun.",
     });
   }
   if (error instanceof ValidationIntegrityError) {

@@ -76,7 +76,7 @@ describe("runDsh native", () => {
             return {
               stdout: isNativeWorker
                 ? JSON.stringify({
-                    protocolVersion: 1,
+                    protocolVersion: 2,
                     operation: "review",
                     state: "final",
                     summary: "Native composition used.",
@@ -208,7 +208,7 @@ describe("runDsh native", () => {
             return {
               stdout: isNativeWorker
                 ? JSON.stringify({
-                    protocolVersion: 1,
+                    protocolVersion: 2,
                     operation: "review",
                     state: "final",
                     summary: "Native MCP composition used.",
@@ -335,7 +335,7 @@ describe("runDsh native", () => {
             return {
               stdout: isNativeWorker
                 ? JSON.stringify({
-                    protocolVersion: 1,
+                    protocolVersion: 2,
                     operation: "review",
                     state: "final",
                     summary: "Native write composition used.",

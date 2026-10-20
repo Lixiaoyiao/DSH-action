@@ -51,7 +51,7 @@ Controller lifecycle, outside the `AgentEngine` turn contract.
 
 `mcp-config`, `plugin-config`, and `tool-config` currently require
 `schemaVersion: 1`. Agent turns and structured DSH output independently use
-protocol version 1. Unknown fields and unsupported schema versions fail closed.
+protocol version 2. Unknown fields and unsupported schema versions fail closed.
 `task-output-schema` is not another protocol or authorization envelope: it is a
 bounded trusted schema used to validate one optional `taskOutput` field inside
 the existing Controller result.
@@ -156,8 +156,7 @@ is exactly the final canonical manifest set. For `NativeComposition`,
 public `ToolRuntime.schemas(agent)` runtime surface. Those names are
 `observedTools` telemetry and cannot be represented as Controller-effective
 grants; native `toolPolicy` therefore has no `effectiveTools` field. The Action
-also records `dsh-mode` / `dsh-composition`, and `.dsh.mode` /
-`.dsh.composition` in `result-json`; the stable composition identities are
+also records `.context.dsh.mode` and `.context.dsh.composition` in `result-json`; the stable composition identities are
 `github-action-controlled` and `dsh-native-headless`.
 
 Canonical Action IDs for the controlled and Controller-owned planes are:
@@ -248,7 +247,7 @@ An MCP or direct Plugin may receive its own credential-like workflow values.
 Native definitions put arbitrary-name secrets in `credentialEnv`,
 `credentialHeaders`, or `credentialConfig`. The Action merges those values into
 the official extension config, masks them without relying on name heuristics,
-and represents them in `result-json.authority`
+and represents them in `result-json.context.authority`
 only as one generic owner record, without values, hashes, counts, headers,
 argv/env fields, or URL path/query material. The real DeepSeek key, Action
 GitHub token, their reserved names, and GitHub Actions OIDC variables remain
@@ -323,7 +322,7 @@ extension configuration. Names such as `DEEPSEEK_API_KEY`, `GITHUB_TOKEN`,
 may receive its own explicit env/header secret; it is masked and treated as a
 worker credential, not Controller authority.
 
-The top-level `result-json.authority.knownSources` audit mirrors that boundary
+The `result-json.context.authority.knownSources` audit mirrors that boundary
 without publishing configuration data. The GitHub and DeepSeek records are
 Controller-owned credentials whose real bytes are not exposed to the worker;
 DeepSeek access is mediated by the run-scoped proxy. A generic
@@ -454,12 +453,10 @@ collection reads only the newly appended byte range after the previous offset
 and uses set membership when reconciling receipt order. This keeps repeated
 multi-turn collection proportional to new records instead of rescanning the
 whole file, without changing the receipt schema or security meaning.
-`result-json.loop` separates Controller `toolReceipts` from DSH
-`dshToolReceipts`; the bounded `tool-receipts` scalar output always serializes
-`{"controller": [...], "dsh": [...], "truncated": false, "droppedCount": 0}`.
-When the shared Action-output budget drops receipts, `truncated` becomes `true`
-and `droppedCount` reports the exact number omitted; the retained arrays are
-also used in `result-json.loop`, which records the same truncation count.
+`result-json.agent` separates Controller `toolReceipts` from DSH
+`dshToolReceipts`. When the shared report budget drops receipts,
+`agent.receiptsDropped` reports the exact number omitted. The Action exposes
+one JSON report rather than a duplicate scalar receipt payload.
 Receipts and extension audit data are observability only and never authorization
 input or independent proof. Approved trusted extension code can influence
 worker-side state and receipts.
@@ -491,8 +488,8 @@ including package-script entrypoints and Node wrapper options such as preload
 modules. Strict mode treats replacement/removal of bound toolchain manifests or
 locks, removed validation keys hidden by unrelated additions, and equivalent
 wrapper indirection as control-plane changes. The graph and replay planning are
-separate from execution, and a detected weakening still prevents every GitHub
-mutation.
+separate from execution, and a weakening blocked by the configured mode prevents repository code
+persistence.
 
 Controller-owned read-only lifecycle/status comments are publication telemetry
 and may follow authorization before repository validation. A write request does
@@ -505,15 +502,14 @@ The optional task-result schema is a finite root-object subset with byte,
 depth, node, property, array, and string limits. `$ref`, combinators,
 conditionals, regex patterns, unknown keywords, and prototype-sensitive keys
 are rejected. DSH output is validated at the process boundary and again by the
-outer Agent loop. The fixed `result-json` schema-v1 audit envelope remains the
+outer Agent loop. The fixed `result-json` schema-v2 report remains the
 Controller record; `taskOutput` is data only.
 
-GitHub attachment images remain deferred. The exact audited
-`@deepseek-ai/dsh-headless@0.2.1-rc.2` configuration accepts one `task` string
-and constructs one text block, with no supported multimodal input contract.
-The Action therefore removes Markdown image references from untrusted text and
-does not download, mount, or forward attachment bytes through an unofficial
-runtime path.
+Repository images and binary files retain their bytes in the workspace;
+Session archives include the bytes referenced by official DSH attachments.
+The Action removes untrusted Markdown image references from prompt text and
+does not fetch arbitrary remote attachments. See [file support](file-support.md)
+for the distinction between preserving bytes and enabling content-aware tools.
 
 ## Agent execution and Controller Sessions
 

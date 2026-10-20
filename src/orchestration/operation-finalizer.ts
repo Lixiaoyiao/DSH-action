@@ -8,14 +8,24 @@ import type { GitHubClient } from "../github/client.js";
 import type { PullRequestSnapshot } from "../github/fetch.js";
 import { throwIfCancelled } from "../lifecycle/cancellation.js";
 import { PHASE_TIMEOUTS, phaseTimeoutMs } from "../lifecycle/deadline.js";
-import type { RunOutcome } from "../result.js";
+import type { RunFacts } from "../result.js";
 import { revalidatePullRequestHead } from "../write/pr.js";
 import type { ValidationDeadline } from "../write/validation-deadline.js";
 import { inspectWorkspaceChanges, type WorkspaceSnapshot } from "../write/workspace.js";
-import type { WorkspaceValidation } from "../write/workspace-validation.js";
-import type { GitHubAuthoritySession } from "./github-authority.js";
+import { WorkspaceValidation } from "../write/workspace-validation.js";
+import { GitHubAuthoritySession } from "./github-authority.js";
 import type { RunLifecycle } from "./lifecycle.js";
 import { executeWrite, type ExecuteWriteOptions, type WriteOutcome } from "./write.js";
+import type { AgentToolReceipt } from "../agent/loop.js";
+import type { ToolProvider } from "../agent/contracts.js";
+import type { ActionInputs } from "../inputs.js";
+import type { AuthorizedRun } from "./prepare.js";
+import type { PreparedWorkspace } from "./workspace.js";
+import { createOctokitGitHubToolBackend } from "../github/octokit-tool-backend.js";
+import type { GitHubToolBinding } from "../tools/github-catalog.js";
+import type { GitHubToolId } from "../tools/schema.js";
+import type { GitHubToolBackend } from "../tools/github-backend.js";
+import { RepositoryWriter } from "../write/transaction.js";
 
 export type FinalizedOperation =
   | { readonly kind: "review"; readonly publication: Awaited<ReturnType<typeof finishReview>> }
@@ -25,7 +35,7 @@ export type FinalizedOperation =
   | { readonly kind: "write"; readonly write: WriteOutcome };
 
 type OperationSnapshot = Pick<
-  RunOutcome,
+  RunFacts,
   | "publication"
   | "writeStatus"
   | "commitSha"
@@ -36,10 +46,121 @@ type OperationSnapshot = Pick<
   | "commentId"
 >;
 
-export interface PreparedOperation {
+interface PreparedOperation {
   finalize(result: DshRunResult, remainingMs: number): Promise<FinalizedOperation>;
   /** Confirmed effects survive failure in a later flush or Session save. */
   snapshot(): OperationSnapshot;
+}
+
+export interface Publication {
+  readonly tools?: ToolProvider;
+  readonly facts: OperationSnapshot & Pick<RunFacts, "validation">;
+  attempt(result: DshRunResult, remainingMs: number): Promise<FinalizedOperation>;
+  reconcileAgentReceipts(receipts: readonly AgentToolReceipt[]): readonly AgentToolReceipt[];
+}
+
+/** Bind effect ownership once; callers provide a result, never validation or write callbacks. */
+export function createPublication(options: {
+  readonly authorized: AuthorizedRun;
+  readonly inputs: ActionInputs;
+  readonly workspace: PreparedWorkspace;
+  readonly lifecycle: RunLifecycle;
+  readonly deadlineMs: number;
+  readonly signal: AbortSignal;
+  readonly taskIdentity: string;
+  readonly githubTools: readonly GitHubToolId[];
+  readonly githubBinding?: GitHubToolBinding;
+  readonly githubBackend?: GitHubToolBackend;
+}): Publication {
+  const { authorized, inputs, workspace, lifecycle, deadlineMs, signal } = options;
+  const validation =
+    authorized.command.requestedAccess !== "write" || workspace.snapshot === undefined
+      ? undefined
+      : new WorkspaceValidation({
+          workspace: workspace.snapshot,
+          configuration: {
+            runTests: inputs.runTests,
+            commands: inputs.testCommands,
+            containerImage: inputs.containerImage,
+          },
+          integrityMode: inputs.validationIntegrity,
+        });
+  const githubAuthority =
+    options.githubTools.length === 0 || options.githubBinding === undefined
+      ? undefined
+      : new GitHubAuthoritySession({
+          ids: options.githubTools,
+          binding: options.githubBinding,
+          policy: authorized.policy,
+          allowWrite: inputs.allowWrite,
+          expectedAuthorId: inputs.botUserId,
+          backend: options.githubBackend ?? createOctokitGitHubToolBackend(authorized.client),
+          revalidateAuthority: authorized.revalidateAuthority,
+          onPhase: () => lifecycle.enter("write"),
+          workspacePath: workspace.agentWorkspace,
+          deadlineMs,
+          signal,
+        });
+  const shared = {
+    client: authorized.client,
+    repository: authorized.context.repository,
+    expectedAuthorId: inputs.botUserId,
+    runUrl: authorized.currentRunUrl,
+    revalidateAuthority: authorized.revalidateAuthority,
+    lifecycle,
+  };
+  const operation =
+    authorized.command.operation === "review" && authorized.snapshot?.kind === "pull_request"
+      ? prepareReviewOperation({
+          ...shared,
+          snapshot: authorized.snapshot,
+          maxFindings: inputs.maxFindings,
+        })
+      : authorized.command.operation === "diagnose"
+        ? prepareDiagnosisOperation({
+            ...shared,
+            ...(authorized.issueNumber === undefined
+              ? {}
+              : { issueNumber: authorized.issueNumber }),
+          })
+        : prepareWorkspaceOperation({
+            authorized,
+            inputs,
+            lifecycle,
+            deadlineMs,
+            signal,
+            taskIdentity: options.taskIdentity,
+            runUrl: authorized.currentRunUrl,
+            ...(workspace.snapshot === undefined ? {} : { workspaceCopy: workspace.snapshot }),
+            ...(workspace.boundWriteSha === undefined
+              ? {}
+              : { boundWriteSha: workspace.boundWriteSha }),
+            ...(authorized.issueNumber === undefined
+              ? {}
+              : { issueNumber: authorized.issueNumber }),
+            ...(validation === undefined ? {} : { validation }),
+            ...(githubAuthority === undefined ? {} : { githubAuthority }),
+          });
+  const snapshot = () => ({
+    ...(githubAuthority?.hasExternalEffect === true
+      ? { writeStatus: "partial-success" as const }
+      : {}),
+    ...operation.snapshot(),
+    ...(validation === undefined ? {} : { validation: validation.snapshot() }),
+  });
+  return {
+    ...(githubAuthority === undefined ? {} : { tools: githubAuthority.gateway }),
+    get facts() {
+      return snapshot();
+    },
+    attempt: async (result, remainingMs) => {
+      const finalized = await operation.finalize(result, remainingMs);
+      await githubAuthority?.flush(remainingMs);
+      return finalized;
+    },
+    reconcileAgentReceipts: (receipts) =>
+      githubAuthority?.reconcileAgentReceipts(receipts) ?? receipts,
+  };
 }
 
 interface PublicationOptions {
@@ -51,14 +172,14 @@ interface PublicationOptions {
   readonly lifecycle: Pick<RunLifecycle, "enter" | "update">;
 }
 
-export function prepareReviewOperation(
+function prepareReviewOperation(
   options: PublicationOptions & {
     readonly snapshot: PullRequestSnapshot;
     readonly maxFindings: number;
   },
 ): PreparedOperation {
   const { client, repository, snapshot, lifecycle } = options;
-  let publication: RunOutcome["publication"];
+  let publication: RunFacts["publication"];
   return {
     snapshot: () => (publication === undefined ? {} : { publication }),
     async finalize(result) {
@@ -95,7 +216,7 @@ export function prepareReviewOperation(
   };
 }
 
-export function prepareDiagnosisOperation(
+function prepareDiagnosisOperation(
   options: PublicationOptions & { readonly issueNumber?: number },
 ): PreparedOperation {
   let commentId: number | undefined;
@@ -123,7 +244,7 @@ export function prepareDiagnosisOperation(
 }
 
 /** Task and write operations share workspace inspection, validation and write ordering. */
-export function prepareWorkspaceOperation(
+function prepareWorkspaceOperation(
   options: Pick<ExecuteWriteOptions, "authorized" | "inputs" | "taskIdentity"> & {
     readonly workspaceCopy?: WorkspaceSnapshot;
     readonly boundWriteSha?: string;
@@ -148,8 +269,25 @@ export function prepareWorkspaceOperation(
   } = options;
   const { client, context, command, policy, snapshot } = authorized;
   let effects: OperationSnapshot = {};
+  const writer =
+    workspaceCopy === undefined || validation === undefined
+      ? undefined
+      : new RepositoryWriter({
+          client,
+          repository: context.repository,
+          workspace: workspaceCopy,
+          validation,
+          revalidateAuthority: authorized.revalidateAuthority,
+          signal,
+          onPhase: (phase) => lifecycle.enter(phase),
+        });
   return {
-    snapshot: () => ({ ...effects }),
+    snapshot: () => ({
+      ...(writer === undefined || Object.keys(writer.facts).length === 0
+        ? {}
+        : { ...writer.facts, writeStatus: "partial-success" as const }),
+      ...effects,
+    }),
     async finalize(agentResult, remainingMs) {
       // Each candidate gets one validation budget; a repair turn starts a new candidate.
       let validationBudget: ValidationDeadline | undefined;
@@ -181,7 +319,6 @@ export function prepareWorkspaceOperation(
       if (command.operation === "task") {
         if ((changes?.all.length ?? 0) === 0) {
           remainingControllerMs();
-          await githubAuthority?.flush(remainingControllerMs());
           lifecycle.enter("publication");
           await authorized.revalidateAuthority();
           const commentId =
@@ -215,6 +352,7 @@ export function prepareWorkspaceOperation(
         workspaceCopy === undefined ||
         boundWriteSha === undefined ||
         validation === undefined ||
+        writer === undefined ||
         changes === undefined
       ) {
         throw new Error("Write operation requires a trusted checked-out workspace");
@@ -226,30 +364,20 @@ export function prepareWorkspaceOperation(
       );
       remainingControllerMs();
       const budget = controllerValidationBudget();
-      const validateWorkspace = await validation.prepareWrite(changes, budget);
       const write = await executeWrite({
         authorized,
         inputs,
-        workspaceCopy,
         boundWriteSha,
         agentResult,
-        validationDeadlineMs: budget.deadlineMs,
+        writer,
+        budget,
         taskIdentity: options.taskIdentity,
-        onPhase: (phase) => lifecycle.enter(phase),
-        validateWorkspace,
-        onValidationPassed: (receipt) => {
-          if (receipt.kind === "completed-operation") validation.completedOperation();
-        },
-        onBranchConfirmed: (receipt) => {
-          effects = { ...effects, ...receipt, writeStatus: "partial-success" };
-        },
         signal,
       });
       effects = { ...effects, ...write, writeStatus: "partial-success" };
       if (snapshot?.kind === "pull_request" && write.commitSha !== undefined) {
         githubAuthority?.advanceValidatedPullHead(write.commitSha, snapshot.headRef);
       }
-      await githubAuthority?.flush(remainingControllerMs());
       return { kind: "write", write };
     },
   };

@@ -51,7 +51,7 @@ describe("runDsh output", () => {
           captured = spec;
           return Promise.resolve({
             stdout: JSON.stringify({
-              protocolVersion: 1,
+              protocolVersion: 2,
               operation: "task",
               state: "final",
               summary: "Complete",
@@ -85,7 +85,7 @@ describe("runDsh output", () => {
     async ({ mode, representation, state }) => {
       const fixture = await fixtures();
       const output = {
-        protocolVersion: 1,
+        protocolVersion: 2,
         operation: "task",
         state,
         summary: "README inspected.",
@@ -221,7 +221,7 @@ describe("runDsh output", () => {
       if (kind === "limit") throw new DshOutputLimitError("stdout", 100);
       if (kind === "cancel") throw new DshAbortedError();
       const escaped = JSON.stringify({
-        protocolVersion: 1,
+        protocolVersion: 2,
         operation: "review",
         state: "final",
         summary: "controller-real-key",
@@ -302,7 +302,7 @@ describe("runDsh output", () => {
           captured = spec;
           return Promise.resolve({
             stdout: JSON.stringify({
-              protocolVersion: 1,
+              protocolVersion: 2,
               operation: "review",
               state: "final",
               summary: "Done.",
@@ -369,7 +369,7 @@ describe("runDsh output", () => {
             );
             return {
               stdout: JSON.stringify({
-                protocolVersion: 1,
+                protocolVersion: 2,
                 operation: "review",
                 state: "final",
                 summary: "Done.",

@@ -6,10 +6,11 @@ import {
   buildActionOutputs,
   describeActionFailure,
   formatStepSummary,
-  type RunOutcome,
+  finishRunReport,
+  type RunReport,
 } from "./result.js";
 
-async function writeStepSummary(result: RunOutcome): Promise<void> {
+async function writeStepSummary(result: RunReport): Promise<void> {
   try {
     await core.summary
       .addHeading("DeepSeek Harness for GitHub")
@@ -24,19 +25,18 @@ async function writeStepSummary(result: RunOutcome): Promise<void> {
 
 async function main(): Promise<void> {
   const cancellation = installCancellationHandlers();
-  let result: RunOutcome;
+  let result: RunReport;
   try {
     result = await runAction({ signal: cancellation.signal });
   } catch (error: unknown) {
     const failure = describeActionFailure(error, "entrypoint");
-    result = {
-      schemaVersion: 1,
+    result = finishRunReport({
       conclusion: "failure",
       summary: failure.title,
       findingsCount: 0,
       durationMs: 0,
       error: failure,
-    };
+    });
   } finally {
     cancellation.dispose();
   }
@@ -45,8 +45,8 @@ async function main(): Promise<void> {
     core.setOutput(name, value);
   }
   await writeStepSummary(result);
-  if (result.conclusion === "failure") {
-    core.setFailed(result.error?.message ?? result.summary);
+  if (result.termination.conclusion === "failure") {
+    core.setFailed(result.termination.error?.message ?? result.termination.summary);
   }
 }
 

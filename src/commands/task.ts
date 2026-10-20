@@ -7,11 +7,7 @@ import { validateCommitSha } from "../security/refs.js";
 
 import type { BoundIssueIdentity } from "../write/issue.js";
 import { buildAutomationTaskOperation } from "../write/task.js";
-import type { WorkspaceSnapshot } from "../write/workspace.js";
-import {
-  executeValidatedRepositoryWrite,
-  type ControllerWriteControl,
-} from "../write/transaction.js";
+import { type RepositoryWriteContext } from "../write/transaction.js";
 
 export async function publishTaskAnswer(
   client: GitHubClient,
@@ -35,20 +31,15 @@ export async function publishTaskAnswer(
   return await upsertTrackingComment(client, target, expectedAuthorId, "task", body);
 }
 
-export interface FinishAutomationTaskInput extends ControllerWriteControl {
-  readonly client: GitHubClient;
+export interface FinishAutomationTaskInput extends RepositoryWriteContext {
   readonly owner: string;
   readonly repo: string;
   readonly baseBranch: string;
   readonly boundHeadSha: string;
   readonly runIdentity: string;
   readonly taskIdentity: string;
-  readonly snapshot: WorkspaceSnapshot;
   readonly result: DshRunResult;
   readonly runUrl: string;
-  readonly runTests: boolean;
-  readonly testCommands: readonly (readonly string[])[];
-  readonly containerImage: string;
   readonly branchPrefix?: string;
   readonly branchNameTemplate?: string;
   readonly relatedIssue?: {
@@ -80,11 +71,8 @@ export async function finishAutomationTask(input: FinishAutomationTaskInput): Pr
     0,
     40_000,
   );
-  return await executeValidatedRepositoryWrite({
-    client: input.client,
-    repository: { owner: input.owner, repo: input.repo },
-    workspace: input.snapshot,
-    plan: {
+  return await input.writer.write(
+    {
       kind: "new-pr",
       operationKind: "task",
       target: {
@@ -108,11 +96,6 @@ export async function finishAutomationTask(input: FinishAutomationTaskInput): Pr
         ].join("\n"),
       },
     },
-    validation: {
-      runTests: input.runTests,
-      commands: input.testCommands,
-      containerImage: input.containerImage,
-    },
-    control: input,
-  });
+    input.budget,
+  );
 }

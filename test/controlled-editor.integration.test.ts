@@ -34,7 +34,7 @@ it("inserts and executes the official editor, plus native Bash on POSIX, under t
     ? "Use the official editor then Bash to read the created file."
     : "Use the official editor to create the fixture file.";
   const output = {
-    protocolVersion: 1,
+    protocolVersion: 2,
     operation: "task",
     state: "final",
     summary: bashAvailable ? "editor and Bash completed" : "editor completed",

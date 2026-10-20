@@ -1,3 +1,4 @@
+import { finishRunReport } from "../src/result.js";
 import { describe, expect, it, vi } from "vitest";
 
 import { createRequestPolicy, GitHubQuotaError } from "../src/github/request-policy.js";
@@ -206,11 +207,11 @@ describe("run-scoped GitHub request policy", () => {
       githubRequests: policy.snapshot(),
       ...(failure === undefined ? {} : { error: failure }),
     };
-    const output = JSON.stringify(buildActionOutputs(outcome));
+    const output = JSON.stringify(buildActionOutputs(finishRunReport(outcome)));
     expect(output).not.toMatch(/secret-token|private server|private\/repository/u);
     expect(output).toContain("GITHUB_QUOTA_EXHAUSTED");
     expect(output).toContain("production-action");
-    expect(formatStepSummary(outcome)).toContain("Quota recovery");
+    expect(formatStepSummary(finishRunReport(outcome))).toContain("Quota recovery");
     expect(failure?.guidance).toContain("installation");
   });
 });

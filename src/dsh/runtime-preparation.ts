@@ -31,6 +31,8 @@ import type { DshProcessLimits, DshProcessResult, DshProcessSpec } from "./proce
 import type { DshRunContext } from "./runner-context.js";
 import type { DshRunScope } from "./run-scope.js";
 import { bindDshRuntime, type DshRuntime } from "./runtime.js";
+import { mcpPublicToolName } from "../extensions/plan.js";
+import { CONTROLLER_MCP_SERVER } from "./controller-mcp.js";
 import { PHASE_TIMEOUTS, type BestEffortCleanupTask } from "./timeouts.js";
 
 export type DshProcessExecutor = (
@@ -235,6 +237,13 @@ export async function prepareWorkerRuntime(
       expectedOperation: request.operation,
       task: context.prompt,
       workspacePath: workspace,
+      ...(request.controllerTools === undefined
+        ? {}
+        : {
+            controllerTools: request.controllerTools
+              .manifest()
+              .map(({ id }) => mcpPublicToolName(CONTROLLER_MCP_SERVER, id)),
+          }),
       ...(manifestBase === undefined ? {} : { manifestBase }),
       ...(context.dshExecutableIdentity === undefined
         ? {}

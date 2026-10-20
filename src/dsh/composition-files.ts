@@ -30,12 +30,18 @@ export async function prepareCompositionLauncher(options: {
   readonly launcherPath: string;
   readonly containerLauncher: string;
   readonly task: string;
+  readonly controllerTools?: boolean;
 }): Promise<{ readonly args: readonly string[]; readonly mounts: readonly DshDockerMount[] }> {
   await assertDshFile(options.launcherPath, "DSH Action launcher");
   await copyFile(
     options.launcherPath,
     join(options.runtime.packageRoot, basename(options.containerLauncher)),
   );
+  if (options.controllerTools) {
+    const source = join(options.assetsDirectory, "action-controller.mjs");
+    await assertDshFile(source, "DSH Controller tool adapter");
+    await copyFile(source, join(options.runtime.packageRoot, "action-controller.mjs"));
+  }
   const sessionEnabled = options.runtime.session !== undefined;
   if (sessionEnabled) {
     const sessionSource = join(options.assetsDirectory, "action-session.mjs");

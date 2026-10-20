@@ -71,7 +71,14 @@ async function capture(rawResult: string, outcome = "success", includeSummary = 
 }
 
 function taskResult(receipts: readonly unknown[], taskOutput: unknown = source) {
-  return { conclusion: "success", taskOutput, loop: { dshToolReceipts: receipts } };
+  return {
+    schemaVersion: 2,
+    termination: { conclusion: "success" },
+    operation: { kind: "task", taskOutput },
+    context: {},
+    agent: { dshToolReceipts: receipts },
+    publication: {},
+  };
 }
 
 describe("bounded Web Search evidence", () => {
@@ -80,7 +87,10 @@ describe("bounded Web Search evidence", () => {
     async (count) => {
       const result = taskResult(Array.from({ length: count }, () => completedSearch));
       const { value } = await capture(
-        JSON.stringify({ ...result, summary: "I searched exactly once successfully." }),
+        JSON.stringify({
+          ...result,
+          termination: { ...result.termination, summary: "I searched exactly once successfully." },
+        }),
       );
       expect(value).toEqual({
         actionOutcome: "success",
@@ -109,10 +119,10 @@ describe("bounded Web Search evidence", () => {
     expect(value).toMatchObject({ receiptCount: receipts.length, completedWebSearchCount: 1 });
   });
 
-  it.each([{}, { loop: {} }, { loop: { dshToolReceipts: {} } }])(
+  it.each([{}, { agent: {} }, { agent: { dshToolReceipts: {} } }])(
     "records zero receipts when a parsed result has no receipt array: %j",
     async (result) => {
-      const { value } = await capture(JSON.stringify(result));
+      const { value } = await capture(JSON.stringify({ schemaVersion: 2, ...result }));
       expect(value).toMatchObject({
         receiptCount: 0,
         completedWebSearchCount: 0,
@@ -123,7 +133,10 @@ describe("bounded Web Search evidence", () => {
 
   it("keeps failed action and typed error diagnostics without manufacturing a search", async () => {
     const { value } = await capture(
-      JSON.stringify({ conclusion: "failure", error: { code: "DSH_MALFORMED_OUTPUT" } }),
+      JSON.stringify({
+        schemaVersion: 2,
+        termination: { conclusion: "failure", error: { code: "DSH_MALFORMED_OUTPUT" } },
+      }),
       "failure",
     );
     expect(value).toEqual({
@@ -139,7 +152,10 @@ describe("bounded Web Search evidence", () => {
   it.each(["cancelled", "skipped", "not-run"])(
     "preserves the %s action outcome",
     async (outcome) => {
-      const { value } = await capture(JSON.stringify({ conclusion: "neutral" }), outcome);
+      const { value } = await capture(
+        JSON.stringify({ schemaVersion: 2, termination: { conclusion: "neutral" } }),
+        outcome,
+      );
       expect(value).toMatchObject({
         actionOutcome: outcome,
         conclusion: "neutral",
@@ -149,7 +165,7 @@ describe("bounded Web Search evidence", () => {
     },
   );
 
-  it.each(["", "not-json", "{", "null", "[]", '"not-an-object"'])(
+  it.each(["", "not-json", "{", "null", "[]", '"not-an-object"', '{"schemaVersion":1}'])(
     "keeps unknown receipt counts for an unavailable result: %j",
     async (raw) => {
       const { value } = await capture(raw, "failure");
@@ -210,11 +226,17 @@ describe("bounded Web Search evidence", () => {
       ];
       const { value, artifacts } = await capture(
         JSON.stringify({
-          conclusion: privateValues[6],
-          error: { code, message: privateValues[0] },
-          summary: privateValues[0],
-          taskOutput: { title: privateValues[1], url: privateValues[2] },
-          loop: { dshToolReceipts: [{ ...completedSearch, body: privateValues[3] }] },
+          schemaVersion: 2,
+          termination: {
+            conclusion: privateValues[6],
+            error: { code, message: privateValues[0] },
+            summary: privateValues[0],
+          },
+          operation: {
+            kind: "task",
+            taskOutput: { title: privateValues[1], url: privateValues[2] },
+          },
+          agent: { dshToolReceipts: [{ ...completedSearch, body: privateValues[3] }] },
         }),
         privateValues[5],
       );

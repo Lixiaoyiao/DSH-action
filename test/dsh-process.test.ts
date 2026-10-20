@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { DshAbortedError, DshOutputLimitError, DshTimeoutError } from "../src/dsh/errors.js";
+import {
+  DshAbortedError,
+  DshConfigurationError,
+  DshOutputLimitError,
+  DshTimeoutError,
+} from "../src/dsh/errors.js";
 import { executeBoundedDshProcess } from "../src/dsh/runner.js";
 import type { DshProcessLimits, DshProcessSpec } from "../src/dsh/runner.js";
 
@@ -28,6 +33,20 @@ describe("executeBoundedDshProcess", () => {
       limits(),
     );
     expect(result).toMatchObject({ exitCode: 0, stdout: "ok", stderr: "note" });
+  });
+
+  it("delivers a bounded one-time stdin and ends it without inheriting host input", async () => {
+    const result = await executeBoundedDshProcess(
+      {
+        ...spec('process.stdin.on("data", value => process.stdout.write(value))'),
+        input: "one-time-grant",
+      },
+      limits(),
+    );
+    expect(result).toMatchObject({ exitCode: 0, stdout: "one-time-grant" });
+    await expect(
+      executeBoundedDshProcess({ ...spec(""), input: "x".repeat(65_537) }, limits()),
+    ).rejects.toBeInstanceOf(DshConfigurationError);
   });
 
   it("fails closed on timeout even when a process handles SIGTERM", async () => {

@@ -14,7 +14,7 @@ import { parseDshOutput } from "../src/dsh/schema.js";
 import { parseTaskOutputSchema } from "../src/dsh/task-output.js";
 
 const final = {
-  protocolVersion: 1,
+  protocolVersion: 2,
   operation: "task",
   state: "final",
   summary: "The README describes a credential-isolated GitHub Action.",

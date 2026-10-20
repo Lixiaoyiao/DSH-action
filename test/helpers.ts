@@ -54,7 +54,7 @@ export function inputs(
     baseBranch: "",
     branchPrefix: "dsh/",
     branchNameTemplate: "",
-    maxTurns: 3,
+    maxControllerSteps: 3,
     permissionProfile: "strict",
     validationIntegrity: "warn",
     allowPluginInstall: false,

@@ -110,17 +110,17 @@ with:
 
 ## 多轮工具、验证与修复
 
-每次外层迭代都会启动一个新的 DSH turn，但任务、workspace 和 Controller 策略保持绑定：
+DSH 在一次 Agent 执行内调用工具。只有 Controller 验证失败才启动新的修复执行，任务、workspace 和策略保持绑定：
 
 ```text
 DSH turn
-  ├─ needs_tool → 运行获准工具 → 限长、脱敏结果 → 下一轮
+  ├─ MCP tool call → 运行获准的 Controller 工具 → 结果返回同一 DSH 执行
   ├─ final → Controller 验证失败 → 限长输出 → 修复轮
   ├─ final → 验证通过 → Controller 发布或写入
   └─ blocked → 只有不存在 Controller 验证失败时才能返回 neutral
 ```
 
-`max-turns` 默认是 3，同时计算工具请求和验证修复轮。Action 的 `timeout-minutes` 是 setup 与执行的总 deadline；runtime setup、扩展安装、每个 Agent turn 和验证还有独立上限。在相同 workspace revision 上重复出现同一个验证失败时，会以 no-progress 错误停止。
+`max-controller-steps` 默认是 3（范围 1–10），统一计算首次执行、每次 Controller 工具调用和每次验证修复执行。DSH 内置工具保留自己的预算。Action 的 `timeout-minutes` 是 setup 与执行的总 deadline；runtime setup、扩展安装、每个 Agent turn 和验证还有独立上限。在相同 workspace revision 上重复出现同一个验证失败时，会以 no-progress 错误停止。
 
 修复轮不能通过返回 `blocked`、耗尽轮数或输出畸形结构化结果来抹去尚未解决的验证或 Validation Integrity 失败。只有后续 finalization 真正通过后，原始 Controller 失败才会解除。
 
@@ -137,7 +137,7 @@ DSH turn
 
 `progress-comment` 默认为 `true`。设为 `false` 只会关闭中间生命周期更新；正常汇总、行内问题、诊断和获准的最终结果仍会发布。
 
-写请求在验证成功或实际变更检查确认任务没有变化前，不会发布生命周期或状态评论。失败时请查看 step summary 和 outputs。Action 在 success、neutral 和 failure 路径都会设置标量 outputs 和 schema-v1 `result-json`。配置 task schema 后，只会额外产生 Controller 校验过的 `task-output`/`taskOutput` 数据，不会替换审计信封。
+写请求在验证成功或实际变更检查确认任务没有变化前，不会发布生命周期或状态评论。失败时请查看 step summary 和 outputs。Action 在 success、neutral 和 failure 路径都会设置 `conclusion`、`summary` 和 schema-v2 `result-json`。配置 task schema 后，报告中会包含 Controller 校验过的 `operation.taskOutput` 数据。
 
 取消收尾有明确时间上限，但只能尽力完成。`SIGTERM` 或 `SIGINT` 可以更新符合条件的 sticky comment；`SIGKILL`、runner/host 丢失、进程崩溃或 GitHub API 失败仍可能让评论停在 “In progress”。应以 Actions conclusion 为准，详见[故障排查](troubleshooting.md)。
 

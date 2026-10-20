@@ -1,7 +1,7 @@
 # GitHub requests and recovery
 
-v0.9.2 reuses the Controller client, sticky lifecycle/result comments and
-schema-v1 result envelope. Accepted tasks log their operation, trust and run
+The Action reuses the Controller client and sticky lifecycle/result comments.
+Schema-v2 `result-json` is the common report. Accepted tasks log their operation, trust and run
 link. Denied requests cannot post lifecycle comments. Write-task comments stay
 deferred until final validation passes or no repository change is confirmed.
 The Actions run remains authoritative if terminal comment publication fails.
@@ -31,7 +31,7 @@ original classification. No POST/PATCH/PUT/DELETE or ambiguous
 transport error is retried by the client. Existing Gateway postcondition reads
 remain responsible for uncertain effects. The worker task is never replayed.
 
-`result-json.githubRequests` and the step summary retain redacted counters,
+`result-json.context.githubRequests` and the step summary retain redacted counters,
 credential scope, `clientRole: main-controller`, safe resource category and recovery time. Lifecycle comments use a separate client and are excluded from these counters. No URLs, request
 bodies, response bodies or credential values are included. A quota error has
 stable code `GITHUB_QUOTA_EXHAUSTED`; inspect recorded commit/branch/PR and

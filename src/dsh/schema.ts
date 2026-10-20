@@ -13,17 +13,6 @@ import { renderDshSchemaIssues } from "./schema-diagnostics.js";
 export const dshOperationSchema = z.enum(["task", "review", "diagnose", "fix", "implement"]);
 export type DshOperation = z.infer<typeof dshOperationSchema>;
 
-export const dshToolRequestSchema = z.strictObject({
-  id: z
-    .string()
-    .regex(
-      /^[a-z][a-z0-9-]{0,31}(?:\.[a-z][a-z0-9-]{0,63})+$/u,
-      "must be a namespaced provider.tool identifier",
-    ),
-  reason: z.string().trim().min(1).max(1_000).optional(),
-  input: z.record(z.string().min(1).max(100), z.json()).optional(),
-});
-
 /**
  * The only accepted boundary format from the untrusted model process. Unknown
  * keys are rejected so a model cannot smuggle controller directives alongside
@@ -31,35 +20,17 @@ export const dshToolRequestSchema = z.strictObject({
  */
 export const dshOutputSchema = z
   .strictObject({
-    protocolVersion: z.literal(1),
+    protocolVersion: z.literal(2),
     operation: dshOperationSchema,
-    state: z.enum(["final", "needs_tool", "blocked"]),
+    state: z.enum(["final", "blocked"]),
     summary: z.string().trim().min(1).max(REVIEW_LIMITS.summaryCharacters),
     findings: z.array(reviewFindingSchema).max(REVIEW_LIMITS.maxFindings),
     diagnosis: z.string().trim().min(1).max(REVIEW_LIMITS.diagnosisCharacters).optional(),
     changePlan: z.array(reviewChangeSchema).max(REVIEW_LIMITS.maxChanges).optional(),
     verification: z.array(reviewTestSchema).max(REVIEW_LIMITS.maxTests).optional(),
-    toolRequest: dshToolRequestSchema.optional(),
     taskOutput: z.unknown().optional(),
   })
   .superRefine((output, context) => {
-    if (output.state === "needs_tool" && output.toolRequest === undefined) {
-      context.addIssue({
-        code: "custom",
-        path: ["toolRequest"],
-        message: "is required when state is needs_tool",
-      });
-    }
-    if (
-      (output.state === "final" || output.state === "blocked") &&
-      output.toolRequest !== undefined
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["toolRequest"],
-        message: `must be omitted when state is ${output.state}`,
-      });
-    }
     if (
       output.taskOutput !== undefined &&
       (output.operation !== "task" || output.state !== "final")

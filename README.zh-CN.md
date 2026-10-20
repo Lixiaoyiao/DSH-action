@@ -1,5 +1,7 @@
 # DeepSeek Harness for GitHub
 
+> 本分支正在评估 v0.12.0 与安装器 0.7.2，尚未发布。最终确认前，生产环境继续固定 v0.11.0。
+
 [![CI](https://github.com/Lixiaoyiao/deepseek-harness-action/actions/workflows/ci.yml/badge.svg)](https://github.com/Lixiaoyiao/deepseek-harness-action/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Lixiaoyiao/deepseek-harness-action?display_name=tag)](https://github.com/Lixiaoyiao/deepseek-harness-action/releases/latest)
 [![MIT](https://img.shields.io/github/license/Lixiaoyiao/deepseek-harness-action)](LICENSE)
@@ -75,7 +77,7 @@ Native 模式可直接使用 DSH Bundle。Controlled 模式还会询问插件实
 npm.cmd create deepseek-harness-action@latest -- --mode both --dsh-mode native
 ```
 
-默认仍为 Controlled。需要自动修改代码时，还要配置明确的验证命令，安装器会给出提示。安装器 `0.7.1` 对应 Action `v0.11.0` 和 DSH `0.2.1-rc.2`；打包通过 `DSH_ACTION_RELEASE_SHA` 绑定已验证的 Action commit，源码 Tag 为 `create-deepseek-harness-action-v0.7.1`。手工安装和故障恢复见[安装指南](docs/setup.zh-CN.md)。
+默认仍为 Controlled。需要自动修改代码时，还要配置明确的验证命令，安装器会给出提示。安装器 `0.7.2` 对应 Action `v0.12.0` 和 DSH `0.2.1-rc.2`；打包通过 `DSH_ACTION_RELEASE_SHA` 绑定已验证的 Action commit，源码 Tag 为 `create-deepseek-harness-action-v0.7.2`。手工安装和故障恢复见[安装指南](docs/setup.zh-CN.md)。
 
 ### 手工安装
 
@@ -103,7 +105,7 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
           fetch-depth: 1
-      - uses: Lixiaoyiao/deepseek-harness-action@v0.11.0
+      - uses: Lixiaoyiao/deepseek-harness-action@v0.12.0
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           dsh-version: 0.2.1-rc.2
@@ -123,7 +125,7 @@ jobs:
 | Issue 实现       | 把经过授权的 Issue 请求实现为已验证的分支和 PR                                      |
 | Composition 模式 | 默认保留现有受控工具档位，并提供实验性的 DSH native 模式                            |
 | 受控工具         | 以精确工具档位提供原生、固定命令、Controller GitHub、MCP、Bundle 与 Plugin 工具     |
-| 结构化结果       | 保留 schema-v1 审计信封，并可校验维护者定义的可选 task 结果                         |
+| 结构化结果       | 保留 schema-v2 审计信封，并可校验维护者定义的可选 task 结果                         |
 | 图片与二进制文件 | 使用 DSH 官方工具读取 PNG/JPEG/WebP/GIF，下载符合条件的 GitHub 图片并保持二进制字节 |
 
 Action 提供基于锁定 DSH `0.2.1-rc.2` runtime 的实验性 `dsh-mode: native` 路径及其官方生态 composition。Native MCP server、Profile Bundle、direct Cordis Plugin、仓库 Skills、Subagent 和 Workflow 保留 DSH-native discovery 与行为。`controlled` 仍是兼容默认值，因此未配置 `dsh-mode` 的 workflow 会继续使用原有 composition、权限、工具、budget、receipt 和输出行为。
@@ -173,8 +175,8 @@ Action 支持[按 key 自动创建或续接 Session](docs/zh-CN/session.md)，�
 - Agent 不会拿到真实的 `GITHUB_TOKEN` 或 DeepSeek key。只有 Controller 能调用 Action-owned `github.*` 写入 API；显式配置的外部 GitHub MCP 使用其自有凭据和 authority，边界见下文。
 - 仓库内容、diff、Issue、PR、评论、日志、模型输出和工具输出始终是不可信数据。
 - fork 审查使用没有 `.git`、没有凭据的 worker；workflow 只能检出受信任的 base SHA，并设置 `persist-credentials: false`。
-- 写入需要受信任的同仓库上下文、通过授权检查的操作者、Docker、`allow-write: "true"`、非空固定验证命令，以及全部验证成功；受保护路径和 Validation Integrity 检查仍然有效。
-- Typed `github.*` mutation 使用精确 ID、绑定当前 entity，并延迟到 Controller 验证成功后执行，同时保留有界 receipts 与 reconciliation；不存在 arbitrary REST、GraphQL、raw URL 或凭据透传。
+- 仓库代码写入需要受信任的同仓库上下文、通过授权检查的操作者、Docker、`allow-write: "true"`、非空固定验证命令，以及全部验证成功；受保护路径和 Validation Integrity 检查仍然有效。
+- Typed `github.*` mutation 使用精确 ID、绑定当前 entity，等待有效 final 结果并在执行前重新授权，同时保留有界 receipts 与 reconciliation。纯元数据操作不要求仓库测试；代码写入仍须验证。不存在 arbitrary REST、GraphQL、raw URL 或凭据透传。
 - Validation Integrity 针对已支持的 entrypoint、package script、test/config 变弱、lock/toolchain 控制和已知 wrapper/interpreter 提供高置信度变弱检测与 baseline replay；它不是完整的跨语言 dependency provenance 或形式化完整性证明。
 - Validation 可能使用 Docker bridge network。在 self-hosted runner 或企业网络中，仓库验证代码可能访问 runner 可达的网络服务；应使用专用 runner 以及 runner 级网络分段和出口控制。
 - 获准的 Bundle、Plugin 或 stdio MCP server 属于受信任的 worker code。Controlled ToolRuntime 只限制模型路由的调用；native 的路由与 inventory 由 DSH 自己管理。两种模式都不能沙箱化扩展启动、后台任务或直接进程 I/O，任何 bridge/RW 能力都作用于整个 worker。

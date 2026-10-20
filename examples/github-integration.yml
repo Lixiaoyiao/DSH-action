@@ -36,7 +36,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      - uses: Lixiaoyiao/deepseek-harness-action@v0.11.0
+      - uses: Lixiaoyiao/deepseek-harness-action@v0.12.0
         id: dsh
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
@@ -66,10 +66,10 @@ jobs:
             {"type":"object","properties":{"status":{"type":"string","enum":["completed","blocked"]},"note":{"type":"string","maxLength":500}},"required":["status"],"additionalProperties":false}
 
       - name: Inspect Controller-validated task output
-        if: ${{ always() && steps.dsh.outputs['task-output'] != '' }}
+        if: ${{ always() && steps.dsh.outputs['result-json'] != '' }}
         env:
-          DSH_TASK_OUTPUT: ${{ steps.dsh.outputs['task-output'] }}
-        run: printf '%s\n' "$DSH_TASK_OUTPUT" | jq .
+          DSH_RESULT_JSON: ${{ steps.dsh.outputs['result-json'] }}
+        run: printf '%s\n' "$DSH_RESULT_JSON" | jq .operation.taskOutput
 
 # Trigger and branch inputs are trusted workflow configuration only. Never
 # interpolate Issue/PR/comment/model content into them. Typed github.* tools

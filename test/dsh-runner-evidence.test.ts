@@ -65,7 +65,7 @@ const reportedStep = {
 const usageFinal = {
   type: "final",
   text: JSON.stringify({
-    protocolVersion: 1,
+    protocolVersion: 2,
     operation: "review",
     state: "final",
     summary: "Done",
@@ -132,7 +132,7 @@ describe("runDsh evidence", () => {
     const terminal = {
       type: "final",
       text: JSON.stringify({
-        protocolVersion: 1,
+        protocolVersion: 2,
         operation: "review",
         state: "final",
         summary: "Done",
@@ -213,7 +213,7 @@ describe("runDsh evidence", () => {
                 );
                 return {
                   stdout: JSON.stringify({
-                    protocolVersion: 1,
+                    protocolVersion: 2,
                     operation: "review",
                     state: "final",
                     summary: "Done.",
@@ -266,7 +266,7 @@ describe("runDsh evidence", () => {
               if (mode === "abort") throw primary;
               return {
                 stdout: JSON.stringify({
-                  protocolVersion: 1,
+                  protocolVersion: 2,
                   operation: "review",
                   state: "final",
                   summary: controllerCredential,
@@ -313,7 +313,7 @@ describe("runDsh evidence", () => {
             await writeFile(join(actionStateDirectory(spec), "tool-receipts.jsonl"), "not-json\n");
             return {
               stdout: JSON.stringify({
-                protocolVersion: 1,
+                protocolVersion: 2,
                 operation: "review",
                 state: "final",
                 summary: "Done.",
@@ -389,7 +389,7 @@ describe("runDsh evidence", () => {
           );
           return {
             stdout: JSON.stringify({
-              protocolVersion: 1,
+              protocolVersion: 2,
               operation: "review",
               state: "final",
               summary: "Done.",
@@ -518,7 +518,7 @@ describe("runDsh evidence", () => {
             );
             return {
               stdout: JSON.stringify({
-                protocolVersion: 1,
+                protocolVersion: 2,
                 operation: "review",
                 state: "final",
                 summary: "Done.",

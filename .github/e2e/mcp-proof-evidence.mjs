@@ -14,6 +14,16 @@ const errorCode = (value) =>
       : "invalid-code";
 const count = (value, limit) =>
   Number.isSafeInteger(value) && value >= 0 && value <= limit ? value : null;
+const actionReport = () => {
+  const text = process.env.RESULT_JSON;
+  if (!text || text.length > 640 * 1024) return undefined;
+  try {
+    const report = JSON.parse(text);
+    return report?.schemaVersion === 2 ? report : undefined;
+  } catch {
+    return undefined;
+  }
+};
 
 async function boundedFile(path, limit) {
   if (!path || (await stat(path)).size > limit)
@@ -22,14 +32,9 @@ async function boundedFile(path, limit) {
 }
 
 if (process.argv[2] === "capture") {
-  let result;
+  const result = actionReport();
   let expected;
   let calls;
-  try {
-    result = JSON.parse(process.env.RESULT_JSON ?? "");
-  } catch {
-    /* Missing Action output remains unknown. */
-  }
   try {
     expected = JSON.parse(await boundedFile(process.env.MCP_ENDPOINT, 4_096)).expectedProof;
   } catch {
@@ -49,11 +54,11 @@ if (process.argv[2] === "capture") {
   } catch {
     /* Missing or invalid audit is distinct from zero calls. */
   }
-  const receipts = result?.loop?.dshToolReceipts;
+  const receipts = result?.agent?.dshToolReceipts;
   const evidence = {
     actionOutcome: outcome(process.env.MCP_ACTION_OUTCOME),
-    conclusion: conclusion(result?.conclusion),
-    errorCode: errorCode(result?.error?.code),
+    conclusion: conclusion(result?.termination?.conclusion),
+    errorCode: errorCode(result?.termination?.error?.code),
     receiptCount:
       result === undefined ? null : Array.isArray(receipts) ? Math.min(receipts.length, 10_000) : 0,
     echoCalls: calls?.filter((call) => call.tool === "echo").length ?? null,
@@ -61,7 +66,7 @@ if (process.argv[2] === "capture") {
     proofMatches:
       typeof expected === "string" &&
       /^[0-9a-f]{48}$/.test(expected) &&
-      result?.taskOutput?.proof === expected,
+      result?.operation?.taskOutput?.proof === expected,
   };
   await writeFile(evidencePath, JSON.stringify(evidence, null, 2) + "\n");
 } else if (process.argv[2] === "report") {
@@ -72,7 +77,7 @@ if (process.argv[2] === "capture") {
     evidence = {
       actionOutcome: outcome(process.env.MCP_ACTION_OUTCOME),
       conclusion: "unavailable",
-      errorCode: errorCode(process.env.MCP_ERROR_CODE),
+      errorCode: errorCode(actionReport()?.termination?.error?.code),
       receiptCount: null,
       echoCalls: null,
       hiddenCalls: null,

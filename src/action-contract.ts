@@ -361,11 +361,12 @@ export const ACTION_INPUT_CONTRACT = [
     docsGroup: "operation",
   },
   {
-    name: "max-turns",
-    runtimeKey: "maxTurns",
+    name: "max-controller-steps",
+    runtimeKey: "maxControllerSteps",
     required: false,
     default: "3",
-    description: "Maximum fresh DSH turns across tool requests and validation repair attempts.",
+    description:
+      "Run-scoped budget for the initial execution, Controller tool calls and validation repair attempts.",
     docsGroup: "runtime",
   },
   {

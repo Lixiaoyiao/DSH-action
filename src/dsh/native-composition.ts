@@ -358,6 +358,7 @@ export class NativeComposition implements DshComposition {
       launcherPath: launcherSourcePath,
       containerLauncher: CONTAINER_NATIVE_LAUNCHER,
       task: options.task,
+      controllerTools: (options.controllerTools?.length ?? 0) > 0,
     });
 
     const profileRoot = options.runtime.packageRoot;

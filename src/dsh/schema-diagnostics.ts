@@ -9,7 +9,6 @@ const contractFields = new Set([
   "diagnosis",
   "changePlan",
   "verification",
-  "toolRequest",
   "taskOutput",
   "id",
   "input",
@@ -30,7 +29,6 @@ const contractFields = new Set([
   "status",
 ]);
 const structuralMessages = new Set([
-  "is required when state is needs_tool",
   "must be omitted when state is final",
   "must be omitted when state is blocked",
   "is allowed only for a final task operation",

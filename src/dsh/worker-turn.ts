@@ -20,6 +20,8 @@ import {
   DshProcessError,
   DshProxyError,
   DshSpawnError,
+  DshTimeoutError,
+  attachDshFailureTelemetry,
 } from "./errors.js";
 import { decodeHeadlessResult, headlessModelUsage } from "./headless-output.js";
 import { repairDshOutput } from "./output-repair.js";
@@ -89,6 +91,12 @@ export class DshWorker {
             workerHost: proxyAddress,
             requestTimeoutMs: request.timeoutMs,
             maxResponseBytes: request.maxOutputBytes,
+            ...(request.controllerTools === undefined
+              ? {}
+              : { controllerTools: request.controllerTools }),
+            workspacePath: context.workspace,
+            deadlineMs: scope.deadlineMs,
+            ...(scope.signal === undefined ? {} : { signal: scope.signal }),
           });
         } catch (error: unknown) {
           if (
@@ -216,7 +224,12 @@ export class DshWorker {
       ((spec, limits) => executeBoundedDshProcess(spec, limits, context.platform));
     const prepared = await prepareWorkerRuntime(context, runtime, scope, execute);
     const proxy = await this.acquireProxy(prepared);
-    const secrets = [...context.secrets, proxy.workerToken];
+    const bridge = proxy.controllerBridge;
+    const secrets = [
+      ...context.secrets,
+      proxy.workerToken,
+      ...(bridge === undefined ? [] : [bridge.token, bridge.url]),
+    ];
     for (const secret of secrets) runtime.session?.knownSecrets.add(secret);
     const { request } = context;
     const evidence = new DshTurnEvidence(prepared.composition, scope, secrets);
@@ -229,6 +242,20 @@ export class DshWorker {
         proxyToken: proxy.workerToken,
         realDeepSeekApiKey: request.apiKey,
       });
+      const input =
+        bridge === undefined
+          ? undefined
+          : JSON.stringify({
+              url: bridge.url,
+              token: bridge.token,
+              tools: bridge.toolNames,
+              timeoutMs: bridge.timeoutMs,
+            });
+      if (bridge !== undefined) {
+        workerEnvironment.DSH_ACTION_CONTROLLER_INPUT = "1";
+        if (request.isolation === "none")
+          workerEnvironment.DSH_ACTION_HOST_EXECUTABLE = context.dshExecutableIdentity;
+      }
       assertSecretAbsent(workerEnvironment, request.apiKey, "real DeepSeek API key");
       await evidence.begin();
       const composition = prepared.composition;
@@ -249,8 +276,14 @@ export class DshWorker {
           workerEnvironment,
           proxy,
           workspaceWrite: context.workspaceWrite,
+          ...(input === undefined ? {} : { input }),
         });
-      } else spec = { ...composition.launchPlan, env: workerEnvironment };
+      } else
+        spec = {
+          ...composition.launchPlan,
+          env: workerEnvironment,
+          ...(input === undefined ? {} : { input }),
+        };
       assertWorkerLaunchHasNoControllerCredentials(spec, context.secrets);
       const remainingMs = scope.remaining(Math.min(request.timeoutMs, PHASE_TIMEOUTS.agentTurnMs));
       let processResult: DshProcessResult | undefined;
@@ -263,15 +296,31 @@ export class DshWorker {
             maxStdoutBytes: request.maxOutputBytes,
             maxStderrBytes: Math.min(request.maxOutputBytes, 2 * 1024 * 1024),
             maxCombinedBytes: request.maxOutputBytes,
-            ...(scope.signal === undefined ? {} : { signal: scope.signal }),
+            signal: AbortSignal.any([
+              ...(scope.signal === undefined ? [] : [scope.signal]),
+              ...(bridge === undefined ? [] : [bridge.signal]),
+            ]),
           }),
         );
+        await bridge?.close();
+        bridge?.throwIfFailed();
         output = await this.validateResult(processResult, proxy, secrets);
       } catch (error: unknown) {
+        let executionFailure = error;
+        if (!(error instanceof DshTimeoutError) && scope.signal?.aborted !== true) {
+          try {
+            bridge?.throwIfFailed();
+          } catch (controllerFailure: unknown) {
+            executionFailure = controllerFailure;
+          }
+        }
+        await bridge?.close();
         failure =
-          request.isolation === "docker" && error instanceof DshSpawnError
-            ? new DshIsolationUnavailableError("Docker could not be started", { cause: error })
-            : error;
+          request.isolation === "docker" && executionFailure instanceof DshSpawnError
+            ? new DshIsolationUnavailableError("Docker could not be started", {
+                cause: executionFailure,
+              })
+            : executionFailure;
       }
       failure = await evidence.collect(failure);
       if (failure !== undefined)
@@ -297,8 +346,8 @@ export class DshWorker {
         ...evidence.fields(),
       };
     } catch (error: unknown) {
-      if (error instanceof DshError)
-        error.attachTelemetry({
+      if (error instanceof Error)
+        attachDshFailureTelemetry(error, {
           durationMs: Math.max(0, scope.now() - scope.startedAt),
           isolationReport: isolationReport(request, context.composition),
           ...evidence.fields(),

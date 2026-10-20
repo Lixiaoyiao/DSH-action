@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { sendMessagesSse } from "./messages-sse.mjs";
 
 const responseText = JSON.stringify({
-  protocolVersion: 1,
+  protocolVersion: 2,
   operation: "review",
   summary: "controlled profile booted",
   findings: [],

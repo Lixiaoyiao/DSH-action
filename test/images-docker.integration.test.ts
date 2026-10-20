@@ -38,7 +38,7 @@ describe.skipIf(process.env.DSH_E2E_IMAGE_DOCKER !== "1")("production Docker ima
       const serverErrors: unknown[] = [];
       const unexpectedRoutes: string[] = [];
       const output = {
-        protocolVersion: 1,
+        protocolVersion: 2,
         operation: "task",
         state: "final",
         summary: "image bytes observed",

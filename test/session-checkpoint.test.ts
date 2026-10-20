@@ -28,6 +28,7 @@ import type {
   SessionManifestWithoutPayload,
   SessionRunIdentity,
 } from "../src/session/contracts.js";
+import { admitSessionCheckpointEnvelope } from "../src/session/contracts.js";
 
 const now = Date.parse("2026-10-04T01:00:00.000Z");
 const sessionId = "session-11111111-1111-4111-8111-111111111111";
@@ -54,7 +55,7 @@ const source: SessionRunIdentity = {
   jobRunId: 43,
 };
 const manifest: SessionManifestWithoutPayload = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   repository: binding.repository,
   workflow: {
     ...binding.workflow,
@@ -387,6 +388,41 @@ async function stored(payload = raw()): Promise<{ root: string; log: string; ses
 }
 
 describe("genuine bounded Session persistence", () => {
+  it("retains private admitted bytes even when a caller mutates its input and returned views", async () => {
+    const original = raw();
+    const input = checkpoint(Buffer.from(original));
+    const admitted = admitSessionCheckpointEnvelope(input, now);
+    input.payload.fill(0);
+    admitted.payload.fill(0);
+    expect(Buffer.from(admitted.payload)).toEqual(original);
+    expect(Object.isFrozen(admitted.manifest.session)).toBe(true);
+    expect(admitSessionCheckpointEnvelope(admitted, now)).toBe(admitted);
+    expect(() => admitSessionCheckpointEnvelope(admitted, now + 3 * 86400_000)).toThrow(/expired/u);
+    const root = await directory();
+    await importSessionCheckpoint({
+      persistenceRoot: root,
+      checkpoint: admitted,
+      binding,
+      source,
+      workspacePath,
+      knownSecrets: [],
+      now,
+    });
+    expect(await readFile(join(root, "--workspace--", sessionId, SESSION_LOG_FILE))).toEqual(
+      original,
+    );
+  });
+
+  it("rejects the v0.11 manifest instead of importing its log as a new session", () => {
+    const input = checkpoint(raw());
+    expect(() =>
+      admitSessionCheckpointEnvelope(
+        { ...input, manifest: { ...input.manifest, schemaVersion: 1 } },
+        now,
+      ),
+    ).toThrow(/malformed or incompatible/u);
+  });
+
   it("validates the released v4 codec and exact raw bytes", () => {
     const payload = raw();
     expect(validate(payload)).toEqual({
@@ -858,6 +894,14 @@ describe("official durable attachment checkpoint round trips", () => {
     };
   }
 
+  it("does not expose the attachment bytes retained by an admitted checkpoint", async () => {
+    const fixture = await imageCheckpoint();
+    const expected = await fixture.store.readImage(fixture.ref);
+    fixture.exported.attachments?.["attachment-0.bin"]?.fill(0);
+    const restored = await restore(fixture.exported);
+    expect((await restored.store.readImage(fixture.ref)).data).toEqual(expected.data);
+  });
+
   it.each(rasterImages)(
     "preserves official $extension references and stored bytes through a ZIP and a fresh runtime home",
     async (image) => {
@@ -972,12 +1016,18 @@ describe("official durable attachment checkpoint round trips", () => {
           type: "image",
           attachment: { ...fixture.ref, width: fixture.ref.width + 1 },
         });
-        exported.manifest.payload = {
-          file: "session.jsonl",
-          bytes: payload.length,
-          sha256: createHash("sha256").update(payload).digest("hex"),
-        };
-        const restored = await restore({ ...exported, payload });
+        const restored = await restore({
+          ...exported,
+          manifest: {
+            ...exported.manifest,
+            payload: {
+              file: "session.jsonl",
+              bytes: payload.length,
+              sha256: createHash("sha256").update(payload).digest("hex"),
+            },
+          },
+          payload,
+        });
         // The Controller verifies identity and bytes; the official Worker-side
         // provider is authoritative for raster media and dimension validation.
         await expect(

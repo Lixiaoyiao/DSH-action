@@ -35,10 +35,10 @@ describe("bounded MCP proof evidence", () => {
           MCP_ACTION_OUTCOME: "success",
           GITHUB_STEP_SUMMARY: summary,
           RESULT_JSON: JSON.stringify({
-            conclusion: "success",
-            summary: modelText,
-            taskOutput: { proof: returnedProof },
-            ...(matches ? { loop: { dshToolReceipts: [{ id: "mcp.fixture.echo" }] } } : {}),
+            schemaVersion: 2,
+            termination: { conclusion: "success", summary: modelText },
+            operation: { kind: "task", taskOutput: { proof: returnedProof } },
+            ...(matches ? { agent: { dshToolReceipts: [{ id: "mcp.fixture.echo" }] } } : {}),
           }),
         };
         expect(execFileSync(process.execPath, [script, "capture"], { env, encoding: "utf8" })).toBe(
@@ -106,7 +106,10 @@ describe("bounded MCP proof evidence", () => {
         SystemRoot: process.env.SystemRoot,
         MCP_EVIDENCE: evidence,
         MCP_ACTION_OUTCOME: "failure",
-        MCP_ERROR_CODE: "DSH_MALFORMED_OUTPUT",
+        RESULT_JSON: JSON.stringify({
+          schemaVersion: 2,
+          termination: { error: { code: "DSH_MALFORMED_OUTPUT" } },
+        }),
       };
       const fallback = execFileSync(process.execPath, [script, "report"], {
         env,

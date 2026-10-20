@@ -124,7 +124,7 @@ describe("deterministic integrity model fixture", () => {
       expect(second.status).toBe(200);
       expect(final.choices[0]?.finish_reason).toBe("stop");
       expect(JSON.parse(final.choices[0]?.message.content ?? "null")).toMatchObject({
-        protocolVersion: 1,
+        protocolVersion: 2,
         operation: "task",
         state: "final",
         findings: [],
@@ -332,7 +332,7 @@ describe("deterministic integrity model fixture", () => {
         expect(
           JSON.parse(finalBlock && "text" in finalBlock ? (finalBlock.text ?? "null") : "null"),
         ).toMatchObject({
-          protocolVersion: 1,
+          protocolVersion: 2,
           operation: "task",
           state: "final",
           findings: [],
