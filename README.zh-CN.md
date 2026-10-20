@@ -83,7 +83,7 @@ Native 模式可直接使用 DSH Bundle。Controlled 模式还会询问插件实
 npm.cmd create deepseek-harness-action@latest -- --mode both --dsh-mode native
 ```
 
-默认仍为 Controlled。自然语言写入需要在支持写入的工作流中同时配置 `natural-language-write: "true"`、`allow-write: "true"`，提供适合项目的验证命令，并明确要求修改代码，例如 `@dsh 修复这个 Bug 并提交 PR`。高级 Commands 模板默认关闭自然语言写入这一独立开关；旧的 `fix`、`implement` 和 `task --write` 保留原有写入请求语义。安装器 `0.7.1` 对应 Action `v0.11.0` 和 DSH `0.2.1-rc.2`；打包通过 `DSH_ACTION_RELEASE_SHA` 绑定已验证的 Action commit，源码 Tag 为 `create-deepseek-harness-action-v0.7.1`。手工安装和故障恢复见[安装指南](docs/setup.zh-CN.md)。
+默认仍为 Controlled。自然语言写入需要在支持写入的工作流中同时配置 `natural-language-write: "true"`、`allow-write: "true"`，提供适合项目的验证命令，并明确要求修改代码，例如 `@dsh 修复这个 Bug 并提交 PR`。高级 Commands 模板默认关闭自然语言写入这一独立开关；旧的 `fix`、`implement` 和 `task --write` 保留原有写入请求语义。安装器 `0.7.2` 对应 Action `v0.12.0` 和 DSH `0.2.1-rc.2`；打包通过 `DSH_ACTION_RELEASE_SHA` 绑定已验证的 Action commit，源码 Tag 为 `create-deepseek-harness-action-v0.7.2`。手工安装和故障恢复见[安装指南](docs/setup.zh-CN.md)。
 
 ### 手工安装
 
