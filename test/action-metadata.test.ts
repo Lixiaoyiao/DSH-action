@@ -264,7 +264,8 @@ describe("Marketplace action metadata", () => {
       "utf8",
     );
     expect(commands).toContain("issue_comment:");
-    expect(commands).toContain("github.event.sender.id != 41898282");
+    expect(commands).toContain("github.event.sender.type != 'Bot'");
+    expect(commands).toContain("!endsWith(github.event.sender.login, '[bot]')");
     expect(commands).toContain("contains(github.event.comment.body, '@dsh')");
     expect(commands).toContain("ref: ${{ github.workflow_sha }}");
     expect(commands).toContain("persist-credentials: false");
