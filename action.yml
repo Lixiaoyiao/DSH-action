@@ -127,7 +127,7 @@ inputs:
     required: false
     default: "20"
   run-tests:
-    description: "Must be true for every code, Git ref, and pull-request mutation. false denies the mutation and is not a validation waiver."
+    description: "Required for repository code persistence, including its ref/PR creation. false denies code writes; pure GitHub metadata tools do not require tests."
     required: false
     default: "true"
   test-commands:

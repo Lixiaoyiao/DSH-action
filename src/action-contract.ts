@@ -303,7 +303,7 @@ export const ACTION_INPUT_CONTRACT = [
     required: false,
     default: "true",
     description:
-      "Must be true for every code, Git ref, and pull-request mutation. false denies the mutation and is not a validation waiver.",
+      "Required for repository code persistence, including its ref/PR creation. false denies code writes; pure GitHub metadata tools do not require tests.",
     docsGroup: "validation",
   },
   {

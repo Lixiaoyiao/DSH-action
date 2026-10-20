@@ -124,7 +124,8 @@ The Action has two deliberately separate execution planes:
    the closed `github.*` catalog. Commands accept no model arguments and run
    fixed argv in credential-free containers. GitHub tools accept only typed,
    bounded data while repository/entity/head identity comes from Controller
-   context; mutations are queued until validated finalization.
+   context. DSH calls this plane through the official MCP client; mutations
+   stay queued until schema-valid final output and fresh authorization.
 2. DSH invokes model-routed tools inside the worker. In controlled mode an
    Action-owned Cordis policy adapter applies the Controller-generated positive
    runtime allowlist and budgets to native workspace, official MCP, and Cordis
@@ -476,12 +477,15 @@ externally visible mutation.
 
 ## Repository-mutation validation
 
-Every code, Git ref and pull-request mutation requires `run-tests=true`, at
+Repository code persistence, including its ref and PR creation, requires
+`run-tests=true`, at
 least one configured `test-commands` argv array, and successful completion of
 every Controller validation command. `run-tests=false` denies the mutation and
 is not a waiver. This hardening is intentionally stricter than the earlier
 compatibility path; no model output, ToolRuntime receipt, or extension result
-can replace the final validation gate.
+can replace the final validation gate. Pure GitHub metadata does not need
+repository tests; it still requires explicit write opt-in, current actor write
+authority, typed input and target revalidation.
 
 v0.5.1 builds the validation-integrity audit from a normalized command graph,
 including package-script entrypoints and Node wrapper options such as preload

@@ -183,7 +183,7 @@ sandbox. Maintainer-defined `command.*` tools and the closed Controller
 
 | Input                  | Required/default | Description                                                                                                                                                                |
 | ---------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `run-tests`            | `true`           | Must be true for every code, Git ref, and pull-request mutation. false denies the mutation and is not a validation waiver.                                                 |
+| `run-tests`            | `true`           | Required for repository code persistence, including its ref/PR creation. false denies code writes; pure GitHub metadata tools do not require tests.                        |
 | `test-commands`        | `[]`             | Non-empty JSON array of credential-free argv arrays required for every write, e.g. [["npm","test"]]. Every command must pass; Controller credentials in argv are rejected. |
 | `validation-integrity` | `warn`           | Controller-owned validation-definition policy: off records, warn reports, strict blocks high-confidence weakening and replays baseline controls when needed.               |
 
@@ -402,18 +402,20 @@ No tool accepts an owner, repository, entity number, head SHA, raw URL,
 credential, REST route, GraphQL document, or arbitrary request body. The
 Controller derives identity from the trusted event snapshot. Read access
 requires the matching `readCi` policy. Every mutation requires an explicitly
-selected exact ID, `trusted-write`, `allow-write: "true"`, compatible entity
-and capability, Docker, and successful Controller-owned validation.
+selected exact ID, a trusted same-repository context, a currently write-authorized
+actor, `allow-write: "true"`, and a compatible entity and capability. Pure metadata
+does not require repository tests or a writable workspace. Repository code
+persistence separately requires Docker and successful Controller-owned validation.
 
 Mutation requests are scheduled during an Agent turn and applied only during
-Controller finalization. Malformed/blocked output or failed validation discards
+Controller finalization. Malformed/blocked output or a required validation failure discards
 the queue. Immediately before mutation the Controller revalidates entity and
 repository identity, then performs bounded API attempts, postcondition checks,
 ambiguous-failure reconciliation, and bounded receipts. Model output never
 becomes GitHub authority.
 
 If one queued mutation is confirmed or may have taken effect before a later
-mutation fails, the failure envelope reports `write.status: partial-success`
+mutation fails, the failure envelope reports `publication.writeStatus: partial-success`
 and receipts mark the bounded external-effect state. Treat that as a manual
 reconciliation signal; do not blindly rerun the model request.
 
@@ -751,7 +753,7 @@ and [Session](session.md) for use, limits and recovery.
 
 ## Write validation and integrity
 
-Every repository mutation requires all configured `test-commands` to pass in
+Every repository code persistence operation requires all configured `test-commands` to pass in
 order. Commands are argv arrays, not shell strings, and execute without the
 GitHub token or DeepSeek key. Model-reported verification and ToolRuntime
 receipts never replace Controller validation.
