@@ -146,7 +146,7 @@ jobs:
           prompt: Inspect README.md and return one concise sentence describing this action. Do not request unavailable tools.
           permission-profile: strict
           progress-comment: "false"
-          max-turns: "2"
+          max-controller-steps: "2"
           timeout-minutes: "12"
 
       - name: Assert strict/Profile/Bundle result
@@ -156,21 +156,21 @@ jobs:
         run: |
           set -euo pipefail
           jq -e '
-            .schemaVersion == 1 and .conclusion == "success" and .operation == "task" and
-            .policy.trust == "trusted-read" and .permissions.profile == "strict" and
-            .permissions.effectiveTools == ["workspace.read","workspace.search"] and
-            .toolPolicy.policyOwner == "controller" and
-            .toolPolicy.requestedTools == ["workspace.edit","workspace.read","workspace.search"] and
-            .toolPolicy.effectiveTools == .permissions.effectiveTools and
-            (.toolPolicy.deniedTools | any(.id == "workspace.edit")) and
-            (.toolPolicy | has("observedTools") | not) and
-            .permissions.workspaceWrite == false and
-            .isolation.backend == "docker" and .isolation.processIsolated == true and
-            .isolation.workspaceAccess == "read-only" and
-            .isolation.extensionProfile == "github-action" and
-            (.isolation.extensionDigest | test("^[a-f0-9]{64}$")) and
-            .extensions.profile == "github-action" and
-            (.extensions.digest | test("^[a-f0-9]{64}$"))
+            .schemaVersion == 2 and .termination.conclusion == "success" and .operation.kind == "task" and
+            .context.policy.trust == "trusted-read" and .context.permission.profile == "strict" and
+            .context.permission.effectiveTools == ["workspace.read","workspace.search"] and
+            .context.toolPolicy.policyOwner == "controller" and
+            .context.toolPolicy.requestedTools == ["workspace.edit","workspace.read","workspace.search"] and
+            .context.toolPolicy.effectiveTools == .context.permission.effectiveTools and
+            (.context.toolPolicy.deniedTools | any(.id == "workspace.edit")) and
+            (.context.toolPolicy | has("observedTools") | not) and
+            .context.permission.workspaceWrite == false and
+            .agent.isolation.backend == "docker" and .agent.isolation.processIsolated == true and
+            .agent.isolation.workspaceAccess == "read-only" and
+            .agent.isolation.extensionProfile == "github-action" and
+            (.agent.isolation.extensionDigest | test("^[a-f0-9]{64}$")) and
+            .agent.extensionAudit.profile == "github-action" and
+            (.agent.extensionAudit.digest | test("^[a-f0-9]{64}$"))
           ' <<<"$RESULT_JSON" >/dev/null
 
       - name: Native headless read-only smoke
@@ -186,40 +186,36 @@ jobs:
           prompt: Inspect README.md with the DSH native tools and return one concise sentence describing this action. Do not change files.
           permission-profile: strict
           progress-comment: "false"
-          max-turns: "2"
+          max-controller-steps: "2"
           timeout-minutes: "12"
 
       - name: Assert native composition and observed inventory
         shell: bash
         env:
           RESULT_JSON: ${{ steps.native.outputs['result-json'] }}
-          DSH_MODE: ${{ steps.native.outputs['dsh-mode'] }}
-          DSH_COMPOSITION: ${{ steps.native.outputs['dsh-composition'] }}
         run: |
           set -euo pipefail
-          [[ "$DSH_MODE" == "native" ]]
-          [[ "$DSH_COMPOSITION" == "dsh-native-headless" ]]
           jq -e '
-            .schemaVersion == 1 and .conclusion == "success" and .operation == "task" and
-            .dsh.mode == "native" and .dsh.composition == "dsh-native-headless" and
-            .policy.trust == "trusted-read" and
-            .toolPolicy.policyOwner == "dsh" and
-            (.toolPolicy.observedTools | length > 0) and
-            (.toolPolicy.observedTools | index("read") != null) and
-            (.toolPolicy.observedTools | index("glob") != null) and
-            (.toolPolicy.observedTools | index("grep") != null) and
-            (.toolPolicy.observedTools | index("workspace.read") == null) and
-            (.toolPolicy.observedTools | index("workspace.search") == null) and
-            (.toolPolicy | has("effectiveTools") | not) and
-            (.toolPolicy | has("requestedTools") | not) and
-            (.toolPolicy | has("deniedTools") | not) and
-            .permissions.workspaceWrite == false and
-            .permissions.network == "mediated-web" and
-            .isolation.backend == "docker" and .isolation.processIsolated == true and
-            .isolation.workspaceAccess == "read-only" and
-            .isolation.extensionProfile == "none" and
-            (.isolation | has("extensionDigest") | not) and
-            (has("extensions") | not)
+            .schemaVersion == 2 and .termination.conclusion == "success" and .operation.kind == "task" and
+            .context.dsh.mode == "native" and .context.dsh.composition == "dsh-native-headless" and
+            .context.policy.trust == "trusted-read" and
+            .context.toolPolicy.policyOwner == "dsh" and
+            (.context.toolPolicy.observedTools | length > 0) and
+            (.context.toolPolicy.observedTools | index("read") != null) and
+            (.context.toolPolicy.observedTools | index("glob") != null) and
+            (.context.toolPolicy.observedTools | index("grep") != null) and
+            (.context.toolPolicy.observedTools | index("workspace.read") == null) and
+            (.context.toolPolicy.observedTools | index("workspace.search") == null) and
+            (.context.toolPolicy | has("effectiveTools") | not) and
+            (.context.toolPolicy | has("requestedTools") | not) and
+            (.context.toolPolicy | has("deniedTools") | not) and
+            .context.permission.workspaceWrite == false and
+            .context.permission.network == "mediated-web" and
+            .agent.isolation.backend == "docker" and .agent.isolation.processIsolated == true and
+            .agent.isolation.workspaceAccess == "read-only" and
+            .agent.isolation.extensionProfile == "none" and
+            (.agent.isolation | has("extensionDigest") | not) and
+            (.agent | has("extensionAudit") | not)
           ' <<<"$RESULT_JSON" >/dev/null
 
       - name: Start real Streamable HTTP MCP fixture
@@ -262,7 +258,7 @@ jobs:
           mcp-config: >-
             {"schemaVersion":1,"servers":[{"id":"fixture","transport":"streamable-http","url":"${{ steps.mcp_server.outputs.worker_url }}","headers":{},"network":true,"maxCalls":2,"reconnect":{"enabled":false,"initialDelayMs":500,"maxDelayMs":1000,"maxAttempts":1},"tools":[{"id":"echo","name":"echo","description":"Return the supplied E2E marker.","permissions":["read","network"],"timeoutMs":15000,"maxOutputBytes":16384,"maxCalls":1},{"id":"hidden","name":"hidden","description":"Denied control tool.","permissions":["read","network"],"timeoutMs":15000,"maxOutputBytes":16384,"maxCalls":1}]}]}
           progress-comment: "false"
-          max-turns: "2"
+          max-controller-steps: "2"
           timeout-minutes: "12"
 
       - name: Assert MCP allow/deny and receipts
@@ -279,18 +275,18 @@ jobs:
           node .github/e2e/mcp-proof-evidence.mjs capture
           jq -e '.actionOutcome == "success" and .proofMatches == true' "$MCP_EVIDENCE" >/dev/null
           jq -e '
-            .conclusion == "success" and .permissions.profile == "custom" and
-            .permissions.effectiveTools == ["mcp.fixture.echo","workspace.read","workspace.search"] and
-            .toolPolicy.policyOwner == "controller" and
-            .toolPolicy.requestedTools == ["mcp.fixture.echo","mcp.fixture.hidden","workspace.read","workspace.search"] and
-            .toolPolicy.effectiveTools == .permissions.effectiveTools and
-            (.toolPolicy.deniedTools | any(.id == "mcp.fixture.hidden")) and
-            (.toolPolicy | has("observedTools") | not) and
-            .permissions.network == "bridge" and
-            (.permissions.deniedTools | any(.id == "mcp.fixture.hidden")) and
-            (.permissions.trustedExtensions | any(.id == "fixture" and .kind == "mcp" and .network == true)) and
-            (.loop.dshToolReceipts // [] | map(select(.id == "mcp.fixture.echo" and .provider == "mcp" and .completed == true and .ok == true)) | length == 1) and
-            (.loop.dshToolReceipts // [] | all(.id != "mcp.fixture.hidden"))
+            .termination.conclusion == "success" and .context.permission.profile == "custom" and
+            .context.permission.effectiveTools == ["mcp.fixture.echo","workspace.read","workspace.search"] and
+            .context.toolPolicy.policyOwner == "controller" and
+            .context.toolPolicy.requestedTools == ["mcp.fixture.echo","mcp.fixture.hidden","workspace.read","workspace.search"] and
+            .context.toolPolicy.effectiveTools == .context.permission.effectiveTools and
+            (.context.toolPolicy.deniedTools | any(.id == "mcp.fixture.hidden")) and
+            (.context.toolPolicy | has("observedTools") | not) and
+            .context.permission.network == "bridge" and
+            (.context.permission.deniedTools | any(.id == "mcp.fixture.hidden")) and
+            (.context.permission.trustedExtensions | any(.id == "fixture" and .kind == "mcp" and .network == true)) and
+            (.agent.dshToolReceipts // [] | map(select(.id == "mcp.fixture.echo" and .provider == "mcp" and .completed == true and .ok == true)) | length == 1) and
+            (.agent.dshToolReceipts // [] | all(.id != "mcp.fixture.hidden"))
           ' <<<"$RESULT_JSON" >/dev/null
           [[ "$(wc -l < "$MCP_AUDIT")" -eq 1 ]]
           jq -e '.tool == "echo" and .input.marker == "rc2-mcp-allow"' "$MCP_AUDIT" >/dev/null
@@ -313,7 +309,7 @@ jobs:
         env:
           MCP_EVIDENCE: ${{ runner.temp }}/dsh-e2e-mcp-evidence.json
           MCP_ACTION_OUTCOME: ${{ steps.mcp.outcome }}
-          MCP_ERROR_CODE: ${{ steps.mcp.outputs['error-code'] }}
+          RESULT_JSON: ${{ steps.mcp.outputs['result-json'] }}
         run: node .github/e2e/mcp-proof-evidence.mjs report
 
       - name: Preserve MCP execution evidence
@@ -340,7 +336,7 @@ jobs:
           permission-profile: custom
           allowed-tools: '["native.web-search"]'
           progress-comment: "false"
-          max-turns: "2"
+          max-controller-steps: "2"
           timeout-minutes: "12"
 
       - name: Assert Web Search mediation and receipt
@@ -358,10 +354,10 @@ jobs:
             .receiptCount == 1 and .completedWebSearchCount == 1
           ' "$WEB_EVIDENCE" >/dev/null
           jq -e '
-            .conclusion == "success" and
-            .permissions.effectiveTools == ["native.web-search"] and
-            .permissions.network == "mediated-web" and
-            (.loop.dshToolReceipts // [] | map(select(.id == "native.web-search" and .completed == true and .ok == true)) | length == 1)
+            .termination.conclusion == "success" and
+            .context.permission.effectiveTools == ["native.web-search"] and
+            .context.permission.network == "mediated-web" and
+            (.agent.dshToolReceipts // [] | map(select(.id == "native.web-search" and .completed == true and .ok == true)) | length == 1)
           ' <<<"$RESULT_JSON" >/dev/null
 
       - name: Preserve bounded Web Search evidence
@@ -504,7 +500,7 @@ jobs:
           progress-comment: "false"
           run-tests: "true"
           test-commands: '[["npm","ci","--ignore-scripts"],["npm","run","typecheck"],["npm","test"]]'
-          max-turns: "2"
+          max-controller-steps: "2"
           timeout-minutes: "12"
 
       - name: Assert native trusted-write authority
@@ -514,17 +510,17 @@ jobs:
         run: |
           set -euo pipefail
           jq -e '
-            .schemaVersion == 1 and .conclusion == "success" and .operation == "task" and
-            .policy.trust == "trusted-write" and
-            .dsh.mode == "native" and .dsh.composition == "dsh-native-headless" and
-            .permissions.effectiveTools == ["workspace.edit"] and
-            .permissions.workspaceWrite == true and
-            .toolPolicy.policyOwner == "dsh" and (.toolPolicy.observedTools | length > 0) and
-            (.toolPolicy | has("effectiveTools") | not) and
-            (.toolPolicy | has("requestedTools") | not) and
-            (.toolPolicy | has("deniedTools") | not) and
-            .isolation.backend == "docker" and .isolation.workspaceAccess == "read-write" and
-            .write.status == "no-changes"
+            .schemaVersion == 2 and .termination.conclusion == "success" and .operation.kind == "task" and
+            .context.policy.trust == "trusted-write" and
+            .context.dsh.mode == "native" and .context.dsh.composition == "dsh-native-headless" and
+            .context.permission.effectiveTools == ["workspace.edit"] and
+            .context.permission.workspaceWrite == true and
+            .context.toolPolicy.policyOwner == "dsh" and (.context.toolPolicy.observedTools | length > 0) and
+            (.context.toolPolicy | has("effectiveTools") | not) and
+            (.context.toolPolicy | has("requestedTools") | not) and
+            (.context.toolPolicy | has("deniedTools") | not) and
+            .agent.isolation.backend == "docker" and .agent.isolation.workspaceAccess == "read-write" and
+            .publication.writeStatus == "no-changes"
           ' <<<"$RESULT_JSON" >/dev/null
 
       - name: Start deterministic integrity fixture
@@ -564,7 +560,7 @@ jobs:
           validation-integrity: strict
           run-tests: "true"
           test-commands: '[["node","scripts/verify-dsh-config.mjs"]]'
-          max-turns: "1"
+          max-controller-steps: "1"
           timeout-minutes: "15"
 
       - name: Assert integrity failure
@@ -576,9 +572,9 @@ jobs:
           set -euo pipefail
           [[ "$EXPECTED_FAILURE" == "true" ]]
           jq -e '
-            .conclusion == "failure" and .status == "validation_failed" and
-            .error.code == "VALIDATION_INTEGRITY" and .error.category == "domain" and
-            .error.phase == "validation" and .error.retryable == false and
+            .termination.conclusion == "failure" and .termination.status == "validation_failed" and
+            .termination.error.code == "VALIDATION_INTEGRITY" and .termination.error.category == "domain" and
+            .termination.error.phase == "validation" and .termination.error.retryable == false and
             .validation.status == "failed" and
             .validation.integrity.mode == "strict" and
             .validation.integrity.status == "blocked" and
@@ -590,8 +586,8 @@ jobs:
               .risk == "dangerous" and .controlPlane == true and
               (.reasons | any(contains("no-op")))
             )) and
-            (has("write") | not) and
-            (.loop.dshToolReceipts | any(.id == "native.bash" and .completed == true and .ok == true))
+            (.publication // {} | del(.review,.commentId) | length == 0) and
+            (.agent.dshToolReceipts | any(.id == "native.bash" and .completed == true and .ok == true))
           ' <<<"$RESULT_JSON" >/dev/null
 
           jq -s -e '
@@ -648,7 +644,7 @@ jobs:
           validation-integrity: strict
           run-tests: "true"
           test-commands: '[["false"]]'
-          max-turns: "2"
+          max-controller-steps: "2"
           timeout-minutes: "15"
 
       - name: Assert ordinary validation failure and no mutation
@@ -666,15 +662,15 @@ jobs:
           set -euo pipefail
           [[ "$EXPECTED_FAILURE" == "true" ]]
           jq -e '
-            .conclusion == "failure" and .status == "validation_failed" and
-            .error.code == "VALIDATION_FAILED" and .error.category == "domain" and
-            .error.phase == "validation" and .error.retryable == false and
+            .termination.conclusion == "failure" and .termination.status == "validation_failed" and
+            .termination.error.code == "VALIDATION_FAILED" and .termination.error.category == "domain" and
+            .termination.error.phase == "validation" and .termination.error.retryable == false and
             .validation.status == "failed" and
             .validation.integrity.mode == "strict" and
             .validation.integrity.status == "clean" and
             .validation.integrity.dangerousChangeCount == 0 and
-            (.loop.toolReceipts | any(.id == "command.prepare-validation" and .ok == true)) and
-            (.loop.dshToolReceipts // [] | all(.id != "native.bash"))
+            (.agent.toolReceipts | any(.id == "command.prepare-validation" and .ok == true)) and
+            (.agent.dshToolReceipts // [] | all(.id != "native.bash"))
           ' <<<"$RESULT_JSON" >/dev/null
           prefix="$RUNNER_TEMP/dsh-e2e-baseline"
           current="$RUNNER_TEMP/dsh-e2e-current-validation"
@@ -699,7 +695,7 @@ jobs:
           progress-comment: "false"
           run-tests: "true"
           test-commands: '[["npm","ci","--ignore-scripts"],["npm","run","typecheck"],["npm","test"]]'
-          max-turns: "2"
+          max-controller-steps: "2"
           timeout-minutes: "15"
 
       - name: Assert native.subagent and no-change semantics
@@ -715,11 +711,11 @@ jobs:
         run: |
           set -euo pipefail
           jq -e '
-            .conclusion == "success" and .policy.trust == "trusted-write" and
-            .write.status == "no-changes" and .write.changedPaths == [] and
+            .termination.conclusion == "success" and .context.policy.trust == "trusted-write" and
+            .publication.writeStatus == "no-changes" and .publication.changedPaths == [] and
             .validation.status == "not-applicable" and
-            (.loop.dshToolReceipts | map(select(.id == "native.subagent" and .completed == true and .ok == true)) | length == 1) and
-            (.loop.dshToolReceipts | all(.id != "native.bash" and .id != "native.web-search"))
+            (.agent.dshToolReceipts | map(select(.id == "native.subagent" and .completed == true and .ok == true)) | length == 1) and
+            (.agent.dshToolReceipts | all(.id != "native.bash" and .id != "native.web-search"))
           ' <<<"$RESULT_JSON" >/dev/null
           prefix="$RUNNER_TEMP/dsh-e2e-baseline"
           current="$RUNNER_TEMP/dsh-e2e-current-no-change"
@@ -747,7 +743,7 @@ jobs:
           validation-integrity: strict
           run-tests: "true"
           test-commands: '[["node",".github/e2e/assert-trusted-write.mjs","dsh-e2e-write-${{ github.run_id }}-${{ github.run_attempt }}.txt"]]'
-          max-turns: "2"
+          max-controller-steps: "2"
           timeout-minutes: "18"
 
       - name: Verify trusted write PR identity
@@ -766,16 +762,16 @@ jobs:
         run: |
           set -euo pipefail
           jq -e --arg path "$FILE_PATH" '
-            .conclusion == "success" and .policy.trust == "trusted-write" and
+            .termination.conclusion == "success" and .context.policy.trust == "trusted-write" and
             .validation.status == "passed" and .validation.integrity.mode == "strict" and
-            .write.status == "success" and
-            (.write.branchName | test("^dsh-e2e/task-[a-f0-9]{24}$")) and
-            (.write.pullRequestNumber | type == "number") and
-            (.loop.dshToolReceipts | any(.id == "native.bash" and .completed == true and .ok == true))
+            .publication.writeStatus == "success" and
+            (.publication.branchName | test("^dsh-e2e/task-[a-f0-9]{24}$")) and
+            (.publication.pullRequestNumber | type == "number") and
+            (.agent.dshToolReceipts | any(.id == "native.bash" and .completed == true and .ok == true))
           ' <<<"$RESULT_JSON" >/dev/null
 
-          branch="$(jq -r .write.branchName <<<"$RESULT_JSON")"
-          pull="$(jq -r .write.pullRequestNumber <<<"$RESULT_JSON")"
+          branch="$(jq -r .publication.branchName <<<"$RESULT_JSON")"
+          pull="$(jq -r .publication.pullRequestNumber <<<"$RESULT_JSON")"
           [[ "$branch" =~ ^dsh-e2e/task-[a-f0-9]{24}$ ]]
           [[ "$pull" =~ ^[1-9][0-9]*$ ]]
           echo "branch=$branch" >> "$GITHUB_OUTPUT"
@@ -820,11 +816,11 @@ jobs:
           pull="$PULL"
           if [[ ! "$branch" =~ ^dsh-e2e/task-[a-f0-9]{24}$ ]] || [[ ! "$pull" =~ ^[1-9][0-9]*$ ]]; then
             if jq -e '
-              (.write.branchName | type == "string" and test("^dsh-e2e/task-[a-f0-9]{24}$")) and
-              (.write.pullRequestNumber | type == "number" and . >= 1 and floor == .)
+              (.publication.branchName | type == "string" and test("^dsh-e2e/task-[a-f0-9]{24}$")) and
+              (.publication.pullRequestNumber | type == "number" and . >= 1 and floor == .)
             ' <<<"$RESULT_JSON" >/dev/null 2>&1; then
-              branch="$(jq -r .write.branchName <<<"$RESULT_JSON")"
-              pull="$(jq -r .write.pullRequestNumber <<<"$RESULT_JSON")"
+              branch="$(jq -r .publication.branchName <<<"$RESULT_JSON")"
+              pull="$(jq -r .publication.pullRequestNumber <<<"$RESULT_JSON")"
             else
               echo "::warning::Could not recover a verified E2E branch/PR identity from the trusted-write result; inspect run $GITHUB_RUN_ID for a dsh-e2e/task-* PR containing $FILE_PATH. No broad cleanup was attempted."
               {
@@ -1052,7 +1048,7 @@ jobs:
             'INPUT_PROMPT=Wait for the upstream response and do not finish early.' \
             'INPUT_PERMISSION-PROFILE=strict' \
             'INPUT_PROGRESS-COMMENT=true' \
-            'INPUT_MAX-TURNS=2' \
+            'INPUT_MAX-CONTROLLER-STEPS=2' \
             'INPUT_TIMEOUT-MINUTES=15' \
             "INPUT_BASE-URL=$base_url" \
             GITHUB_EVENT_NAME=issues \
@@ -1563,11 +1559,11 @@ jobs:
             "INPUT_ALLOWED-ACTORS=$actor" 'INPUT_TASK-ACCESS=read' 'INPUT_ISOLATION=none' \
             "INPUT_DSH-EXECUTABLE=$GITHUB_WORKSPACE/candidate-action/node_modules/@deepseek-ai/dsh/lib/bin.js" \
             'INPUT_PROMPT=Return the deterministic label task result.' \
-            "INPUT_TASK-OUTPUT-SCHEMA=$task_schema" 'INPUT_MAX-TURNS=1'
+            "INPUT_TASK-OUTPUT-SCHEMA=$task_schema" 'INPUT_MAX-CONTROLLER-STEPS=1'
           label_result="$(read_output label result-json)"
-          label_task="$(read_output label task-output)"
-          jq -c '{stage:"label",conclusion,status,operation,trust:.policy.trust,taskOutput}' <<<"$label_result"
-          jq -e '.conclusion == "success" and .operation == "task" and .policy.trust == "trusted-read" and .taskOutput == {route:"label",accepted:true}' <<<"$label_result" >/dev/null
+          label_task="$(jq -c .operation.taskOutput <<<"$label_result")"
+          jq -c '{stage:"label",conclusion:.termination.conclusion,status:.termination.status,operation:.operation.kind,trust:.context.policy.trust,taskOutput:.operation.taskOutput}' <<<"$label_result"
+          jq -e '.termination.conclusion == "success" and .operation.kind == "task" and .context.policy.trust == "trusted-read" and .operation.taskOutput == {route:"label",accepted:true}' <<<"$label_result" >/dev/null
           jq -e '. == {route:"label",accepted:true}' <<<"$label_task" >/dev/null
 
           run_candidate assignee issues "$RUNNER_TEMP/dsh-e2e-assignee-event.json" assignee \
@@ -1575,18 +1571,18 @@ jobs:
             "INPUT_ALLOWED-ACTORS=$actor" 'INPUT_TASK-ACCESS=read' 'INPUT_ISOLATION=none' \
             "INPUT_DSH-EXECUTABLE=$GITHUB_WORKSPACE/candidate-action/node_modules/@deepseek-ai/dsh/lib/bin.js" \
             'INPUT_PROMPT=Return the deterministic assignee task result.' \
-            "INPUT_TASK-OUTPUT-SCHEMA=$task_schema" 'INPUT_MAX-TURNS=1'
+            "INPUT_TASK-OUTPUT-SCHEMA=$task_schema" 'INPUT_MAX-CONTROLLER-STEPS=1'
           assignee_result="$(read_output assignee result-json)"
-          jq -c '{stage:"assignee",conclusion,status,operation,trust:.policy.trust,taskOutput}' <<<"$assignee_result"
-          jq -e '.conclusion == "success" and .operation == "task" and .taskOutput == {route:"assignee",accepted:true}' <<<"$assignee_result" >/dev/null
+          jq -c '{stage:"assignee",conclusion:.termination.conclusion,status:.termination.status,operation:.operation.kind,trust:.context.policy.trust,taskOutput:.operation.taskOutput}' <<<"$assignee_result"
+          jq -e '.termination.conclusion == "success" and .operation.kind == "task" and .operation.taskOutput == {route:"assignee",accepted:true}' <<<"$assignee_result" >/dev/null
 
           run_candidate denied issues "$RUNNER_TEMP/dsh-e2e-label-event.json" label \
             'INPUT_COMMAND=auto' 'INPUT_LABEL-TRIGGER=dsh-e2e-label' \
             'INPUT_ALLOWED-ACTORS=dsh-e2e-no-match' 'INPUT_TASK-ACCESS=read' \
-            'INPUT_PROMPT=This route must remain neutral.' 'INPUT_MAX-TURNS=1'
+            'INPUT_PROMPT=This route must remain neutral.' 'INPUT_MAX-CONTROLLER-STEPS=1'
           denied_result="$(read_output denied result-json)"
-          jq -c '{stage:"denied",conclusion,status,operation,trust:.policy.trust}' <<<"$denied_result"
-          jq -e '.conclusion == "neutral" and .status == "neutral" and .operation == "none"' <<<"$denied_result" >/dev/null
+          jq -c '{stage:"denied",conclusion:.termination.conclusion,status:.termination.status,operation:.operation.kind,trust:.context.policy.trust}' <<<"$denied_result"
+          jq -e '.termination.conclusion == "neutral" and .termination.status == "neutral" and .operation.kind == "none"' <<<"$denied_result" >/dev/null
           jq -s -e '[.[] | select(.route == "label")] | length == 1' "$audit" >/dev/null
 
           # Issue tools need a real repository snapshot, not repeated full-main downloads.
@@ -1601,21 +1597,21 @@ jobs:
             'INPUT_ALLOW-WRITE=true' 'INPUT_RUN-TESTS=true' \
             'INPUT_VALIDATION-INTEGRITY=strict' \
             'INPUT_TEST-COMMANDS=[["node","-e","process.exit(0)"]]' \
-            "INPUT_TASK-OUTPUT-SCHEMA=$task_schema" 'INPUT_MAX-TURNS=5'
+            "INPUT_TASK-OUTPUT-SCHEMA=$task_schema" 'INPUT_MAX-CONTROLLER-STEPS=5'
           github_result="$(read_output github result-json)"
-          github_task="$(read_output github task-output)"
-          jq -c '{stage:"github",conclusion,status,operation,trust:.policy.trust,validation,write,taskOutput,toolReceipts:.loop.toolReceipts}' <<<"$github_result"
+          github_task="$(jq -c .operation.taskOutput <<<"$github_result")"
+          jq -c '{stage:"github",conclusion:.termination.conclusion,status:.termination.status,operation:.operation.kind,trust:.context.policy.trust,validation,publication:.publication,taskOutput:.operation.taskOutput,toolReceipts:.agent.toolReceipts}' <<<"$github_result"
           jq -e '
-            .conclusion == "success" and .operation == "task" and .policy.trust == "trusted-write" and
+            .termination.conclusion == "success" and .operation.kind == "task" and .context.policy.trust == "trusted-write" and
             .validation.status == "passed" and .validation.commandCount == 1 and
-            .write.status == "no-changes" and .taskOutput == {route:"github",accepted:true} and
-            ([.loop.toolReceipts[] | select(.id == "github.issue.labels.set" and .ok == true and .effect == "updated" and .attempts >= 1 and (.reconciled | type) == "boolean")] | length == 1) and
-            ([.loop.toolReceipts[] | select(.id == "github.issue.assignees.set" and .ok == true and .effect == "updated" and .attempts >= 1 and (.reconciled | type) == "boolean")] | length == 1) and
-            (.loop.toolReceipts | any(
+            .publication.writeStatus == "no-changes" and .operation.taskOutput == {route:"github",accepted:true} and
+            ([.agent.toolReceipts[] | select(.id == "github.issue.labels.set" and .ok == true and .effect == "updated" and .attempts >= 1 and (.reconciled | type) == "boolean")] | length == 1) and
+            ([.agent.toolReceipts[] | select(.id == "github.issue.assignees.set" and .ok == true and .effect == "updated" and .attempts >= 1 and (.reconciled | type) == "boolean")] | length == 1) and
+            (.agent.toolReceipts | any(
               .id == "github.comment.create" and .ok == true and .effect == "created" and .reconciled == true and .attempts >= 1
             )) and
-            ([.loop.toolReceipts[] | select(.id == "github.issue.state.update" and .ok == true and .effect == "updated" and .attempts >= 1 and (.reconciled | type) == "boolean")] | length == 1) and
-            ([.loop.toolReceipts[] | select(.id | startswith("github."))] | length == 4)
+            ([.agent.toolReceipts[] | select(.id == "github.issue.state.update" and .ok == true and .effect == "updated" and .attempts >= 1 and (.reconciled | type) == "boolean")] | length == 1) and
+            ([.agent.toolReceipts[] | select(.id | startswith("github."))] | length == 4)
           ' <<<"$github_result" >/dev/null
           jq -e '. == {route:"github",accepted:true}' <<<"$github_task" >/dev/null
 
@@ -1665,13 +1661,13 @@ jobs:
             'INPUT_ALLOWED-TOOLS=["workspace.edit","github.pull.metadata.update"]' \
             'INPUT_ALLOW-WRITE=true' 'INPUT_RUN-TESTS=true' \
             'INPUT_VALIDATION-INTEGRITY=strict' \
-            'INPUT_TEST-COMMANDS=[["node","-e","process.exit(0)"]]' 'INPUT_MAX-TURNS=2'
+            'INPUT_TEST-COMMANDS=[["node","-e","process.exit(0)"]]' 'INPUT_MAX-CONTROLLER-STEPS=2'
           metadata_result="$(read_output metadata result-json)"
-          jq -c '{stage:"metadata",conclusion,status,operation,trust:.policy.trust,validation,write,toolReceipts:.loop.toolReceipts}' <<<"$metadata_result"
+          jq -c '{stage:"metadata",conclusion:.termination.conclusion,status:.termination.status,operation:.operation.kind,trust:.context.policy.trust,validation,publication:.publication,toolReceipts:.agent.toolReceipts}' <<<"$metadata_result"
           jq -e '
-            .conclusion == "success" and .operation == "task" and .policy.trust == "trusted-write" and
-            .validation.status == "passed" and .write.status == "no-changes" and
-            ([.loop.toolReceipts[] | select(
+            .termination.conclusion == "success" and .operation.kind == "task" and .context.policy.trust == "trusted-write" and
+            .validation.status == "passed" and .publication.writeStatus == "no-changes" and
+            ([.agent.toolReceipts[] | select(
               .id == "github.pull.metadata.update" and .ok == true and .effect == "updated" and
               .attempts >= 1 and (.reconciled | type) == "boolean"
             )] | length == 1)
@@ -1686,12 +1682,12 @@ jobs:
             'INPUT_COMMAND=diagnose' 'INPUT_PERMISSION-PROFILE=custom' \
             'INPUT_ALLOWED-TOOLS=["github.checks.read"]' 'INPUT_ISOLATION=none' \
             "INPUT_DSH-EXECUTABLE=$GITHUB_WORKSPACE/candidate-action/node_modules/@deepseek-ai/dsh/lib/bin.js" \
-            'INPUT_MAX-TURNS=2'
+            'INPUT_MAX-CONTROLLER-STEPS=2'
           checks_result="$(read_output checks result-json)"
-          jq -c '{stage:"checks",conclusion,status,operation,trust:.policy.trust,toolReceipts:.loop.toolReceipts}' <<<"$checks_result"
+          jq -c '{stage:"checks",conclusion:.termination.conclusion,status:.termination.status,operation:.operation.kind,trust:.context.policy.trust,toolReceipts:.agent.toolReceipts}' <<<"$checks_result"
           jq -e '
-            .conclusion == "success" and .operation == "diagnose" and .policy.trust == "trusted-read" and
-            (.loop.toolReceipts | any(.id == "github.checks.read" and .ok == true and .effect == "read"))
+            .termination.conclusion == "success" and .operation.kind == "diagnose" and .context.policy.trust == "trusted-read" and
+            (.agent.toolReceipts | any(.id == "github.checks.read" and .ok == true and .effect == "read"))
           ' <<<"$checks_result" >/dev/null
 
           run_candidate native_write issue_comment "$RUNNER_TEMP/dsh-e2e-github-event.json" native-write \
@@ -1699,23 +1695,23 @@ jobs:
             "INPUT_ALLOWED-ACTORS=$actor" 'INPUT_INCLUDE-COMMENTS-BY-ACTOR=*' \
             "INPUT_EXCLUDE-COMMENTS-BY-ACTOR=$actor,github-actions[bot]" \
             'INPUT_PERMISSION-PROFILE=custom' 'INPUT_ALLOWED-TOOLS=["workspace.edit"]' \
-            'INPUT_ALLOW-WRITE=true' 'INPUT_ISOLATION=docker' 'INPUT_MAX-TURNS=1' \
+            'INPUT_ALLOW-WRITE=true' 'INPUT_ISOLATION=docker' 'INPUT_MAX-CONTROLLER-STEPS=1' \
             'INPUT_RUN-TESTS=true' \
             'INPUT_TEST-COMMANDS=[["npm","ci","--ignore-scripts"],["npm","run","typecheck"],["npm","test"]]'
           native_write_result="$(read_output native_write result-json)"
-          jq -c '{stage:"native-write",conclusion,status,operation,trust:.policy.trust,dsh,permissions,toolPolicy,isolation,write}' <<<"$native_write_result"
+          jq -c '{stage:"native-write",conclusion:.termination.conclusion,status:.termination.status,operation:.operation.kind,trust:.context.policy.trust,dsh:.context.dsh,permissions:.context.permission,toolPolicy:.context.toolPolicy,isolation:.agent.isolation,publication:.publication}' <<<"$native_write_result"
           jq -e '
-            .conclusion == "success" and .operation == "task" and .policy.trust == "trusted-write" and
-            .dsh.mode == "native" and .dsh.composition == "dsh-native-headless" and
-            .permissions.effectiveTools == ["workspace.edit"] and .permissions.workspaceWrite == true and
-            .toolPolicy.policyOwner == "dsh" and (.toolPolicy.observedTools | length > 0) and
-            (.toolPolicy | has("effectiveTools") | not) and
-            (.toolPolicy | has("requestedTools") | not) and
-            (.toolPolicy | has("deniedTools") | not) and
-            .isolation.backend == "docker" and .isolation.workspaceAccess == "read-write" and
-            .write.status == "no-changes" and
-            (.authority.knownSources | length == 2) and
-            (.authority.knownSources | all(
+            .termination.conclusion == "success" and .operation.kind == "task" and .context.policy.trust == "trusted-write" and
+            .context.dsh.mode == "native" and .context.dsh.composition == "dsh-native-headless" and
+            .context.permission.effectiveTools == ["workspace.edit"] and .context.permission.workspaceWrite == true and
+            .context.toolPolicy.policyOwner == "dsh" and (.context.toolPolicy.observedTools | length > 0) and
+            (.context.toolPolicy | has("effectiveTools") | not) and
+            (.context.toolPolicy | has("requestedTools") | not) and
+            (.context.toolPolicy | has("deniedTools") | not) and
+            .agent.isolation.backend == "docker" and .agent.isolation.workspaceAccess == "read-write" and
+            .publication.writeStatus == "no-changes" and
+            (.context.authority.knownSources | length == 2) and
+            (.context.authority.knownSources | all(
               .kind == "controller-credential" and .holder == "controller" and
               .credentialExposure == "not-exposed-to-worker"
             ))
@@ -1724,33 +1720,33 @@ jobs:
           run_candidate native_checks pull_request "$RUNNER_TEMP/dsh-e2e-checks-event.json" native-checks \
             'INPUT_DSH-MODE=native' 'INPUT_COMMAND=diagnose' 'INPUT_PERMISSION-PROFILE=custom' \
             'INPUT_ALLOWED-TOOLS=["github.checks.read"]' 'INPUT_ISOLATION=docker' \
-            'INPUT_MAX-TURNS=2'
+            'INPUT_MAX-CONTROLLER-STEPS=2'
           native_checks_result="$(read_output native_checks result-json)"
-          jq -c '{stage:"native-checks",conclusion,status,operation,trust:.policy.trust,dsh,permissions,toolPolicy,isolation,toolReceipts:.loop.toolReceipts}' <<<"$native_checks_result"
+          jq -c '{stage:"native-checks",conclusion:.termination.conclusion,status:.termination.status,operation:.operation.kind,trust:.context.policy.trust,dsh:.context.dsh,permissions:.context.permission,toolPolicy:.context.toolPolicy,isolation:.agent.isolation,toolReceipts:.agent.toolReceipts}' <<<"$native_checks_result"
           jq -e '
-            .conclusion == "success" and .operation == "diagnose" and .policy.trust == "trusted-read" and
-            .dsh.mode == "native" and .dsh.composition == "dsh-native-headless" and
-            .permissions.effectiveTools == ["github.checks.read"] and
-            .toolPolicy.policyOwner == "dsh" and (.toolPolicy.observedTools | length > 0) and
-            (.toolPolicy | has("effectiveTools") | not) and
-            (.toolPolicy | has("requestedTools") | not) and
-            (.toolPolicy | has("deniedTools") | not) and
-            .isolation.backend == "docker" and .isolation.workspaceAccess == "read-only" and
-            (.loop.toolReceipts | any(.id == "github.checks.read" and .ok == true and .effect == "read"))
+            .termination.conclusion == "success" and .operation.kind == "diagnose" and .context.policy.trust == "trusted-read" and
+            .context.dsh.mode == "native" and .context.dsh.composition == "dsh-native-headless" and
+            .context.permission.effectiveTools == ["github.checks.read"] and
+            .context.toolPolicy.policyOwner == "dsh" and (.context.toolPolicy.observedTools | length > 0) and
+            (.context.toolPolicy | has("effectiveTools") | not) and
+            (.context.toolPolicy | has("requestedTools") | not) and
+            (.context.toolPolicy | has("deniedTools") | not) and
+            .agent.isolation.backend == "docker" and .agent.isolation.workspaceAccess == "read-only" and
+            (.agent.toolReceipts | any(.id == "github.checks.read" and .ok == true and .effect == "read"))
           ' <<<"$native_checks_result" >/dev/null
 
           # PR review must publish both its sticky summary and an inline comment
           # anchored to the actual immutable fixture diff.
           run_candidate review pull_request "$RUNNER_TEMP/dsh-e2e-checks-event.json" review \
             'INPUT_COMMAND=review' 'INPUT_PERMISSION-PROFILE=strict' \
-            'INPUT_ISOLATION=docker' 'INPUT_MAX-TURNS=1'
+            'INPUT_ISOLATION=docker' 'INPUT_MAX-CONTROLLER-STEPS=1'
           review_comments="$(gh api "repos/$REPOSITORY/pulls/$CHECKS_PR/comments?per_page=100")"
           echo "review_comment_ids=$(jq -c '[.[].id]' <<<"$review_comments")" >> "$GITHUB_OUTPUT"
           review_result="$(read_output review result-json)"
           jq -e '
-            .conclusion == "success" and .operation == "review" and
-            .publication.inlinePublished == 1 and .publication.summaryOnly == 0 and
-            .publication.failures == []
+            .termination.conclusion == "success" and .operation.kind == "review" and
+            .publication.review.inlinePublished == 1 and .publication.review.summaryOnly == 0 and
+            .publication.review.failures == []
           ' <<<"$review_result" >/dev/null
           jq -e --arg head "$CHECKS_HEAD" --arg path "$FIXTURE_PATH" \
             --arg marker "DSH E2E inline review $GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT" '
@@ -1778,7 +1774,7 @@ jobs:
           fix_ok=true
           run_candidate fix pull_request "$RUNNER_TEMP/dsh-e2e-checks-event.json" fix \
             'INPUT_COMMAND=fix' 'INPUT_ALLOW-WRITE=true' 'INPUT_PERMISSION-PROFILE=custom' \
-            'INPUT_ALLOWED-TOOLS=["workspace.edit","native.bash"]' 'INPUT_ISOLATION=docker' 'INPUT_MAX-TURNS=1' \
+            'INPUT_ALLOWED-TOOLS=["workspace.edit","native.bash"]' 'INPUT_ISOLATION=docker' 'INPUT_MAX-CONTROLLER-STEPS=1' \
             'INPUT_RUN-TESTS=true' 'INPUT_VALIDATION-INTEGRITY=strict' \
             "INPUT_TEST-COMMANDS=$validation" \
             'INPUT_CONTAINER-IMAGE=docker.io/library/node:24.18.0-bookworm@sha256:5711a0d445a1af54af9589066c646df387d1831a608226f4cd694fc59e745059' \
@@ -1788,10 +1784,10 @@ jobs:
           [[ "$fix_ok" == "true" ]]
           fix_result="$(read_output fix result-json)"
           jq -e --arg head "$fixed_head" --arg path "$FIXTURE_PATH" '
-            .conclusion == "success" and .operation == "fix" and .write.status == "success" and
-            .write.commitSha == $head and .write.changedPaths == [$path] and
+            .termination.conclusion == "success" and .operation.kind == "fix" and .publication.writeStatus == "success" and
+            .publication.commitSha == $head and .publication.changedPaths == [$path] and
             .validation.status == "passed" and .validation.integrity.status == "clean" and
-            ([.loop.dshToolReceipts[] | select(.id == "native.bash" and .completed and .ok)] | length == 1)
+            ([.agent.dshToolReceipts[] | select(.id == "native.bash" and .completed and .ok)] | length == 1)
           ' <<<"$fix_result" >/dev/null
           FIXED_HEAD="$fixed_head" node .github/e2e/assert-business-effects.mjs fix
 
@@ -1821,7 +1817,7 @@ jobs:
           implement_ok=true
           run_candidate implement issues "$RUNNER_TEMP/dsh-e2e-implementation-event.json" implement \
             'INPUT_COMMAND=implement' 'INPUT_ALLOW-WRITE=true' 'INPUT_PERMISSION-PROFILE=custom' \
-            'INPUT_ALLOWED-TOOLS=["workspace.edit","native.bash"]' 'INPUT_ISOLATION=docker' 'INPUT_MAX-TURNS=1' \
+            'INPUT_ALLOWED-TOOLS=["workspace.edit","native.bash"]' 'INPUT_ISOLATION=docker' 'INPUT_MAX-CONTROLLER-STEPS=1' \
             "INPUT_BASE-BRANCH=$CHECKS_BASE_BRANCH" 'INPUT_BRANCH-PREFIX=dsh-e2e/' \
             'INPUT_BRANCH-NAME-TEMPLATE={{prefix}}implement-{{entityNumber}}-{{key}}' \
             'INPUT_RUN-TESTS=true' 'INPUT_VALIDATION-INTEGRITY=strict' "INPUT_TEST-COMMANDS=$validation" \
@@ -1833,18 +1829,18 @@ jobs:
           [[ "$implement_ok" == "true" ]]
           implementation_result="$(read_output implement result-json)"
           jq -e --arg branch "$implementation_branch" --arg path "$implementation_path" '
-            .conclusion == "success" and .operation == "implement" and
-            .write.status == "success" and .write.branchName == $branch and
-            (.write.pullRequestNumber | type == "number") and
+            .termination.conclusion == "success" and .operation.kind == "implement" and
+            .publication.writeStatus == "success" and .publication.branchName == $branch and
+            (.publication.pullRequestNumber | type == "number") and
             .validation.status == "passed" and .validation.integrity.status == "clean" and
-            ([.loop.dshToolReceipts[] | select(.id == "native.bash" and .completed and .ok)] | length == 1)
+            ([.agent.dshToolReceipts[] | select(.id == "native.bash" and .completed and .ok)] | length == 1)
           ' <<<"$implementation_result" >/dev/null
           IMPLEMENTATION_BRANCH="$implementation_branch" IMPLEMENTATION_KEY="$implementation_key" \
             IMPLEMENTATION_PATH="$implementation_path" \
-            IMPLEMENTATION_PULL_NUMBER="$(jq -r .write.pullRequestNumber <<<"$implementation_result")" \
+            IMPLEMENTATION_PULL_NUMBER="$(jq -r .publication.pullRequestNumber <<<"$implementation_result")" \
             node .github/e2e/assert-business-effects.mjs implement
           for business_result in "$review_result" "$fix_result" "$implementation_result"; do
-            jq -c '{operation,conclusion,publication,validation,write,dshToolReceipts:.loop.dshToolReceipts}' <<<"$business_result"
+            jq -c '{operation:.operation.kind,conclusion:.termination.conclusion,review:.publication.review,validation,publication:.publication,dshToolReceipts:.agent.dshToolReceipts}' <<<"$business_result"
           done
 
           fixture_hash="$(printf '%s' "$fixture_key" | sha256sum | cut -d' ' -f1)"

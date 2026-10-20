@@ -109,14 +109,13 @@ controller instructions.
   formatter receives result data and the output contract, not execution hooks
   or a tool catalog. Its terminal result remains untrusted, must pass the same
   strict schema, and cannot request a tool or override a known operation/state.
-  A residual `toolRequest` field in an already known `final` or `blocked`
-  result may only be discarded as invalid formatting, never dispatched or
-  replayed. An actual `needs_tool` result cannot enter this terminal repair.
+  Protocol v2 accepts only `final` and `blocked`; Controller tools execute
+  inside DSH through the official MCP client, never through terminal output.
   It uses the run-scoped credential proxy and the remaining deadline. Existing
   validation failures, cancellation, credential checks, Gateway revalidation,
   and write postconditions remain authoritative.
 - Optional maintainer-defined `taskOutput` remains untrusted data inside the
-  fixed schema-v1 Controller envelope. Its root-object schema and value are
+  fixed protocol-v2 Controller envelope. Its root-object schema and value are
   bounded for bytes and complexity; references, combinators, patterns, unknown
   keywords, and prototype-sensitive keys fail closed.
 - The controlled root Profile repeats that machine-output rule after rc.2
@@ -219,7 +218,7 @@ Native reports `policyOwner: dsh` and the root Agent's runtime-observed names in
 `observedTools`; native `toolPolicy` contains no Controller `effectiveTools`.
 Observation is telemetry, not a grant, and does not supersede any outer
 boundary. The Action records the selected mode and stable composition identity
-in `dsh-mode`, `dsh-composition`, the step summary, and `result-json.dsh`.
+in the step summary and `result-json.context.dsh`.
 
 Fork and other untrusted runs require Docker isolation. Trusted writes also
 require Docker and a full `name@sha256:<64 lowercase hex>` image reference. The
@@ -243,7 +242,7 @@ mid-conversation tool-change beta. `base-url` and `web-search-base-url` remain
 trusted credential-routing inputs. The isolation report records actual workspace
 and network access, including the shared worker limitations.
 
-The additive `result-json.authority` audit records only authority sources that
+The additive `result-json.context.authority` audit records only authority sources that
 the Action explicitly knows, configures, or mediates. Its fixed Controller
 entries state that the real GitHub credential is withheld from the worker and
 that the real DeepSeek credential is withheld behind the run-scoped proxy. An
@@ -315,14 +314,16 @@ SHA, raw URL, REST route, GraphQL document, or credential. Those identities
 come only from the Controller-validated event snapshot.
 
 `GitHubAuthorityGateway` consumes the Controller-produced `SecurityPolicy` and
-owns GitHub-specific authorization and binding, deferred mutation, the
-validation gate, immediate revalidation, backend execution, reconciliation, and
-receipts. `GitHubToolBackend` remains a transport primitive. Read checks require
+owns GitHub-specific authorization and binding, deferred mutation, immediate
+revalidation, backend execution, reconciliation, and receipts. Publication owns
+repository validation and coordinates the final flush. `GitHubToolBackend` remains a transport primitive. Read checks require
 a compatible immutable head and `readCi`. Mutations require an explicitly
-allowed exact ID, same-repository `trusted-write`,
-`allow-write=true`, a compatible current entity, Docker, and successful fixed
-Controller validation. A model request is only queued; malformed or blocked
-final output, cancellation, or validation failure discards it. Before flushing,
+allowed exact ID, a trusted same-repository context, a currently write-authorized
+actor, `allow-write=true`, and a compatible current entity. Pure metadata
+operations do not require repository tests or a writable workspace. Code
+persistence additionally requires Docker and successful fixed Controller
+validation. A model request is only queued; malformed or blocked final output,
+cancellation, or a required validation failure discards it. Before flushing,
 the Controller revalidates the repository/entity binding, sanitizes public
 text and reserved markers, then uses bounded attempts, postconditions,
 ambiguous-failure reconciliation, and receipts. The GitHub token never enters
@@ -575,8 +576,8 @@ token. It includes package-script entrypoints and Node wrapper options such as
 preload modules, and treats replacement/removal of bound toolchain
 manifests/locks or validation keys hidden by unrelated additions as
 control-plane changes. Graph construction and replay planning remain separate
-from execution; validation and validation integrity must both pass before any
-GitHub mutation.
+from execution; the configured validation and integrity policy must pass before
+repository code persistence.
 
 - `off` records the classified changes without blocking them.
 - `warn` is the default and reports changed categories and weakening signals.
@@ -588,8 +589,8 @@ GitHub mutation.
 Signals such as newly focused/skipped tests or removing tests without a
 replacement are considered in the strict decision. The selected mode is a
 trusted Action input, not repository or model data. The Controller records the
-integrity audit and disposition in `result-json` and the step summary before any
-GitHub mutation.
+integrity audit and disposition in `result-json` and the step summary before
+repository code persistence.
 
 This is not complete cross-language dependency provenance and is not a formal
 integrity proof. Unknown language ecosystems, dependency-resolution behavior,
@@ -620,8 +621,9 @@ mutation.
   same-repository PR-head fix path, which rejects a head ref equal to the
   repository default branch. Merging a task PR into the default branch remains
   a separate repository action.
-- Controller GitHub mutation tools use the same trust and validation policy but
-  remain bound to the current Issue/PR identity. Model output cannot retarget a
+- Controller GitHub mutation tools retain fresh write authorization and remain
+  bound to the current Issue/PR identity. Pure metadata does not require the
+  repository validation used for code persistence. Model output cannot retarget a
   repository, entity, head, or PR base branch.
 - The controller owns the `summary`, `diagnosis`, `write` and `task` sticky markers.
   Read-only progress reuses the applicable final-result marker and updates it in

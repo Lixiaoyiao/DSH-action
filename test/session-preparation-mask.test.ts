@@ -60,7 +60,7 @@ function sourceResponses(automatic: boolean, resume: boolean) {
   const archive = zipSync({
     "manifest.json": Buffer.from(
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         repository: { owner: "octo", repo: "repo" },
         workflow: {
           path: `.github/workflows/${workflow}`,

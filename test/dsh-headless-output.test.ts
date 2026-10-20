@@ -5,7 +5,7 @@ import { parseDshOutput } from "../src/dsh/schema.js";
 
 const session = { type: "session", sessionId: "session-fixture", cwd: "/workspace" };
 const result = {
-  protocolVersion: 1,
+  protocolVersion: 2,
   operation: "task",
   state: "final",
   summary: "Done",

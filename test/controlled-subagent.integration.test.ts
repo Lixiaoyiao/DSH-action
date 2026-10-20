@@ -30,7 +30,7 @@ it("waits through a parent acknowledgement and returns the managed child's compl
   const waitingText = "Waiting for the subagent.";
   const childAnswer = "CONTROLLED_CHILD_DONE";
   const output = {
-    protocolVersion: 1,
+    protocolVersion: 2,
     operation: "task",
     state: "final",
     summary: childAnswer,

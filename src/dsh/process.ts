@@ -12,12 +12,15 @@ import {
 import type { DshError } from "./errors.js";
 
 export const DEFAULT_DSH_PROCESS_KILL_GRACE_MS = 2_000;
+export const MAX_DSH_PROCESS_INPUT_BYTES = 64 * 1024;
 
 export interface DshProcessSpec {
   readonly command: string;
   readonly args: readonly string[];
   readonly cwd: string;
   readonly env: NodeJS.ProcessEnv;
+  /** One-time bootstrap bytes. The worker never inherits the Controller's stdin. */
+  readonly input?: string;
   /** Optional backend cleanup command, e.g. docker kill <random-name>. */
   readonly termination?: Omit<DshProcessSpec, "termination">;
 }
@@ -120,6 +123,8 @@ export async function executeBoundedDshProcess(
   positiveInteger(limits.maxStdoutBytes, "maxStdoutBytes");
   positiveInteger(limits.maxStderrBytes, "maxStderrBytes");
   positiveInteger(limits.maxCombinedBytes, "maxCombinedBytes");
+  if (spec.input !== undefined && Buffer.byteLength(spec.input) > MAX_DSH_PROCESS_INPUT_BYTES)
+    throw new DshConfigurationError("DSH process input exceeds its limit");
   assertSafeArgv(spec.command, spec.args);
 
   if (limits.signal?.aborted === true) throw new DshAbortedError();
@@ -135,7 +140,6 @@ export async function executeBoundedDshProcess(
         stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true,
       });
-      child.stdin.end();
     } catch (error: unknown) {
       rejectPromise(new DshSpawnError("Failed to spawn DSH", { cause: error }));
       return;
@@ -197,6 +201,12 @@ export async function executeBoundedDshProcess(
           new DshSpawnError("Failed to spawn or communicate with DSH", { cause: error }),
       );
     });
+    // A worker that exits before consuming bootstrap must fail the invocation,
+    // and a broken pipe must never become an unhandled stream exception.
+    child.stdin.once("error", (error: Error) => {
+      stop(new DshSpawnError("Failed to deliver DSH bootstrap", { cause: error }));
+    });
+    child.stdin.end(spec.input);
     child.once("close", (exitCode, signal) => {
       finish();
       if (terminalError !== undefined) {

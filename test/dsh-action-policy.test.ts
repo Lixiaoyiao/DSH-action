@@ -170,15 +170,6 @@ describe("Action-owned DSH ToolRuntime policy", () => {
     );
     expect(rootAssembly.sections.at(-1)?.text).toContain('Controller-selected operation is "task"');
     expect(rootAssembly.sections.at(-1)?.text).toContain('operation field must be exactly "task"');
-    expect(rootAssembly.sections.at(-1)?.text).toContain(
-      "Only an exact ID present inside the Controller-authored TRUSTED_TOOL_CATALOG_JSON array",
-    );
-    expect(rootAssembly.sections.at(-1)?.text).toContain(
-      "An ID absent from that array is never requestable through needs_tool",
-    );
-    expect(rootAssembly.sections.at(-1)?.text).toContain(
-      "Never imitate, prepare for, or replace a listed Controller catalog tool",
-    );
     expect(renderPrompt(rootAssembly)).toContain("never permits bytes outside the JSON object");
 
     const { agent: childAgent } = await createScopedAgent(context, [], "subagent");

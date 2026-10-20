@@ -105,6 +105,7 @@ export function evaluatePolicy(input: PolicyInput): SecurityPolicy {
   }
 
   if (!writeRequested) {
+    const metadataWrite = sameRepository && actorCanWrite && allowWrite && !targetEvent;
     return {
       trust: sameRepository && actorCanWrite ? "trusted-read" : "untrusted",
       allowed: true,
@@ -112,7 +113,13 @@ export function evaluatePolicy(input: PolicyInput): SecurityPolicy {
         repositoryState === "same"
           ? "Read-only operation; repository content remains untrusted data"
           : "Unresolved or fork pull request restricted to non-executing review or diagnosis",
-      capabilities: readCapabilities,
+      capabilities: {
+        ...readCapabilities,
+        manageIssueLabels: metadataWrite,
+        manageIssueAssignees: metadataWrite,
+        updateIssueState: metadataWrite,
+        updatePullRequestMetadata: metadataWrite,
+      },
     };
   }
 

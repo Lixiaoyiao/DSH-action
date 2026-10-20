@@ -17,7 +17,7 @@ import {
   MAX_SESSION_ATTACHMENTS,
   MAX_SESSION_ATTACHMENT_BYTES,
   MAX_SESSION_ATTACHMENTS_BYTES,
-  parseSessionManifest,
+  admitSessionCheckpointEnvelope,
   SESSION_PAYLOAD_FILE,
   type SessionBinding,
   type SessionCheckpoint,
@@ -560,6 +560,10 @@ function assertSettled(artifact: RestoredArtifact): void {
 
 /** Validate genuine persistence using the released public codec without rewriting any bytes. */
 export function validateSessionPayload(options: PayloadOptions): SessionPayloadInspection {
+  return inspectSessionPayload(options, createHash("sha256").update(options.payload).digest("hex"));
+}
+
+function inspectSessionPayload(options: PayloadOptions, sha256: string): SessionPayloadInspection {
   safeSessionId(options.sessionId);
   projectName(options.workspacePath);
   const bytes = options.payload.byteLength;
@@ -677,7 +681,7 @@ export function validateSessionPayload(options: PayloadOptions): SessionPayloadI
       sessionId: artifact.header.id,
       eventCount: artifact.events.length,
       bytes,
-      sha256: createHash("sha256").update(options.payload).digest("hex"),
+      sha256,
       ...(attachments.length > 0 ? { attachments } : {}),
     };
   } catch (error: unknown) {
@@ -916,25 +920,33 @@ export async function exportSessionCheckpoint(options: ExportOptions): Promise<S
       ...options,
       sessionId: options.manifest.session.sessionId,
     });
-    const manifest = parseSessionManifest(
+    const checkpoint = admitSessionCheckpointEnvelope(
       {
-        ...options.manifest,
-        payload: { file: SESSION_PAYLOAD_FILE, bytes: inspection.bytes, sha256: inspection.sha256 },
-        ...(attachments === undefined
-          ? {}
-          : {
-              attachments: Object.entries(attachments).map(([file, bytes]) => ({
-                file,
-                bytes: bytes.byteLength,
-                sha256: createHash("sha256").update(bytes).digest("hex"),
-              })),
-            }),
+        manifest: {
+          ...options.manifest,
+          payload: {
+            file: SESSION_PAYLOAD_FILE,
+            bytes: inspection.bytes,
+            sha256: inspection.sha256,
+          },
+          ...(attachments === undefined
+            ? {}
+            : {
+                attachments: Object.entries(attachments).map(([file, bytes]) => ({
+                  file,
+                  bytes: bytes.byteLength,
+                  sha256: createHash("sha256").update(bytes).digest("hex"),
+                })),
+              }),
+        },
+        payload,
+        ...(attachments === undefined ? {} : { attachments }),
       },
       options.now,
     );
     // A manifest may contain maintained labels. Scan it too; never export known credentials.
-    inspectJson(manifest, secretValues(options.knownSecrets), { nodes: 0 });
-    return { manifest, payload, ...(attachments === undefined ? {} : { attachments }) };
+    inspectJson(checkpoint.manifest, secretValues(options.knownSecrets), { nodes: 0 });
+    return checkpoint;
   } catch (error: unknown) {
     if (error instanceof PolicyDeniedError) throw error;
     denied("could not read its dedicated storage; check files and permissions");
@@ -945,30 +957,26 @@ export async function exportSessionCheckpoint(options: ExportOptions): Promise<S
 export async function importSessionCheckpoint(
   options: ImportOptions,
 ): Promise<SessionPayloadInspection> {
-  const manifest = parseSessionManifest(options.checkpoint.manifest, options.now);
+  const checkpoint = admitSessionCheckpointEnvelope(options.checkpoint, options.now);
+  const manifest = checkpoint.manifest;
   validateSessionManifestBinding(manifest, options.binding, options.source);
-  if (options.checkpoint.payload.byteLength > SESSION_CHECKPOINT_LIMITS.payloadBytes)
-    denied("exceeds the 4 MiB payload limit");
-  const payload = Buffer.from(options.checkpoint.payload);
-  const inspection = validateSessionPayload({
-    ...options,
-    payload,
-    sessionId: manifest.session.sessionId,
-    allowAttachments: options.dshHome !== undefined,
-  });
-  if (
-    manifest.payload.bytes !== inspection.bytes ||
-    manifest.payload.sha256 !== inspection.sha256
-  ) {
-    denied("payload integrity does not match its manifest");
-  }
+  const payload = checkpoint.payload;
+  const inspection = inspectSessionPayload(
+    {
+      ...options,
+      payload,
+      sessionId: manifest.session.sessionId,
+      allowAttachments: options.dshHome !== undefined,
+    },
+    manifest.payload.sha256,
+  );
   inspectJson(manifest, secretValues(options.knownSecrets), { nodes: 0 });
   try {
     const root = await checkedRoot(options.persistenceRoot);
     await exactEntries(root, [], []);
     await restoreCheckpointAttachments(
       inspection.attachments ?? [],
-      options.checkpoint,
+      checkpoint,
       options.dshHome,
       secretValues(options.knownSecrets),
     );

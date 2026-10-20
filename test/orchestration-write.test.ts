@@ -1,380 +1,209 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import type * as ImplementationModule from "../src/commands/implement.js";
-
-import type { RoutedCommand } from "../src/commands/router.js";
-import type { DshRunResult } from "../src/dsh/runner.js";
-import type { GitHubContext } from "../src/github/context.js";
+import { afterEach, expect, it, vi } from "vitest";
+import type * as ProcessTransport from "../src/security/argv.js";
 import type { IssueSnapshot, PullRequestSnapshot } from "../src/github/fetch.js";
-import { issueTaskIdentity } from "../src/orchestration/context.js";
-import type { SecurityPolicy } from "../src/security/policy.js";
-import type { WorkspaceSnapshot } from "../src/write/workspace.js";
-import { inputs, pullRequestContext } from "./helpers.js";
-import { githubClientFixture } from "./helpers/github-client.js";
+import type { AuthorizedRun } from "../src/orchestration/prepare.js";
+import { RunLifecycle } from "../src/orchestration/lifecycle.js";
+import { createPublication } from "../src/orchestration/operation-finalizer.js";
+import { evaluatePolicy } from "../src/security/policy.js";
+import type { GitHubToolBackend } from "../src/tools/github-backend.js";
+import { inputs, permissions, pullRequestContext } from "./helpers.js";
+import {
+  agentResult,
+  baseSha,
+  cleanupWriteFixtures,
+  commitSha,
+  issueIdentity,
+  successfulValidation,
+  writeFixture,
+} from "./helpers/repository-write.js";
 
-const mocks = vi.hoisted(() => ({
-  finishAutomationTask: vi.fn(),
-  finishFix: vi.fn(),
-  finishImplementation: vi.fn<typeof ImplementationModule.finishImplementation>(),
+const transport = vi.hoisted(() => ({ process: vi.fn() }));
+vi.mock("../src/security/argv.js", async (original) => ({
+  ...(await original<typeof ProcessTransport>()),
+  runCommand: transport.process,
 }));
-
-vi.mock("../src/commands/implement.js", () => ({
-  finishImplementation: mocks.finishImplementation,
-}));
-vi.mock("../src/commands/task.js", () => ({
-  finishAutomationTask: mocks.finishAutomationTask,
-}));
-vi.mock("../src/commands/fix.js", () => ({ finishFix: mocks.finishFix }));
-
-import { executeWrite } from "../src/orchestration/write.js";
-
-const client = githubClientFixture();
-const workspace: WorkspaceSnapshot = {
-  sourceRoot: "source",
-  workerRoot: "worker",
-  baseline: new Map(),
-};
-const policy: SecurityPolicy = {
-  trust: "trusted-write",
-  allowed: true,
-  reason: "test",
-  capabilities: {
-    readRepository: true,
-    readCi: true,
-    publishComments: true,
-    executeRepositoryCode: true,
-    loadExtensions: true,
-    accessNetwork: true,
-    modifyWorkspace: true,
-    commit: true,
-    push: true,
-    createPullRequest: true,
-    manageIssueLabels: true,
-    manageIssueAssignees: true,
-    updateIssueState: true,
-    updatePullRequestMetadata: true,
-  },
-};
-const result: DshRunResult = {
-  output: {
-    protocolVersion: 1,
-    operation: "task",
-    state: "final",
-    summary: "Applied the requested change",
-    findings: [],
-  },
-  durationMs: 1,
-  isolationReport: {
-    backend: "docker",
-    credentialMediated: true,
-    repoToolsEnabled: true,
-    processIsolated: true,
-    networkIsolated: false,
-    workspaceAccess: "read-write",
-    extensionProfile: "github-action",
-    limitations: [],
-  },
-};
-const issue: IssueSnapshot = {
-  kind: "issue",
-  number: 7,
-  title: "Implement the request",
-  body: "Body",
-  author: "alice",
-  state: "open",
-  updatedAt: "2026-08-22T00:00:00Z",
-  contentFingerprint: "f".repeat(64),
-  comments: [],
-};
-const pullRequest: PullRequestSnapshot = {
-  kind: "pull_request",
-  number: 8,
-  title: "Fix the regression",
-  body: "Body",
-  author: "alice",
-  baseSha: "b".repeat(40),
-  baseRef: "main",
-  baseRepository: "octo/repo",
-  baseRepositoryId: 1,
-  headSha: "a".repeat(40),
-  headRef: "feature",
-  headRepository: "octo/repo",
-  headRepositoryId: 1,
-  draft: false,
-  isFork: false,
-  changedFiles: [],
-  diffTruncated: false,
-  comments: [],
-};
-const entityContext = pullRequestContext({
-  isPullRequest: false,
-  repository: {
-    id: 1,
-    owner: "octo",
-    repo: "repo",
-    fullName: "octo/repo",
-    defaultBranch: "trunk",
-  },
+afterEach(async () => {
+  vi.clearAllMocks();
+  await cleanupWriteFixtures();
 });
-const automationContext = {
-  kind: "automation",
-  rawEventName: "workflow_dispatch",
-  eventName: "workflow_dispatch",
-  runId: "10",
-  actor: "alice",
-  repository: {
-    id: 1,
-    owner: "octo",
-    repo: "repo",
-    fullName: "octo/repo",
-    defaultBranch: "trunk",
-  },
-  payload: {},
-  isPullRequestTarget: false,
-} satisfies GitHubContext;
 
-function command(operation: RoutedCommand["operation"]): RoutedCommand {
-  return {
+async function publicationFixture(
+  operation: "task" | "implement" | "fix" | "diagnose",
+  metadataOnly = false,
+) {
+  const repository = await writeFixture();
+  const context = pullRequestContext({
+    isPullRequest: operation === "fix",
+    entityNumber: 7,
+    repository: { id: 1, owner: "o", repo: "r", fullName: "o/r", defaultBranch: "main" },
+  });
+  const snapshot: IssueSnapshot | PullRequestSnapshot =
+    operation === "fix"
+      ? {
+          kind: "pull_request",
+          number: 7,
+          title: "Fix",
+          body: "Body",
+          author: "alice",
+          comments: [],
+          baseSha,
+          baseRef: "main",
+          baseRepository: "o/r",
+          baseRepositoryId: 1,
+          headSha: baseSha,
+          headRef: "feature",
+          headRepository: "o/r",
+          headRepositoryId: 1,
+          draft: false,
+          isFork: false,
+          changedFiles: [],
+          diffTruncated: false,
+        }
+      : {
+          kind: "issue",
+          number: 7,
+          title: "Add a parser",
+          body: "Keep existing behavior",
+          author: "alice",
+          comments: [],
+          ...issueIdentity,
+        };
+  const configured = inputs({
+    allowWrite: true,
+    runTests: !metadataOnly,
+    testCommands: metadataOnly ? [] : [["npm", "test"]],
+  });
+  const command = {
     operation,
-    source: "explicit-input",
-    instructions: "change the code",
-    requestedAccess: "write",
+    requestedAccess: metadataOnly ? ("read" as const) : ("write" as const),
+    source: "explicit-input" as const,
+    instructions: "Act on the bound target",
   };
+  const policy = evaluatePolicy({
+    context,
+    operation,
+    requestedAccess: command.requestedAccess,
+    commandSource: command.source,
+    allowWrite: true,
+    permissions: permissions(true),
+  });
+  const authorized: AuthorizedRun = {
+    client: repository.client,
+    context,
+    command,
+    snapshot,
+    policy,
+    issueNumber: 7,
+    baseBranch: "main",
+    currentRunUrl: "https://github.com/o/r/actions/runs/10",
+    deferWriteProgress: true,
+    revalidateAuthority: repository.revalidateAuthority,
+    initializeProgress: () => undefined,
+  };
+  let labels: readonly string[] = [];
+  const unsupported = () => Promise.reject(new Error("Unexpected metadata transport"));
+  const backend: GitHubToolBackend = {
+    getRepository: () => Promise.resolve({ id: 1 }),
+    getIssue: () =>
+      Promise.resolve({
+        kind: "issue",
+        number: 7,
+        title: "Add a parser",
+        body: "Keep existing behavior",
+        authorId: 101,
+        state: "open",
+        stateReason: null,
+        labels,
+        assignees: [],
+      }),
+    setLabels: (_target, desired) => {
+      labels = desired;
+      return Promise.resolve();
+    },
+    setAssignees: unsupported,
+    updateIssueState: unsupported,
+    listRecentComments: unsupported,
+    createComment: unsupported,
+    getPull: unsupported,
+    updatePull: unsupported,
+    readChecks: unsupported,
+  };
+  const publication = createPublication({
+    authorized,
+    inputs: configured,
+    lifecycle: new RunLifecycle(),
+    workspace: {
+      tempRoot: repository.snapshot.sourceRoot,
+      agentWorkspace: repository.snapshot.workerRoot,
+      ...(metadataOnly ? {} : { snapshot: repository.snapshot, boundWriteSha: baseSha }),
+    },
+    deadlineMs: Date.now() + 30_000,
+    signal: new AbortController().signal,
+    taskIdentity: "task-identity",
+    githubTools: metadataOnly ? ["github.issue.labels.set"] : [],
+    ...(metadataOnly
+      ? {
+          githubBackend: backend,
+          githubBinding: {
+            repositoryId: 1,
+            owner: "o",
+            repo: "r",
+            target: "issue" as const,
+            entityNumber: 7,
+            ...issueIdentity,
+          },
+        }
+      : {}),
+  });
+  return { repository, publication, labels: () => labels };
 }
 
-beforeEach(() => {
-  vi.clearAllMocks();
-  mocks.finishImplementation.mockResolvedValue({
-    branch: "dsh/implement",
-    pullNumber: 11,
-    url: "https://github.com/octo/repo/pull/11",
-  });
-  mocks.finishAutomationTask.mockResolvedValue({
-    branch: "dsh/task",
-    pullNumber: 12,
-    url: "https://github.com/octo/repo/pull/12",
-  });
-  mocks.finishFix.mockResolvedValue({
-    status: "partial-success",
-    commitSha: "c".repeat(40),
-    paths: ["src/fix.ts"],
-  });
-});
-
-describe("executeWrite", () => {
-  it("routes an Issue implementation with immutable identity and validation deadline", async () => {
-    const onPhase = vi.fn();
-    const write = await executeWrite({
-      authorized: {
-        client: client,
-        context: entityContext,
-        command: command("implement"),
-        policy: policy,
-        snapshot: issue,
-        revalidateAuthority: () => Promise.resolve(),
-      },
-      inputs: inputs({
-        allowWrite: true,
-        baseBranch: "release/next",
-        branchPrefix: "automation/",
-        branchNameTemplate: "{{prefix}}{{operation}}-{{key}}",
-      }),
-      workspaceCopy: workspace,
-      boundWriteSha: "d".repeat(40),
-      agentResult: result,
-      validationDeadlineMs: 123_456,
-      taskIdentity: "task-key",
-      onPhase: onPhase,
-      onValidationPassed: () => undefined,
-      onValidationCommandCount: () => undefined,
+it.each(["task", "implement", "fix"] as const)(
+  "publishes %s through real validation and bound GitHub writes",
+  async (operation) => {
+    transport.process.mockResolvedValue(successfulValidation);
+    const { repository, publication } = await publicationFixture(operation);
+    await expect(publication.attempt(agentResult(operation), 30_000)).resolves.toMatchObject({
+      kind: "write",
     });
-
-    expect(write).toEqual({
-      writeStatus: "success",
-      branchName: "dsh/implement",
-      pullRequestNumber: 11,
-      pullRequestUrl: "https://github.com/octo/repo/pull/11",
+    expect(publication.facts).toMatchObject({
+      validation: { status: "passed", commandCount: 1 },
+      ...(operation === "fix" ? { commitSha } : { pullRequestNumber: 9 }),
     });
-    expect(mocks.finishImplementation).toHaveBeenCalledWith(
-      expect.objectContaining({
-        issueNumber: 7,
-        issueTitle: issue.title,
-        baseBranch: "release/next",
-        boundHeadSha: "d".repeat(40),
-        validationDeadlineMs: 123_456,
-        issueIdentity: {
-          state: issue.state,
-          updatedAt: issue.updatedAt,
-          contentFingerprint: issue.contentFingerprint,
-        },
-        onPhase,
-      }),
+    expect(repository.effects).toContain(operation === "fix" ? "update_ref" : "pull_request");
+  },
+);
+
+it.each(["task", "diagnose"] as const)(
+  "flushes %s metadata without workspace mutation authority or repository test configuration",
+  async (operation) => {
+    const { publication, labels } = await publicationFixture(operation, true);
+    await publication.tools?.invoke(
+      { callId: "labels", id: "github.issue.labels.set", input: { labels: ["triaged"] } },
+      { workspacePath: "unused", timeoutMs: 30_000 },
     );
-    expect(mocks.finishImplementation.mock.calls[0]?.[0].inputs).toMatchObject({
-      branchPrefix: "automation/",
-      branchNameTemplate: "{{prefix}}{{operation}}-{{key}}",
-    });
-  });
-
-  it("routes an Issue task and binds its related Issue identity", async () => {
-    const write = await executeWrite({
-      authorized: {
-        client: client,
-        context: entityContext,
-        command: command("task"),
-        policy: policy,
-        snapshot: issue,
-        revalidateAuthority: () => Promise.resolve(),
-      },
-      inputs: inputs({ allowWrite: true }),
-      workspaceCopy: workspace,
-      boundWriteSha: "d".repeat(40),
-      agentResult: result,
-      validationDeadlineMs: 123_456,
-      taskIdentity: "task-key",
-      onPhase: vi.fn(),
-      onValidationPassed: () => undefined,
-      onValidationCommandCount: () => undefined,
-    });
-
-    expect(write).toMatchObject({ writeStatus: "success", pullRequestNumber: 12 });
-    expect(mocks.finishAutomationTask).toHaveBeenCalledWith(
-      expect.objectContaining({
-        taskIdentity: issueTaskIdentity("task-key", issue),
-        relatedIssue: {
-          number: 7,
-          identity: {
-            state: issue.state,
-            updatedAt: issue.updatedAt,
-            contentFingerprint: issue.contentFingerprint,
-          },
-        },
-      }),
-    );
-  });
-
-  it("routes a same-repository pull request fix to the controller finalizer", async () => {
-    const write = await executeWrite({
-      authorized: {
-        client: client,
-        context: pullRequestContext(),
-        command: command("fix"),
-        policy: policy,
-        snapshot: pullRequest,
-        revalidateAuthority: () => Promise.resolve(),
-      },
-      inputs: inputs({ allowWrite: true, baseBranch: "release/next" }),
-      workspaceCopy: workspace,
-      boundWriteSha: "d".repeat(40),
-      agentResult: result,
-      validationDeadlineMs: 123_456,
-      taskIdentity: "task-key",
-      onPhase: vi.fn(),
-      onValidationPassed: () => undefined,
-      onValidationCommandCount: () => undefined,
-    });
-
-    expect(write).toEqual({
-      writeStatus: "partial-success",
-      commitSha: "c".repeat(40),
-      changedPaths: ["src/fix.ts"],
-    });
-    expect(mocks.finishFix).toHaveBeenCalledWith(
-      expect.objectContaining({
-        identity: {
-          headSha: pullRequest.headSha,
-          headRef: pullRequest.headRef,
-          headRepositoryId: pullRequest.headRepositoryId,
-          baseRepositoryId: pullRequest.baseRepositoryId,
-        },
-        validationDeadlineMs: 123_456,
-      }),
-    );
-  });
-
-  it("routes an entity-less automation task with the bound default branch", async () => {
-    const write = await executeWrite({
-      authorized: {
-        client: client,
-        context: automationContext,
-        command: command("task"),
-        policy: policy,
-        revalidateAuthority: () => Promise.resolve(),
-      },
-      inputs: inputs({
-        allowWrite: true,
-        baseBranch: "release/next",
-        branchPrefix: "automation/",
-        branchNameTemplate: "{{prefix}}{{operation}}-{{key}}",
-      }),
-      workspaceCopy: workspace,
-      boundWriteSha: "d".repeat(40),
-      agentResult: result,
-      validationDeadlineMs: 123_456,
-      taskIdentity: "automation-key",
-      onPhase: vi.fn(),
-      onValidationPassed: () => undefined,
-      onValidationCommandCount: () => undefined,
-    });
-
-    expect(write).toMatchObject({ writeStatus: "success", branchName: "dsh/task" });
-    expect(mocks.finishAutomationTask).toHaveBeenCalledWith(
-      expect.objectContaining({
-        baseBranch: "release/next",
-        taskIdentity: "automation-key",
-        boundHeadSha: "d".repeat(40),
-        branchPrefix: "automation/",
-        branchNameTemplate: "{{prefix}}{{operation}}-{{key}}",
-      }),
-    );
-  });
-
-  it("fails closed for unsupported targets and before routing a cancelled write", async () => {
+    expect(labels()).toEqual([]);
+    const result = agentResult("task");
     await expect(
-      executeWrite({
-        authorized: {
-          client: client,
-          context: entityContext,
-          command: command("review"),
-          policy: policy,
-          snapshot: issue,
-          revalidateAuthority: () => Promise.resolve(),
-        },
-        inputs: inputs(),
-        workspaceCopy: workspace,
-        boundWriteSha: "d".repeat(40),
-        agentResult: result,
-        validationDeadlineMs: 123_456,
-        taskIdentity: "task-key",
-        onPhase: vi.fn(),
-        onValidationPassed: () => undefined,
-        onValidationCommandCount: () => undefined,
-      }),
-    ).rejects.toThrow("does not support this write operation");
+      publication.attempt({ ...result, output: { ...result.output, operation } }, 30_000),
+    ).resolves.toMatchObject({
+      kind: operation === "task" ? "answer" : "diagnose",
+    });
+    expect(labels()).toEqual(["triaged"]);
+    expect(publication.facts.validation).toBeUndefined();
+    expect(transport.process).not.toHaveBeenCalled();
+  },
+);
 
-    const controller = new AbortController();
-    controller.abort();
-    await expect(
-      executeWrite({
-        authorized: {
-          client: client,
-          context: entityContext,
-          command: command("implement"),
-          policy: policy,
-          snapshot: issue,
-          revalidateAuthority: () => Promise.resolve(),
-        },
-        inputs: inputs(),
-        workspaceCopy: workspace,
-        boundWriteSha: "d".repeat(40),
-        agentResult: result,
-        validationDeadlineMs: 123_456,
-        taskIdentity: "task-key",
-        onPhase: vi.fn(),
-        onValidationPassed: () => undefined,
-        onValidationCommandCount: () => undefined,
-        signal: controller.signal,
-      }),
-    ).rejects.toMatchObject({ name: "AbortError" });
-    expect(mocks.finishImplementation).not.toHaveBeenCalled();
+it("retains a confirmed branch when PR publication fails", async () => {
+  transport.process.mockResolvedValue(successfulValidation);
+  const { repository, publication } = await publicationFixture("task");
+  repository.api.rest.pulls.create.mockRejectedValue(new Error("PR publication failed"));
+  await expect(publication.attempt(agentResult("task"), 30_000)).rejects.toThrow();
+  expect(publication.facts).toMatchObject({
+    commitSha,
+    writeStatus: "partial-success",
+    validation: { status: "passed" },
   });
+  expect(repository.effects).toContain("create_ref");
 });

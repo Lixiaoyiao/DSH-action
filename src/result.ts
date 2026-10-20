@@ -7,8 +7,10 @@ export type {
   AgentRunSummary,
   ValidationSummary,
   SessionRunSummary,
-  RunOutcome,
+  RunFacts,
+  RunReport,
 } from "./result/types.js";
+export { finishRunReport } from "./result/report.js";
 export { describeActionFailure, describeCancellationFailure } from "./result/failure.js";
 export { actionStatus } from "./result/status.js";
 export { buildActionOutputs } from "./result/outputs.js";

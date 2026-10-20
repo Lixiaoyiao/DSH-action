@@ -279,7 +279,7 @@ export function resolveGitHubTools(
         reasonCodes.push("BINDING_UNAVAILABLE");
       }
     } else {
-      const writeGate = policy.allowed && policy.trust === "trusted-write" && allowWrite;
+      const writeGate = policy.allowed && policy.trust !== "untrusted" && allowWrite;
       const entityBinding = binding !== undefined && binding.target !== "workflow_run";
       const compatibleBinding =
         entityBinding &&
@@ -298,14 +298,14 @@ export function resolveGitHubTools(
               : id === "github.pull.metadata.update"
                 ? policy.capabilities.updatePullRequestMetadata
                 : policy.capabilities.publishComments;
-      if (!policy.allowed || policy.trust !== "trusted-write") {
+      if (!policy.allowed || policy.trust === "untrusted") {
         reasonCodes.push("TRUST_REQUIRED");
       }
       if (!allowWrite) reasonCodes.push("CAPABILITY_NOT_GRANTED");
       if (!capabilityGranted) reasonCodes.push("CAPABILITY_NOT_GRANTED");
       if (!compatibleBinding) reasonCodes.push("BINDING_UNAVAILABLE");
       if (!writeGate) {
-        reason = "GitHub mutation tools require trusted-write policy and allow-write=true";
+        reason = "GitHub metadata tools require a trusted actor and allow-write=true";
       } else if (binding === undefined || binding.target === "workflow_run") {
         reason = "This GitHub mutation requires a current issue or pull request entity";
       } else if (id === "github.issue.labels.set") {

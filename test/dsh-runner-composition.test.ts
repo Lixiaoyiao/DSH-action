@@ -72,7 +72,7 @@ describe("runDsh composition", () => {
             captured = spec;
             return Promise.resolve({
               stdout: JSON.stringify({
-                protocolVersion: 1,
+                protocolVersion: 2,
                 operation: "review",
                 state: "final",
                 summary: "Composed.",
@@ -191,7 +191,7 @@ describe("runDsh composition", () => {
           return Promise.resolve({
             stdout: isDsh
               ? JSON.stringify({
-                  protocolVersion: 1,
+                  protocolVersion: 2,
                   operation: "review",
                   state: "final",
                   summary: "Docker composition used.",

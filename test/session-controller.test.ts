@@ -339,7 +339,7 @@ function fixture(overrides: Partial<ControlledActionInputs> = {}) {
     attachmentFiles: Readonly<Record<string, Uint8Array>> = {},
   ) => {
     const manifest: SessionManifest = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       repository: binding.repository,
       workflow: { ...binding.workflow, sourceSha, runId: 9, runAttempt: 1 },
       task: binding.task,
@@ -479,9 +479,9 @@ describe("Controller Session with real artifact validation and isolated external
     f.state.metadataFailureFor = "claim";
     const session = createControllerSession(f.options);
     if (session === undefined) throw new Error("missing Session");
-    const preparing = session.snapshot();
+    const preparing = session.facts;
     await expect(session.prepare()).rejects.toThrow("confirmed claim metadata unavailable");
-    expect(session.snapshot()).toMatchObject({ status: "failed", claimArtifactId: 999 });
+    expect(session.facts).toMatchObject({ status: "failed", claimArtifactId: 999 });
     expect(preparing).toEqual({ mode: "save", status: "preparing" });
     expect(f.uploaded).toHaveBeenCalledOnce();
   });
@@ -491,7 +491,7 @@ describe("Controller Session with real artifact validation and isolated external
     f.seedCheckpoint();
     const session = await preparedSession(f.options);
     expect(f.uploaded.mock.calls[0]?.[0]).toContain(sessionKeyHash("logical-task"));
-    expect(session.snapshot()).toMatchObject({
+    expect(session.facts).toMatchObject({
       mode: "auto",
       status: "claimed",
       selection: "resumed",
@@ -514,7 +514,7 @@ describe("Controller Session with real artifact validation and isolated external
     );
     const archive = f.archives.get(1001);
     if (archive === undefined) throw new Error("missing acknowledged archive");
-    expect(session.snapshot()).toMatchObject({
+    expect(session.facts).toMatchObject({
       status: "failed",
       claimArtifactId: 99,
       artifactId: 1001,
@@ -545,7 +545,7 @@ describe("Controller Session with real artifact validation and isolated external
     });
     if (session === undefined) throw new Error("missing Session");
     await expect(session.prepare()).rejects.toThrow("current trusted");
-    expect(session.snapshot().status).toBe("failed");
+    expect(session.facts.status).toBe("failed");
     expect(f.uploaded).not.toHaveBeenCalled();
   });
 
@@ -557,7 +557,7 @@ describe("Controller Session with real artifact validation and isolated external
     expect(runtime.session?.knownSecrets).toContain("artifact-credential");
     await completeWorker(runtime, f.payload);
     await session.save(runtime);
-    session.finish("failed");
+    expect(session.facts.status).toBe("saved");
     const manifestBytes = f.uploadedFiles.get(100)?.["manifest.json"];
     if (manifestBytes === undefined) throw new Error("missing uploaded manifest");
     const manifest = parseSessionManifest(JSON.parse(manifestBytes.toString("utf8")));
@@ -566,7 +566,7 @@ describe("Controller Session with real artifact validation and isolated external
     expect(f.uploadedFiles.get(100)?.["session.jsonl"]).toEqual(f.payload);
     expect(f.permissionRead).toHaveBeenCalledTimes(2);
     expect(f.uploaded).toHaveBeenCalledTimes(2);
-    expect(session.snapshot()).toMatchObject({
+    expect(session.facts).toMatchObject({
       status: "saved",
       claimArtifactId: 99,
       artifactId: 100,
@@ -583,7 +583,7 @@ describe("Controller Session with real artifact validation and isolated external
     await completeWorker(runtime, f.payload);
     f.state.permission = "read";
     await expect(session.save(runtime)).rejects.toThrow("no longer permits");
-    expect(session.snapshot()).toMatchObject({ status: "failed", claimArtifactId: 99 });
+    expect(session.facts).toMatchObject({ status: "failed", claimArtifactId: 99 });
     expect(f.uploaded).toHaveBeenCalledOnce();
     expect(f.artifacts).toHaveLength(1);
   });
@@ -600,7 +600,7 @@ describe("Controller Session with real artifact validation and isolated external
       ),
     ).toEqual(f.payload);
     expect(runtime.session).toMatchObject({ sessionId, checkpointEventCount: 3 });
-    expect(session.snapshot()).toMatchObject({ status: "restored", sourceRunId: 9, generation: 2 });
+    expect(session.facts).toMatchObject({ status: "restored", sourceRunId: 9, generation: 2 });
     expect(f.downloaded).toHaveBeenCalledOnce();
     expect(f.uploaded).toHaveBeenCalledOnce();
   });

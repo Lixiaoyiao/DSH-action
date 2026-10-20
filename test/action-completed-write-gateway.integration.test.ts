@@ -50,22 +50,14 @@ const passed: ProcessModule.CommandResult = {
   outputTruncated: false,
 };
 
-function workerResult(queued = false): DshModule.DshRunResult {
+function workerResult(): DshModule.DshRunResult {
   return {
     output: {
-      protocolVersion: 1,
+      protocolVersion: 2,
       operation: "task",
-      state: queued ? "needs_tool" : "final",
+      state: "final",
       summary: "Create hello.txt",
       findings: [],
-      ...(queued
-        ? {
-            toolRequest: {
-              id: "github.comment.create",
-              input: { body: "Pending metadata update" },
-            },
-          }
-        : {}),
     },
     durationMs: 1,
     isolationReport: {
@@ -124,7 +116,7 @@ async function fixture() {
     "INPUT_PROGRESS-COMMENT": "false",
     "INPUT_TEST-COMMANDS": '[["node","--version"]]',
     "INPUT_ALLOWED-TOOLS": '["workspace.read","workspace.edit","github.comment.create"]',
-    "INPUT_MAX-TURNS": "2",
+    "INPUT_MAX-CONTROLLER-STEPS": "2",
   }))
     vi.stubEnv(name, value);
   const base = "a".repeat(40),
@@ -206,58 +198,48 @@ async function fixture() {
   return { github, comment, pulls, commits };
 }
 
-it.each(["passed", "failed"] as const)(
-  "requires current workspace validation before queued mutations after reusing a completed write (%s)",
-  async (currentValidation) => {
-    const { github, comment, pulls, commits } = await fixture();
-    ports.process.mockResolvedValue(passed);
-    ports.worker.mockImplementationOnce(async ({ workspacePath }) => {
-      if (workspacePath === undefined) throw new Error("Missing worker workspace");
-      await writeFile(join(workspacePath, "hello.txt"), "previous completed candidate\n");
-      return workerResult();
-    });
-    const first = await runAction();
-    expect(first).toMatchObject({ conclusion: "success", pullRequestNumber: 123 });
-    expect(pulls).toHaveLength(1);
-    expect([...commits.values()][0]?.message).toContain("DSH-Task-Key:");
-    for (const effect of Object.values(github.created)) effect.mockClear();
-    ports.process.mockClear();
-    let candidateInvocations = 0;
-    ports.process.mockImplementation(({ args }) => {
-      if (args[0] === "rm") return Promise.resolve(passed);
-      candidateInvocations += 1;
-      return Promise.resolve(
-        candidateInvocations === 2 && currentValidation === "failed"
-          ? { ...passed, exitCode: 1 }
-          : passed,
-      );
-    });
-    ports.worker.mockImplementationOnce(() => Promise.resolve(workerResult(true)));
-    ports.worker.mockImplementationOnce(async ({ workspacePath }) => {
-      if (workspacePath === undefined) throw new Error("Missing worker workspace");
-      await writeFile(join(workspacePath, "hello.txt"), "different current candidate\n");
-      return workerResult();
-    });
-    const retry = await runAction();
-    for (const effect of Object.values(github.created)) expect(effect).not.toHaveBeenCalled();
-    expect(pulls).toHaveLength(1);
-    expect(
-      comment,
-      "queued mutations must wait for the current candidate validation",
-    ).toHaveBeenCalledTimes(currentValidation === "passed" ? 1 : 0);
-    expect(
-      candidateInvocations,
-      "baseline validation cannot authorize the different retry candidate",
-    ).toBe(2);
-    expect(retry).toMatchObject({
-      conclusion: currentValidation === "passed" ? "success" : "failure",
-      validation: { status: currentValidation, commandCount: 1 },
-      ...(currentValidation === "failed" ? { error: { code: "VALIDATION_FAILED" } } : {}),
-    });
-  },
-);
+it("does not replay a completed code write while freshly authorized metadata remains independent of tests", async () => {
+  const { github, comment, pulls } = await fixture();
+  ports.process.mockResolvedValue(passed);
+  ports.worker.mockImplementationOnce(async ({ workspacePath }) => {
+    if (workspacePath === undefined) throw new Error("Missing worker workspace");
+    await writeFile(join(workspacePath, "hello.txt"), "previous completed candidate\n");
+    return workerResult();
+  });
+  expect(await runAction()).toMatchObject({
+    termination: { conclusion: "success" },
+    publication: { pullRequestNumber: 123 },
+  });
+  for (const effect of Object.values(github.created)) effect.mockClear();
+  ports.process.mockClear();
+  ports.process.mockResolvedValue({ ...passed, exitCode: 1 });
+  ports.worker.mockImplementationOnce(async ({ workspacePath, controllerTools }) => {
+    if (workspacePath === undefined || controllerTools === undefined)
+      throw new Error("Missing Controller tool transport");
+    await controllerTools.invoke(
+      {
+        callId: "metadata-after-completed",
+        id: "github.comment.create",
+        input: { body: "Current metadata update" },
+      },
+      { workspacePath, timeoutMs: 30_000 },
+    );
+    await writeFile(join(workspacePath, "hello.txt"), "different disposable candidate\n");
+    return workerResult();
+  });
+  const retry = await runAction();
+  expect(retry).toMatchObject({
+    termination: { conclusion: "success" },
+    publication: { pullRequestNumber: 123 },
+    validation: { status: "passed", commandCount: 0, provenance: "completed-operation" },
+  });
+  expect(pulls).toHaveLength(1);
+  expect(comment).toHaveBeenCalledOnce();
+  expect(ports.process).not.toHaveBeenCalled();
+  for (const effect of Object.values(github.created)) expect(effect).not.toHaveBeenCalled();
+});
 
-it("requires current validation after a completed write workspace advances", async () => {
+it("does not turn completed-operation evidence into authority for a different workspace revision", async () => {
   const repository = await writeFixture();
   const configuration = inputs({ testCommands: [["npm", "test"]] });
   const gate = new WorkspaceValidation({
@@ -268,70 +250,24 @@ it("requires current validation after a completed write workspace advances", asy
       containerImage: configuration.containerImage,
     },
     integrityMode: configuration.validationIntegrity,
-    onPhase: () => undefined,
-    deadlineMs: Date.now() + 30_000,
-    signal: new AbortController().signal,
   });
   ports.process.mockResolvedValue(passed);
-  await repository.task({
-    validateWorkspace: async (budget) => {
-      const changes = await inspectWorkspaceChanges(repository.snapshot);
-      const run = await gate.prepareWrite(changes, budget);
-      return await run();
-    },
-  });
-  await gate.validate();
+  await repository.task({ validation: gate });
   expect(ports.process).toHaveBeenCalledOnce();
   await writeFile(join(repository.snapshot.workerRoot, "parser.ts"), "different later revision\n");
   const oldEffects = [...repository.effects];
   gate.completedOperation();
+  expect(gate.snapshot()).toMatchObject({
+    status: "passed",
+    commandCount: 0,
+    provenance: "completed-operation",
+  });
   ports.process.mockResolvedValue({ ...passed, exitCode: 1 });
-  await expect(gate.validate()).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+  const validate = await gate.prepareWrite(await inspectWorkspaceChanges(repository.snapshot), {
+    deadlineMs: Date.now() + 30_000,
+  });
+  expect(gate.snapshot().provenance).toBeUndefined();
+  await expect(validate()).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
   expect(repository.effects).toEqual(oldEffects);
   expect(gate.snapshot()).toMatchObject({ status: "failed", commandCount: 1 });
 });
-
-it.each([30, 10])(
-  "starts current validation after long completed-write recovery within the %s-minute overall deadline",
-  async (timeoutMinutes) => {
-    const { github, comment, pulls } = await fixture();
-    vi.stubEnv("INPUT_TIMEOUT-MINUTES", String(timeoutMinutes));
-    ports.process.mockResolvedValue(passed);
-    ports.worker.mockImplementationOnce(async ({ workspacePath }) => {
-      if (workspacePath === undefined) throw new Error("Missing worker workspace");
-      await writeFile(join(workspacePath, "hello.txt"), "previous completed candidate\n");
-      return workerResult();
-    });
-    expect(await runAction()).toMatchObject({ conclusion: "success", pullRequestNumber: 123 });
-    for (const effect of Object.values(github.created)) effect.mockClear();
-    ports.process.mockClear();
-    let now = Date.now();
-    vi.spyOn(Date, "now").mockImplementation(() => now);
-    ports.worker.mockImplementationOnce(() => {
-      now += 301_000;
-      return Promise.resolve(workerResult(true));
-    });
-    ports.worker.mockImplementationOnce(async ({ workspacePath }) => {
-      if (workspacePath === undefined) throw new Error("Missing worker workspace");
-      await writeFile(join(workspacePath, "hello.txt"), "different current candidate\n");
-      now += 301_000;
-      return workerResult();
-    });
-    const retry = await runAction();
-    const hasTime = timeoutMinutes === 30;
-    expect(retry).toMatchObject(
-      hasTime
-        ? {
-            conclusion: "success",
-            validation: { status: "passed", commandCount: 1 },
-            pullRequestNumber: 123,
-          }
-        : { conclusion: "failure", error: { code: "AGENT_TIMEOUT" } },
-    );
-    expect(comment).toHaveBeenCalledTimes(hasTime ? 1 : 0);
-    expect(ports.process).toHaveBeenCalledTimes(hasTime ? 2 : 1);
-    if (hasTime) expect(ports.process.mock.calls[1]?.[0].timeoutMs).toBe(600_000);
-    for (const effect of Object.values(github.created)) expect(effect).not.toHaveBeenCalled();
-    expect(pulls).toHaveLength(1);
-  },
-);

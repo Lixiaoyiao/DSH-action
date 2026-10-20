@@ -70,8 +70,12 @@ describe("independent release canary evidence", () => {
     expect(diagnostic.env?.CONTROLLED_ASSERTION).toBe("${{ steps.controlled_assert.outcome }}");
     expect(diagnostic.env?.NATIVE_OUTCOME).toBe("${{ steps.native.outcome }}");
     expect(diagnostic.env?.NATIVE_ASSERTION).toBe("${{ steps.native_assert.outcome }}");
+    expect(diagnostic.env?.CONTROLLED_RESULT_JSON).toBe(
+      "${{ steps.controlled.outputs['result-json'] }}",
+    );
+    expect(diagnostic.env?.NATIVE_RESULT_JSON).toBe("${{ steps.native.outputs['result-json'] }}");
     expect(Object.values(diagnostic.env ?? {}).join("\n")).not.toMatch(
-      /result-json|error-message|stdout|\.conclusion/iu,
+      /error-code|error-message|stdout|\.conclusion/iu,
     );
   });
 
@@ -111,10 +115,10 @@ describe("independent release canary evidence", () => {
           GITHUB_STEP_SUMMARY: summaryPath,
           CONTROLLED_OUTCOME: "success",
           CONTROLLED_ASSERTION: "success",
-          CONTROLLED_ERROR_CODE: "",
+          CONTROLLED_RESULT_JSON: "",
           NATIVE_OUTCOME: "success",
           NATIVE_ASSERTION: "success",
-          NATIVE_ERROR_CODE: "",
+          NATIVE_RESULT_JSON: "",
           ...(field ? { [field]: value } : {}),
         },
       });
@@ -148,10 +152,16 @@ describe("independent release canary evidence", () => {
           GITHUB_STEP_SUMMARY: summaryPath,
           CONTROLLED_OUTCOME: "failure",
           CONTROLLED_ASSERTION: "failure",
-          CONTROLLED_ERROR_CODE: "DSH_OUTPUT_INVALID",
+          CONTROLLED_RESULT_JSON: JSON.stringify({
+            schemaVersion: 2,
+            termination: { error: { code: "DSH_OUTPUT_INVALID" }, summary: untrusted },
+          }),
           NATIVE_OUTCOME: untrusted,
           NATIVE_ASSERTION: "skipped",
-          NATIVE_ERROR_CODE: untrusted.repeat(100),
+          NATIVE_RESULT_JSON: JSON.stringify({
+            schemaVersion: 2,
+            termination: { error: { code: untrusted.repeat(100) } },
+          }),
           DSH_RESULT_JSON: untrusted,
         },
       });

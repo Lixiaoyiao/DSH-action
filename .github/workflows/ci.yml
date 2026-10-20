@@ -36,7 +36,7 @@ jobs:
         env:
           SESSION_FIXTURE_OPERATION: smoke
       - run: npm run check
-      - name: Linux Docker frozen-SHA Validation Integrity and image regressions
+      - name: Linux Docker frozen-SHA Validation Integrity, image and Controller MCP regressions
         id: integrity
         timeout-minutes: 20
         shell: bash
@@ -52,9 +52,10 @@ jobs:
             .github/workflows/ci.yml .github/e2e/integrity-llm.mjs \
             .github/e2e/messages-fixture.mjs \
             test/integrity-docker.integration.test.ts test/images-docker.integration.test.ts \
+            test/controller-mcp-runner.integration.test.ts \
             test/fixtures/images test/fixtures/messages-sse.mjs scripts/verify-dsh-config.mjs \
             src assets/dsh package.json package-lock.json
-          ./node_modules/.bin/vitest run test/integrity-docker.integration.test.ts test/images-docker.integration.test.ts
+          ./node_modules/.bin/vitest run test/integrity-docker.integration.test.ts test/images-docker.integration.test.ts test/controller-mcp-runner.integration.test.ts
       - name: Linux Docker frozen-SHA DSH rc.2 native ecosystem smoke
         # Collect the independent native evidence after a controlled failure;
         # the failed integrity step still fails this job and blocks release.
@@ -221,6 +222,7 @@ jobs:
           for (const asset of [
             "action-launcher.mjs",
             "action-policy.mjs",
+            "action-controller.mjs",
             "action-workspace.mjs",
             "native-launcher.mjs",
           ]) {
@@ -318,7 +320,7 @@ jobs:
             any(.[]; .type == "status" and .phase == "turn_end" and .reason.kind == "completed") and
             .[-1].type == "final" and
             (.[-1].text | fromjson |
-              .protocolVersion == 1 and .operation == "review" and
+              .protocolVersion == 2 and .operation == "review" and
               .state == "final" and .summary == "native ecosystem booted")
           ' "$smoke_dir/native.stdout" >/dev/null
           jq -s -e '

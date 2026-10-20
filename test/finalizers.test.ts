@@ -25,7 +25,7 @@ import { inputs } from "./helpers.js";
 
 const result: DshRunResult = {
   output: {
-    protocolVersion: 1,
+    protocolVersion: 2,
     operation: "diagnose",
     state: "final",
     summary: "Summary @team ![pixel](https://tracker.invalid/x)",
@@ -143,7 +143,7 @@ describe("operation finalizers", () => {
       inputs({ dshExecutable: "C:/dsh/lib/bin.js", timeoutMinutes: 2 }),
       policy,
     ).runTurn({
-      schemaVersion: 1,
+      schemaVersion: 2,
       operation: "review",
       requestedAccess: "read",
       context: { repository: "o/r", data: "untrusted" },

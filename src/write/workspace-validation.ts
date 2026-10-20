@@ -1,10 +1,9 @@
 import * as core from "@actions/core";
-import { AgentDeadlineError } from "../agent/loop-errors.js";
 import { PolicyDeniedError } from "../errors.js";
-import { PHASE_TIMEOUTS, phaseTimeoutMs } from "../lifecycle/deadline.js";
 import type { ValidationSummary } from "../result/types.js";
 import {
   enforceValidationIntegrity,
+  buildCommandDependencyGraph,
   inspectValidationIntegrity,
   ValidationIntegrityError,
   type ValidationIntegrityMode,
@@ -24,10 +23,10 @@ import {
 } from "./validate.js";
 import {
   fingerprintWorkspace,
-  inspectWorkspaceChanges,
   type WorkspaceChanges,
   type WorkspaceSnapshot,
 } from "./workspace.js";
+import type { CommandDependencyGraph } from "../validation/validation-command-graph.js";
 
 export interface WorkspaceValidationConfiguration {
   readonly runTests: boolean;
@@ -36,10 +35,11 @@ export interface WorkspaceValidationConfiguration {
 }
 
 /** Execute a suite against one immutable workspace revision, for either write path. */
-export async function validateWorkspaceRevision(
+async function validateWorkspaceRevision(
   workspace: WorkspaceSnapshot,
   configuration: WorkspaceValidationConfiguration,
   budget: ValidationDeadline,
+  expectedFingerprint: string,
   onCommandCount?: ValidationCommandCountObserver,
 ): Promise<CurrentWorkspaceValidation> {
   assertWriteValidationConfigured(configuration.runTests, configuration.commands);
@@ -47,6 +47,10 @@ export async function validateWorkspaceRevision(
     () => fingerprintWorkspace(workspace.workerRoot),
     budget,
   );
+  if (before !== expectedFingerprint)
+    throw new PolicyDeniedError(
+      "Workspace changed after validation integrity analysis; refusing write",
+    );
   let commandCount = 0;
   const results = await withinValidationDeadline(
     () =>
@@ -79,18 +83,20 @@ export async function validateWorkspaceRevision(
 /** Run-local owner of validation facts and the revision they can authorize. */
 export class WorkspaceValidation {
   private evidence: ValidationSummary = { status: "not-applicable", commandCount: 0 };
-  private accepted:
-    (CurrentWorkspaceValidation & { readonly integrity?: ValidationIntegritySummary }) | undefined;
   private warningKey: string | undefined;
+  private analysis:
+    | {
+        readonly fingerprint: string;
+        readonly commandGraph: CommandDependencyGraph;
+        readonly integrity: ValidationIntegritySummary;
+      }
+    | undefined;
 
   public constructor(
     private readonly options: {
       readonly workspace: WorkspaceSnapshot;
       readonly configuration: WorkspaceValidationConfiguration;
       readonly integrityMode: ValidationIntegrityMode;
-      readonly deadlineMs: number;
-      readonly signal: AbortSignal;
-      readonly onPhase: () => void;
     },
   ) {}
 
@@ -99,20 +105,51 @@ export class WorkspaceValidation {
   }
 
   /** Inspection alone does not claim that configured validation commands ran. */
-  public async inspect(changes: WorkspaceChanges, budget: ValidationDeadline): Promise<void> {
-    if (changes.all.length > 0) {
-      this.evidence = { status: "failed", commandCount: 0 };
-    }
-    const integrity = await withinValidationDeadline(
-      () =>
-        inspectValidationIntegrity({
-          snapshot: this.options.workspace,
-          changes,
-          commands: this.options.configuration.commands,
-          mode: this.options.integrityMode,
-        }),
+  public async inspect(changes: WorkspaceChanges, budget: ValidationDeadline): Promise<string> {
+    this.evidence = {
+      status: changes.all.length > 0 ? "failed" : "not-applicable",
+      commandCount: 0,
+    };
+    const fingerprint = await withinValidationDeadline(
+      () => fingerprintWorkspace(this.options.workspace.workerRoot),
       budget,
     );
+    const commandGraph =
+      this.analysis?.fingerprint === fingerprint
+        ? this.analysis.commandGraph
+        : await withinValidationDeadline(
+            () =>
+              buildCommandDependencyGraph(
+                this.options.workspace,
+                this.options.configuration.commands,
+                changes.added,
+              ),
+            budget,
+          );
+    const integrity =
+      this.analysis?.fingerprint === fingerprint
+        ? this.analysis.integrity
+        : await withinValidationDeadline(
+            () =>
+              inspectValidationIntegrity({
+                snapshot: this.options.workspace,
+                changes,
+                commands: this.options.configuration.commands,
+                mode: this.options.integrityMode,
+                commandGraph,
+              }),
+            budget,
+          );
+    if (
+      (await withinValidationDeadline(
+        () => fingerprintWorkspace(this.options.workspace.workerRoot),
+        budget,
+      )) !== fingerprint
+    )
+      throw new PolicyDeniedError(
+        "Workspace changed during validation integrity analysis; refusing write",
+      );
+    this.analysis = { fingerprint, commandGraph, integrity };
     this.evidence = { ...this.evidence, integrity };
     if (integrity.status === "warned") {
       const key = JSON.stringify(integrity.changes.map(({ path, risk }) => [path, risk]));
@@ -123,6 +160,7 @@ export class WorkspaceValidation {
         );
       }
     }
+    return fingerprint;
   }
 
   private async enforceIntegrity(budget: ValidationDeadline): Promise<void> {
@@ -135,10 +173,11 @@ export class WorkspaceValidation {
             snapshot: this.options.workspace,
             commands: this.options.configuration.commands,
             audit,
+            ...(this.analysis === undefined ? {} : { analysis: this.analysis }),
             baselineReplay: {
               containerImage: this.options.configuration.containerImage,
               timeoutMs: remainingValidationMs(budget),
-              signal: this.options.signal,
+              ...(budget.signal === undefined ? {} : { signal: budget.signal }),
             },
           }),
         budget,
@@ -153,7 +192,12 @@ export class WorkspaceValidation {
 
   /** A historical success is reportable, but cannot authorize this workspace. */
   public completedOperation(): void {
-    this.evidence = { ...this.evidence, status: "passed" };
+    this.evidence = {
+      ...this.evidence,
+      status: "passed",
+      commandCount: 0,
+      provenance: "completed-operation",
+    };
   }
 
   /** Enforce candidate policy before looking up a historical write or running its suite. */
@@ -161,54 +205,34 @@ export class WorkspaceValidation {
     changes: WorkspaceChanges,
     budget: ValidationDeadline,
   ): Promise<() => Promise<CurrentWorkspaceValidation>> {
-    await this.inspect(changes, budget);
+    const fingerprint = await this.inspect(changes, budget);
     await this.enforceIntegrity(budget);
-    return () => this.runSuite(budget);
+    return () => this.runSuite(budget, fingerprint);
   }
 
-  /** The Gateway uses the same complete policy and may reuse an unchanged revision. */
-  public async validate(): Promise<CurrentWorkspaceValidation> {
-    const { workspace, configuration, deadlineMs, signal } = this.options;
-    assertWriteValidationConfigured(configuration.runTests, configuration.commands);
-    const fingerprint = await fingerprintWorkspace(workspace.workerRoot);
-    if (fingerprint === this.accepted?.fingerprint) {
-      const { commandCount, integrity } = this.accepted;
-      this.evidence = {
-        status: "passed",
-        commandCount,
-        ...(integrity === undefined ? {} : { integrity }),
-      };
-      return this.accepted;
-    }
-    this.options.onPhase();
-    this.evidence = { status: "failed", commandCount: 0 };
-    // A new revision gets its own validation attempt; Agent time between
-    // revisions still consumes the overall deadline, not this phase budget.
-    const phaseMs = phaseTimeoutMs(deadlineMs, PHASE_TIMEOUTS.validationMs, Date.now);
-    if (phaseMs <= 0) throw new AgentDeadlineError();
-    const budget: ValidationDeadline = { deadlineMs: Date.now() + phaseMs, signal };
-    const changes = await withinValidationDeadline(
-      () => inspectWorkspaceChanges(workspace),
-      budget,
-    );
-    const run = await this.prepareWrite(changes, budget);
-    return await run();
-  }
-
-  private async runSuite(budget: ValidationDeadline): Promise<CurrentWorkspaceValidation> {
-    this.evidence = { ...this.evidence, status: "failed", commandCount: 0 };
+  private async runSuite(
+    budget: ValidationDeadline,
+    fingerprint: string,
+  ): Promise<CurrentWorkspaceValidation> {
+    this.evidence = {
+      status: "failed",
+      commandCount: 0,
+      ...(this.evidence.integrity === undefined ? {} : { integrity: this.evidence.integrity }),
+    };
     const receipt = await validateWorkspaceRevision(
       this.options.workspace,
       this.options.configuration,
       budget,
+      fingerprint,
       (commandCount) => {
         this.evidence = { ...this.evidence, commandCount };
       },
     );
-    this.evidence = { ...this.evidence, status: "passed", commandCount: receipt.commandCount };
-    this.accepted = {
-      ...receipt,
-      ...(this.evidence.integrity === undefined ? {} : { integrity: this.evidence.integrity }),
+    this.evidence = {
+      ...this.evidence,
+      status: "passed",
+      commandCount: receipt.commandCount,
+      provenance: "current-workspace",
     };
     return receipt;
   }

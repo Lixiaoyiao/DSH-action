@@ -105,7 +105,7 @@ const server = createServer((request, response) => {
             response,
             {
               content: JSON.stringify({
-                protocolVersion: 1,
+                protocolVersion: 2,
                 operation: "review",
                 state: "final",
                 summary: "native ecosystem booted",

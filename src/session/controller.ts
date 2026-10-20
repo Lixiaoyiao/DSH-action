@@ -31,9 +31,8 @@ export interface ControllerSession {
   prepare(): Promise<void>;
   restore(runtime: DshRuntime): Promise<void>;
   save(runtime: DshRuntime): Promise<void>;
-  /** Finish the surrounding run without discarding a saved checkpoint. */
-  finish(status: "failed" | "not_saved"): void;
-  snapshot(): SessionRunSummary;
+  /** Facts owned by Session; the run report projects its terminal status. */
+  readonly facts: SessionRunSummary;
 }
 
 type SessionInputs = Pick<
@@ -44,7 +43,7 @@ type SessionInputs = Pick<
   | "sessionRetentionDays"
   | "deepseekApiKey"
   | "githubToken"
-  | "maxTurns"
+  | "maxControllerSteps"
   | "isolation"
   | "dshMode"
   | "containerImage"
@@ -107,7 +106,7 @@ export function createControllerSession(
   ]);
   const prepare = async (): Promise<PreparedSessionArtifacts> => {
     try {
-      if (secrets.size + inputs.maxTurns > SESSION_CHECKPOINT_LIMITS.knownSecrets) {
+      if (secrets.size + inputs.maxControllerSteps * 3 > SESSION_CHECKPOINT_LIMITS.knownSecrets) {
         throw new PolicyDeniedError(
           "Session credential inspection exceeds its bounded value budget before worker startup",
         );
@@ -213,11 +212,8 @@ export function createControllerSession(
     prepare: async () => {
       await preparedArtifacts();
     },
-    snapshot: () => Object.freeze({ ...summary }),
-    finish: (status) => {
-      if (summary.status !== "saved" && (status === "failed" || summary.status !== "failed")) {
-        summary = { ...summary, status };
-      }
+    get facts() {
+      return Object.freeze({ ...summary });
     },
     restore: async (runtime) => {
       try {
@@ -268,7 +264,7 @@ export function createControllerSession(
           workspacePath: "/workspace",
           knownSecrets: [...session.knownSecrets],
           manifest: {
-            schemaVersion: 1,
+            schemaVersion: 2,
             repository: prepared.binding.repository,
             workflow: {
               ...prepared.binding.workflow,

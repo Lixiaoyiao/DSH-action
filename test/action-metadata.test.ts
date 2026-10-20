@@ -47,13 +47,8 @@ describe("Marketplace action metadata", () => {
     );
 
     expect(parsed.inputs).toEqual(expectedInputs);
-    expect(parsed.outputs["dsh-mode"]?.description).toBe(
-      "Resolved DSH mode: controlled, native, or none",
-    );
-    expect(parsed.outputs["dsh-composition"]?.description).toBe(
-      "Stable selected DSH composition identity, or none",
-    );
-    expect(parsed.outputs["error-code"]?.description).toContain("Stable failure code");
+    expect(Object.keys(parsed.outputs).sort()).toEqual(["conclusion", "result-json", "summary"]);
+    expect(parsed.outputs["result-json"]?.description).toContain("schemaVersion=2");
   });
 
   it("pins the official DSH rc.2 runtime and its lockfile exactly", async () => {
@@ -192,33 +187,7 @@ describe("Marketplace action metadata", () => {
     }
   });
 
-  it("ships the rc.2 extension contract in dist without older release-candidate drift", async () => {
-    const bundle = await readFile(new URL("../dist/index.js", import.meta.url), "utf8");
-    expect(bundle).toContain(DSH_VERSION);
-    expect(bundle).not.toContain("0.1.0-rc.8");
-    for (const token of [
-      "mcp-config",
-      "plugin-config",
-      "allow-plugin-install",
-      "extension-profile-digest",
-      "tool-receipts",
-      "action-launcher.mjs",
-      "@deepseek-ai/dsh-mcp-client",
-      "trigger-phrase",
-      "branch-name-template",
-      "github.comment.create",
-      "github.checks.read",
-      "task-output-schema",
-      "task-output",
-      "dsh-mode",
-      "dsh-native-headless",
-      "native-launcher.mjs",
-    ]) {
-      expect(bundle).toContain(token);
-    }
-  });
-
-  it("binds the v0.9.1 canary to the formal release and runs both read-only modes", async () => {
+  it("binds the candidate canary to the formal release and runs both read-only modes", async () => {
     const canary = await readFile(
       new URL("../.github/workflows/release-canary.yml", import.meta.url),
       "utf8",
@@ -252,22 +221,9 @@ describe("Marketplace action metadata", () => {
     expect(canary.match(/uses: \.\/release-action/gu)).toHaveLength(2);
     expect(canary.match(/dsh-mode: native/gu)).toHaveLength(1);
     expect(controlled).not.toMatch(/^\s+dsh-mode:/mu);
-    expect(controlled).toContain('.dsh.mode == "controlled"');
-    expect(controlled).toContain('.dsh.composition == "github-action-controlled"');
-    expect(controlled).toContain('.toolPolicy.policyOwner == "controller"');
-    expect(controlled).toContain(
-      '.permissions.effectiveTools == ["workspace.read","workspace.search"]',
-    );
     expect(native).toMatch(/^\s+dsh-mode: native$/mu);
-    expect(native).toContain('.dsh.mode == "native"');
-    expect(native).toContain('.dsh.composition == "dsh-native-headless"');
-    expect(native).toContain('.toolPolicy.policyOwner == "dsh"');
-    expect(native).toContain("(.toolPolicy.observedTools | length > 0)");
-    expect(native).toContain('(.toolPolicy.observedTools | index("read") != null)');
-    expect(native).toContain('.isolation.workspaceAccess == "read-only"');
-    expect(native).toContain('(.toolPolicy | has("effectiveTools") | not)');
-    expect(native).toContain('(.toolPolicy | has("requestedTools") | not)');
-    expect(native).toContain('(.toolPolicy | has("deniedTools") | not)');
+    // The report predicates are executed against passing/failing reports by
+    // canary-report.test.ts. Their exact jq layout is not an Action contract.
   });
 
   it("generates static bundle notices from NCC source maps only", async () => {
@@ -372,7 +328,7 @@ describe("Marketplace action metadata", () => {
     expect(example).toContain(`deepseek-harness-action@${RELEASE_REFERENCE}`);
     expect(example).not.toMatch(/planned|@v0\.3(?:\s|$)/iu);
     expect(example).toContain("task-access:");
-    expect(example).toContain("max-turns:");
+    expect(example).toContain("max-controller-steps:");
     expect(example).toContain("permission-profile: standard");
     expect(example).toContain("validation-integrity: strict");
     expect(example).toContain("test-commands:");

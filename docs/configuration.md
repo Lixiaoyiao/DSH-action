@@ -92,8 +92,7 @@ configuration preserves the existing `dsh/<issue>-implement-<key>` and
 typed object properties, required fields, arrays, scalar constraints, `enum`,
 `const`, and supported formats. References, combinators, conditionals, regex
 patterns, unknown keywords, dangerous keys, and excessive size or complexity
-fail closed. A configured final task must return a valid object; intermediate
-tool requests and blocked tasks omit it. The value remains untrusted task data.
+fail closed. A configured final task must return a valid object; blocked tasks omit it. The value remains untrusted task data.
 
 Both compositions use the same strict final-output schema. Optional text such
 as `diagnosis` must be omitted when inapplicable, or supplied as a non-empty
@@ -103,9 +102,7 @@ the output contract, never reruns the task or its tools, and validates the new
 complete JSON value through the unchanged schema. Formatting cannot grant a
 tool or bypass validation, credential checks, cancellation, or GitHub write
 revalidation. This request shares the existing overall deadline.
-An already declared `final` or `blocked` state remains fixed. A residual
-`toolRequest` in that terminal result can only be removed, never executed;
-an actual `needs_tool` result is ineligible for terminal formatting repair.
+Only a matching protocol v2 terminal result is eligible; formatting cannot execute tools or change an already declared `final` or `blocked` state.
 
 ### Runtime, isolation, and limits
 
@@ -123,7 +120,7 @@ an actual `needs_tool` result is ineligible for terminal formatting repair.
 | `isolation`              | `docker`                                                                                                          | Trusted capability input selecting the DSH isolation backend. 'none' removes the OS/container boundary; Docker is required for untrusted review data, writes, and extensions.                                                                             |
 | `container-image`        | `docker.io/library/node:24.18.0-bookworm@sha256:5711a0d445a1af54af9589066c646df387d1831a608226f4cd694fc59e745059` | Trusted worker-code input. Every value must be one Docker/OCI image reference and cannot be parsed as a Docker option; extensions and writes require a full name@sha256 digest.                                                                           |
 | `timeout-minutes`        | `20`                                                                                                              | Overall setup/execution deadline shared by runtime and extension install, DSH turns, command tools, and validation. Fixed short cleanup/finalization grace may run after it.                                                                              |
-| `max-turns`              | `3`                                                                                                               | Maximum fresh DSH turns across tool requests and validation repair attempts.                                                                                                                                                                              |
+| `max-controller-steps`   | `3`                                                                                                               | Run-scoped budget for the initial execution, Controller tool calls and validation repair attempts.                                                                                                                                                        |
 
 <!-- END GENERATED ACTION INPUTS: runtime -->
 
@@ -186,7 +183,7 @@ sandbox. Maintainer-defined `command.*` tools and the closed Controller
 
 | Input                  | Required/default | Description                                                                                                                                                                |
 | ---------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `run-tests`            | `true`           | Must be true for every code, Git ref, and pull-request mutation. false denies the mutation and is not a validation waiver.                                                 |
+| `run-tests`            | `true`           | Required for repository code persistence, including its ref/PR creation. false denies code writes; pure GitHub metadata tools do not require tests.                        |
 | `test-commands`        | `[]`             | Non-empty JSON array of credential-free argv arrays required for every write, e.g. [["npm","test"]]. Every command must pass; Controller credentials in argv are rejected. |
 | `validation-integrity` | `warn`           | Controller-owned validation-definition policy: off records, warn reports, strict blocks high-confidence weakening and replays baseline controls when needed.               |
 
@@ -327,8 +324,8 @@ shape is an authorization input.
 
 ### Known authority sources
 
-The additive top-level `result-json.authority` audit is parallel to
-`permissions` and `toolPolicy`. Its `scope` is `action-known-sources`, and its
+The additive `result-json.context.authority` audit is parallel to
+`context.permission` and `context.toolPolicy`. Its `scope` is `action-known-sources`, and its
 deterministically ordered `knownSources` distinguish:
 
 - the Controller-owned GitHub credential, whose real token is not exposed to
@@ -377,16 +374,16 @@ These canonical IDs apply to `dsh-mode: controlled`:
   root structured-output contract.
 
 Native mode does not translate DSH's internal names into this controlled ID
-set. Inspect `result-json.toolPolicy.observedTools` for the actual root-Agent
+set. Inspect `result-json.context.toolPolicy.observedTools` for the actual root-Agent
 inventory and treat it only as telemetry.
 
 In controlled mode, enabled direct DSH tools are separate from the Controller
 command and typed GitHub request catalog. An empty Controller catalog does not
 remove those enabled direct tools; DSH invocation guards still enforce their
-permissions. `state=needs_tool` requests only a catalog operation, while direct
+permissions. Controller tools use the official DSH MCP client, while direct
 tools run through DSH before the final JSON response. A summary claiming tool
 use is not execution evidence: consumers that require a particular native call
-must also verify its completed successful `loop.dshToolReceipts` entry.
+must also verify its completed successful `agent.dshToolReceipts` entry.
 
 ## Controller-owned GitHub tools
 
@@ -405,18 +402,20 @@ No tool accepts an owner, repository, entity number, head SHA, raw URL,
 credential, REST route, GraphQL document, or arbitrary request body. The
 Controller derives identity from the trusted event snapshot. Read access
 requires the matching `readCi` policy. Every mutation requires an explicitly
-selected exact ID, `trusted-write`, `allow-write: "true"`, compatible entity
-and capability, Docker, and successful Controller-owned validation.
+selected exact ID, a trusted same-repository context, a currently write-authorized
+actor, `allow-write: "true"`, and a compatible entity and capability. Pure metadata
+does not require repository tests or a writable workspace. Repository code
+persistence separately requires Docker and successful Controller-owned validation.
 
 Mutation requests are scheduled during an Agent turn and applied only during
-Controller finalization. Malformed/blocked output or failed validation discards
+Controller finalization. Malformed/blocked output or a required validation failure discards
 the queue. Immediately before mutation the Controller revalidates entity and
 repository identity, then performs bounded API attempts, postcondition checks,
 ambiguous-failure reconciliation, and bounded receipts. Model output never
 becomes GitHub authority.
 
 If one queued mutation is confirmed or may have taken effect before a later
-mutation fails, the failure envelope reports `write.status: partial-success`
+mutation fails, the failure envelope reports `publication.writeStatus: partial-success`
 and receipts mark the bounded external-effect state. Treat that as a manual
 reconciliation signal; do not blindly rerun the model request.
 
@@ -569,7 +568,7 @@ authority and are outside the Controller GitHub Gateway's binding,
 revalidation, validation, deferred-mutation, and receipt guarantees.
 
 Native MCP names discovered by DSH, including dynamically registered tools,
-appear in `result-json.toolPolicy.observedTools`. That inventory is telemetry;
+appear in `result-json.context.toolPolicy.observedTools`. That inventory is telemetry;
 native never produces a Controller `effectiveTools` inventory for it.
 
 ## Bundle, Plugin, and Profile loading
@@ -754,7 +753,7 @@ and [Session](session.md) for use, limits and recovery.
 
 ## Write validation and integrity
 
-Every repository mutation requires all configured `test-commands` to pass in
+Every repository code persistence operation requires all configured `test-commands` to pass in
 order. Commands are argv arrays, not shell strings, and execute without the
 GitHub token or DeepSeek key. Model-reported verification and ToolRuntime
 receipts never replace Controller validation.
@@ -773,7 +772,7 @@ wrappers/interpreters to determine whether the proposed change redefines what
 
 Changing tests with an implementation is allowed. The Agent cannot lower this
 mode, approve an integrity finding, or replace the audit with its own claim.
-Validation and integrity must both pass before the Controller performs any
+For repository code persistence, validation and integrity must both pass before the Controller performs any
 GitHub mutation.
 
 This mechanism is not complete cross-language dependency provenance and is not
@@ -808,96 +807,39 @@ Actions run conclusion is authoritative. Preserve per-target workflow
 
 ## Outputs
 
-The Action writes outputs on success, neutral completion, and failure paths.
+The Action emits only `conclusion`, `summary`, and `result-json`, including failure paths.
+`result-json` is the canonical **schemaVersion 2 RunReport**. The step summary reads
+that same report; it never reclassifies validation or confirmed effects.
 
-| Output                     | Meaning                                                                                                                                                                      |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `conclusion`               | `success`, `neutral`, or `failure`.                                                                                                                                          |
-| `operation`                | Resolved `task`, `review`, `diagnose`, `fix`, `implement`, or `none`.                                                                                                        |
-| `summary`                  | Validated final summary for any operation, or a safe failure summary.                                                                                                        |
-| `review-summary`           | Backward-compatible alias of `summary`.                                                                                                                                      |
-| `findings-count`           | Selected review findings, or validated Agent findings for another operation.                                                                                                 |
-| `branch-name`              | Created or updated Controller task branch; empty when not applicable.                                                                                                        |
-| `pull-request-url`         | Created pull request URL; empty when not applicable.                                                                                                                         |
-| `commit-sha`               | Commit created by a successful fix; empty when not applicable.                                                                                                               |
-| `trust`                    | Resolved `untrusted`, `trusted-read`, `trusted-write`, or `none` execution trust.                                                                                            |
-| `dsh-mode`                 | Resolved `controlled`, `native`, or `none` composition mode.                                                                                                                 |
-| `dsh-composition`          | Stable composition identity: `github-action-controlled`, `dsh-native-headless`, or `none`.                                                                                   |
-| `permission-profile`       | Resolved `strict`, `standard`, `custom`, or `none` Agent profile.                                                                                                            |
-| `effective-tools`          | Backward-compatible JSON array from Action permission resolution. In native mode it is not the DSH inventory; use `result-json.toolPolicy.observedTools` for that telemetry. |
-| `network-access`           | Effective `host-gateway`, `mediated-web`, `bridge`, or unresolved `none` worker path. A native `bridge` path belongs to the whole worker.                                    |
-| `workspace-write`          | Whether Action policy enables a writable disposable workspace. In native mode the mount is a whole-worker boundary, not a per-tool grant.                                    |
-| `trusted-extensions`       | JSON array of Action-admitted MCP, Bundle, and Plugin owners. Native network/write values describe shared worker authority, not per-tool grants.                             |
-| `duration-ms`              | Total Controller duration in milliseconds.                                                                                                                                   |
-| `comment-id`               | Sticky progress/result comment ID when tracking was available.                                                                                                               |
-| `error-code`               | Stable failure code; empty on success or neutral completion.                                                                                                                 |
-| `error-message`            | Redacted and bounded failure message.                                                                                                                                        |
-| `extension-profile-digest` | SHA-256 digest of the redacted controlled extension Profile or native admission audit; empty when unavailable.                                                               |
-| `tool-receipts`            | JSON object with bounded Controller/DSH receipt arrays and truncation metadata. Receipts are telemetry, never authorization.                                                 |
-| `task-output`              | JSON-encoded Controller-validated value for a configured task schema; otherwise empty.                                                                                       |
-| `result-json`              | Versioned structured envelope described below.                                                                                                                               |
+| Report field  | Meaning                                                                                                               |
+| ------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `termination` | Conclusion, classified status, summary, total duration and optional stable error identity.                            |
+| `operation`   | Operation kind, findings count and optional Controller-validated task output.                                         |
+| `context`     | Run URL, policy, permission, tool policy, selected DSH composition, authority and source observations.                |
+| `agent`       | Worker duration, informational model usage, isolation, attempts, Controller calls, repair count and bounded receipts. |
+| `validation`  | Executed suite evidence and integrity findings; metadata-only effects use `not-applicable`.                           |
+| `publication` | Review publication and confirmed branch, commit, PR or comment facts, including partial success.                      |
+| `session`     | Restore/save/claim/checkpoint facts. A checkpoint failure does not erase a confirmed GitHub effect.                   |
 
-The older scalar outputs remain available. A missing branch, commit, PR, or
-comment value is often expected for read-only, denied, failed, entity-free, or
-no-change outcomes. The step summary records the same resolved DSH mode and
-composition as `dsh-mode`, `dsh-composition`, and `result-json.dsh`.
+`context.toolPolicy.policyOwner` remains `controller` for controlled mode and `dsh`
+for native mode. Native `observedTools` are observations, never Controller grants.
+Worker tool receipts and Controller effect receipts remain distinct arrays under
+`agent`; `receiptsDropped` reports bounded-output truncation. Restored history never
+restores authorization or pending GitHub mutations.
 
-### `result-json`
+Errors retain `termination.error.code`, `category`, `retryable` and the phase where
+they surfaced. `termination.status` is `success`, `neutral`, `failed`, `timed_out`,
+`validation_failed` or `denied`. Missing observations remain absent, not fabricated.
 
-`result-json` is a `schemaVersion: 1` envelope containing the applicable status,
-operation, summary, selected DSH mode and composition at `.dsh.mode` and
-`.dsh.composition`, policy and permission
-audit, composition-aware extension admission audit, bounded receipts,
-loop timing/counts, actual isolation report, publication, Controller validation,
-validation integrity, write result, comment ID, and error. The additive
-top-level `authority` audit records the Action-known
-Controller and effective worker-extension credential sources described above,
-without credential material or a completeness guarantee. When permissions
-resolve, the additive top-level `toolPolicy` audit is discriminated by owner.
-Controlled mode has `policyOwner: controller` with its current
-`requestedTools`, `effectiveTools`, and `deniedTools`, and no `observedTools`.
-Native mode has `policyOwner: dsh`, the runtime-derived `observedTools`
-telemetry, and no Controller `effectiveTools` claim. The existing `permissions`
-object and scalar `permission-profile` and `effective-tools` outputs retain
-their backward-compatible Action-policy shape; they must not be read as the
-native DSH inventory. Native extension audit entries record admitted owners and
-their whole-worker network/write requests; they do not predict tool inventory
-or grant a capability. A validated task may add an optional `taskOutput` field without
-changing the fixed envelope or schema version. `status` is one of `success`, `neutral`, `failed`, `timed_out`,
-`validation_failed`, or `denied`. Known errors expose stable `error.code`,
-`error.category`, and `error.retryable` identity. `error.phase` separately
-records the Controller lifecycle location where the error surfaced; it does not
-reclassify a known error.
+`agent.usage` is informational: missing usage stays unknown, and partial counts are
+known subtotals. For pinned DSH `0.2.1-rc.2`, input tokens are uncached input; cache
+read/write are separate input buckets and reasoning is included in output tokens.
+The stream does not necessarily include native child or extension model calls;
+formatting repair is separate. No permission or billing decision uses these values.
 
-When the official headless worker reports step usage, the additive `modelUsage`
-field records `source: headless-worker`, `completeness`, `reportedSteps`,
-`observedSteps`, and optional `tokens`. These are informational worker reports.
-They do not affect permissions, validation, publication or retry decisions.
-Missing usage remains unknown; it is never converted to zero.
-
-For the pinned DSH `0.2.1-rc.2` protocol, `inputTokens` counts uncached input;
-`cacheReadTokens` and `cacheWriteTokens` are separate input buckets.
-`reasoningTokens` is included within `outputTokens`. A `step_end` sample already
-includes that step's model retries and is counted once. Optional buckets are
-only aggregated when every reported contribution supplies them. `partial`
-counts are known subtotals: missing, invalid, duplicated or truncated metadata,
-failed workers and formatting repair can prevent a complete report. An
-overflowing required total becomes unknown. No model price or charge is inferred.
-The step summary shows the same report and labels its completeness.
-`complete` covers the observed main-agent step stream. Native child agents and
-other extension-owned model calls need not appear in that stream; formatting
-repair is a separate call. The report is not a total for every model call made
-by the whole Action.
-
-Failed steps set outputs before failing. Read them from a later `always()` step
-without interpolating model-derived text into a shell command:
+Read the JSON without interpolating model text into shell commands:
 
 ```yaml
-- uses: Lixiaoyiao/deepseek-harness-action@v0.11.0
-  id: dsh
-  with:
-    deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
-
 - name: Inspect DSH result
   if: ${{ always() && steps.dsh.outputs['result-json'] != '' }}
   env:
@@ -905,10 +847,8 @@ without interpolating model-derived text into a shell command:
   run: printf '%s\n' "$DSH_RESULT_JSON" | jq .
 ```
 
-Model-derived summaries, paths, receipts, and extension telemetry remain
-untrusted data. Do not splice them into commands or treat `result-json`, a
-receipt, or the public extension digest as a tamper-proof security log or an
-authorization decision.
+See [v0.12 migration](migration-v0.12.md) for scalar-output replacements and Session keys.
+Model summaries, paths, receipts and telemetry remain untrusted data, not authority.
 
 ## See also
 

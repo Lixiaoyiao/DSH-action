@@ -143,7 +143,8 @@ async function hostExecutableIdentity(request: DshRunRequest): Promise<string | 
   if (executable === undefined || executable === "") {
     try {
       executable = join(
-        dirname(createRequire(import.meta.url).resolve("@deepseek-ai/dsh")),
+        dirname(createRequire(import.meta.url).resolve("@deepseek-ai/dsh/package.json")),
+        "lib",
         "bin.js",
       );
     } catch (error: unknown) {
@@ -193,7 +194,6 @@ export async function prepareDshContext(
             .filter(Boolean)
             .join("\n\n"),
         }),
-    toolCatalog: request.toolCatalog ?? [],
     toolPolicy: composition.promptToolPolicy(nativeTools),
     ...(request.taskOutputSchema === undefined
       ? {}

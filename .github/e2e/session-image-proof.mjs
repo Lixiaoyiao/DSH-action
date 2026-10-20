@@ -69,7 +69,7 @@ export function inspectSessionImage(files, manifest, events, enabled) {
 
 /** Controller tools remain unused; Controlled mode must report its one real read receipt. */
 export function sessionImageReceipts(result, expected) {
-  const receipts = result?.loop?.dshToolReceipts ?? [];
+  const receipts = result?.agent?.dshToolReceipts ?? [];
   if (expected.imageAttachment !== true || expected.phase !== "save") return receipts.length === 0;
   if (expected.dshMode === "native") return receipts.length === 0;
   return (

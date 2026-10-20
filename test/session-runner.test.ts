@@ -119,7 +119,7 @@ async function fixture(rejection: "secret" | "extra-session", enabled = true) {
     }
     return {
       stdout: JSON.stringify({
-        protocolVersion: 1,
+        protocolVersion: 2,
         operation: "review",
         state: "final",
         summary: "Complete",

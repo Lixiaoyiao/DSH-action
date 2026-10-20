@@ -71,7 +71,7 @@ describe("runDsh security", () => {
     const proxy = fakeProxy();
     let captured: DshProcessSpec | undefined;
     const output = {
-      protocolVersion: 1,
+      protocolVersion: 2,
       operation: "review",
       state: "final",
       summary: "Looks sound.",
@@ -217,7 +217,7 @@ describe("runDsh security", () => {
           executeProcess: () =>
             Promise.resolve({
               stdout: JSON.stringify({
-                protocolVersion: 1,
+                protocolVersion: 2,
                 operation: "review",
                 state: "final",
                 summary: controllerCredential,
@@ -382,7 +382,7 @@ describe("runDsh security", () => {
         executeProcess: () =>
           Promise.resolve({
             stdout: JSON.stringify({
-              protocolVersion: 1,
+              protocolVersion: 2,
               operation: "review",
               state: "final",
               summary: "controller-real-key",
@@ -466,7 +466,7 @@ describe("runDsh security", () => {
                   (spec.args.includes(CONTAINER_LAUNCHER)
                     ? {
                         stdout: JSON.stringify({
-                          protocolVersion: 1,
+                          protocolVersion: 2,
                           operation: "review",
                           state: "final",
                           summary: "Done.",

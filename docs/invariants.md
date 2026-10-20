@@ -33,9 +33,11 @@ Evidence: `test/dsh-env.test.ts`, `test/extensions.test.ts`,
 
 ## INV-004 GithubMutationRequiresValidation
 
-An Action-owned GitHub mutation is deferred until the applicable Controller
-validation and final revalidation succeed. Cancellation or validation failure
-must leave the mutation queue unflushed.
+Repository commits, ref updates and code publication require successful Controller
+validation and fresh authorization/target revalidation. Pure GitHub metadata
+mutations are deferred until operation finalization and fresh write authorization
+and entity binding; they do not require a repository suite. Cancellation or a
+failed code validation must leave queued mutations unflushed.
 
 Result projection preserves completed validation evidence. An integrity audit
 on a no-change task does not start command validation; a later publication

@@ -1,9 +1,9 @@
 import { ClassifiedActionError } from "../errors.js";
 
 export class AgentLoopLimitError extends ClassifiedActionError<"AGENT_TURN_LIMIT"> {
-  public constructor(maxTurns: number, options?: ErrorOptions) {
+  public constructor(maxSteps: number, options?: ErrorOptions) {
     super(
-      `Agent did not reach a final result within ${String(maxTurns)} turns`,
+      `Controller exhausted its budget of ${String(maxSteps)} steps`,
       { code: "AGENT_TURN_LIMIT", category: "domain", retryable: false },
       options,
     );

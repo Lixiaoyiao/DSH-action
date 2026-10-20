@@ -220,7 +220,7 @@ describe("locked rc.2 native ecosystem boot", () => {
               .find(({ type }) => type === "final")?.text ?? "",
           ),
         ).toMatchObject({
-          protocolVersion: 1,
+          protocolVersion: 2,
           operation: "review",
           state: "final",
           summary: "native ecosystem booted",
@@ -287,6 +287,34 @@ describe("locked rc.2 native ecosystem boot", () => {
         ]) {
           expect(observation.observedTools).toContain(name);
         }
+
+        // The failure probes need the real official Agent/Loader admission path,
+        // not another MCP connection or the unrelated delegation/tool ecosystem.
+        // Keep the actual launcher, core runtime and sandbox providers unchanged.
+        const patchPath = join(profileRoot, "cordis.patch.yml");
+        const patches = z
+          .array(z.record(z.string(), z.unknown()))
+          .parse(JSON.parse(await readFile(patchPath, "utf8")));
+        await writeFile(
+          patchPath,
+          JSON.stringify([
+            ...patches,
+            ...[
+              "dsh-action-native-mcp-httpfixture",
+              "skill-filesystem",
+              "tool-skill",
+              "subagent-spawn-in-process",
+              "subagent-fork-in-process",
+              "tool-subagent-control",
+              "tool-subagent-list-agents",
+              "tool-subagent",
+              "tool-subagent-fork",
+              "ptc-runtime",
+              "workflow-ptc",
+              "tool-workflow",
+            ].map((id) => ({ id, disabled: true })),
+          ]),
+        );
 
         for (const [modulePath, entryId] of [
           [join(installedBundle, "index.mjs"), "native-ecosystem-bundle-fixture"],
@@ -573,7 +601,7 @@ async function startNativeLlmFixture(): Promise<{
               response,
               {
                 content: JSON.stringify({
-                  protocolVersion: 1,
+                  protocolVersion: 2,
                   operation: "review",
                   state: "final",
                   summary: "native ecosystem booted",

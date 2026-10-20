@@ -8,7 +8,7 @@ export function businessReply(route, index, body, settings) {
   )
     throw new Error("Business fixture identity is invalid");
   const output = {
-    protocolVersion: 1,
+    protocolVersion: 2,
     operation: route,
     state: "final",
     summary: `DSH E2E ${route} completed ${suffix}`,

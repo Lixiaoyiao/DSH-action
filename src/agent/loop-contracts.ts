@@ -49,7 +49,7 @@ export interface AgentLoopHooks<TFinal> {
   readonly toolProvider?: ToolProvider;
   readonly blocked: (result: DshRunResult, remainingMs: number) => Promise<TFinal>;
   readonly finalize: (result: DshRunResult, remainingMs: number) => Promise<TFinal>;
-  readonly onTurn?: (turn: number, maxTurns: number) => void | Promise<void>;
+  readonly onTurn?: (turn: number, maxControllerSteps: number) => void | Promise<void>;
   /** Controller-only import, before the first official Headless worker starts. */
   readonly onRuntimeReady?: (runtime: DshRuntime) => Promise<void>;
   /** Called after successful validation/publication, before private runtime disposal. */
@@ -79,6 +79,7 @@ export interface AgentLoopDependencies {
   readonly disposeRuntime?: (runtime: DshRuntime) => Promise<void>;
   readonly createEngine?: (
     runtime: DshRuntime,
+    controllerTools?: ToolProvider,
   ) => AgentEngine<DshRunResult> | Promise<AgentEngine<DshRunResult>>;
   readonly workspaceFingerprint?: (root: string) => Promise<string>;
 }

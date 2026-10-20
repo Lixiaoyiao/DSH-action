@@ -1,3 +1,4 @@
+import { finishRunReport } from "../src/result.js";
 import { describe, expect, it } from "vitest";
 
 import { AgentNoProgressError } from "../src/agent/loop.js";
@@ -14,7 +15,7 @@ import {
   describeActionFailure,
   formatStepSummary,
   type ActionPhase,
-  type RunOutcome,
+  type RunFacts,
 } from "../src/result.js";
 import {
   buildControllerToolPolicyAudit,
@@ -136,9 +137,8 @@ const integrity: ValidationIntegritySummary = {
   baselineReplay: { status: "passed", commandCount: 2 },
 };
 
-function failureOutcome(error: RunOutcome["error"]): RunOutcome {
+function failureOutcome(error: RunFacts["error"]): RunFacts {
   return {
-    schemaVersion: 1,
     conclusion: "failure",
     operation: "fix",
     summary: error?.title ?? "Failed",
@@ -158,8 +158,7 @@ describe("versioned action results", () => {
       observedSteps: 2,
       tokens: { inputTokens: 100, outputTokens: 20, cacheReadTokens: 300 },
     };
-    const outcome: RunOutcome = {
-      schemaVersion: 1,
+    const outcome: RunFacts = {
       conclusion: "success",
       operation: "review",
       summary: "Review complete",
@@ -180,16 +179,17 @@ describe("versioned action results", () => {
         },
       },
     };
-    const result = fixtureObject(JSON.parse(String(buildActionOutputs(outcome)["result-json"])));
-    expect(result.modelUsage).toEqual(usage);
-    const summary = formatStepSummary(outcome);
+    const result = fixtureObject(
+      JSON.parse(String(buildActionOutputs(finishRunReport(outcome))["result-json"])),
+    );
+    expect(fixtureObject(result.agent).usage).toEqual(usage);
+    const summary = formatStepSummary(finishRunReport(outcome));
     expect(summary).toContain("**Model usage (worker reported):** partial; 1/2 steps");
     expect(summary).toContain("uncached input 100; output 20; cache read 300");
     expect(summary).not.toContain("cache write");
   });
-  it("emits old scalar outputs and a complete success envelope from one outcome", () => {
-    const outcome: RunOutcome = {
-      schemaVersion: 1,
+  it("emits three outputs and one canonical report with every confirmed fact", () => {
+    const outcome: RunFacts = {
       conclusion: "success",
       operation: "fix",
       summary: "Fixed the race",
@@ -232,76 +232,49 @@ describe("versioned action results", () => {
       commentId: 99,
     };
 
-    const outputs = buildActionOutputs(outcome);
-    expect(outputs).toMatchObject({
-      conclusion: "success",
-      operation: "fix",
-      summary: "Fixed the race",
-      "review-summary": "Fixed the race",
-      "findings-count": 2,
-      "commit-sha": "c".repeat(40),
-      trust: "trusted-write",
-      "duration-ms": 4_200,
-      "comment-id": 99,
-      "error-code": "",
-      "dsh-mode": "controlled",
-      "dsh-composition": "github-action-controlled",
-      "permission-profile": "custom",
-      "effective-tools": JSON.stringify(permission.effectiveTools),
-      "network-access": "bridge",
-      "workspace-write": "true",
-      "trusted-extensions": JSON.stringify(permission.trustedExtensions),
-    });
-    const result = fixtureObject(JSON.parse(String(outputs["result-json"])));
+    const outputs = buildActionOutputs(finishRunReport(outcome));
+    expect(Object.keys(outputs).sort()).toEqual(["conclusion", "result-json", "summary"]);
+    expect(outputs.conclusion).toBe("success");
+    expect(outputs.summary).toBe("Fixed the race");
+    const result = fixtureObject(JSON.parse(outputs["result-json"] ?? ""));
     expect(result).toMatchObject({
-      schemaVersion: 1,
-      status: "success",
-      conclusion: "success",
-      operation: "fix",
-      timing: { durationMs: 4_200, agentDurationMs: 3_100 },
-      loop: {
+      schemaVersion: 2,
+      termination: {
+        conclusion: "success",
+        status: "success",
+        summary: "Fixed the race",
+        durationMs: 4_200,
+      },
+      operation: { kind: "fix", findingsCount: 2 },
+      context: {
+        runUrl: "https://github.com/octo/repo/actions/runs/10",
+        policy: { trust: "trusted-write", allowed: true },
+        permission,
+        toolPolicy,
+        dsh: { mode: "controlled", composition: "github-action-controlled" },
+        authority,
+      },
+      agent: {
+        durationMs: 3_100,
         turns: 3,
         toolCalls: 1,
         validationRetries: 1,
         toolReceipts: [{ id: "command.test", ok: true }],
       },
-      policy: { trust: "trusted-write", allowed: true },
-      dsh: { mode: "controlled", composition: "github-action-controlled" },
-      permissions: { profile: "custom", network: "bridge", workspaceWrite: true },
-      toolPolicy: {
-        policyOwner: "controller",
-        requestedTools: permission.requestedTools,
-        effectiveTools: permission.effectiveTools,
-        deniedTools: permission.deniedTools,
-      },
-      authority,
-      validation: {
-        status: "passed",
-        commandCount: 2,
-        integrity: {
-          mode: "strict",
-          status: "changed",
-          changeCount: 2,
-          baselineReplay: { status: "passed", commandCount: 2 },
-        },
-      },
-      write: {
-        status: "success",
+      validation: { status: "passed", commandCount: 2, integrity },
+      publication: {
+        writeStatus: "success",
         commitSha: "c".repeat(40),
         changedPaths: ["src/fix.ts"],
+        commentId: 99,
       },
-      commentId: 99,
     });
-    expect(result.permissions).toEqual(permission);
-    expect(result.toolPolicy).toEqual(toolPolicy);
-    expect(result.authority).toEqual(authority);
     expect(fixtureObject(result.validation).integrity).toEqual(integrity);
     expect(outputs).not.toHaveProperty("authority");
   });
 
   it("represents a successful write with no repository mutation", () => {
-    const outcome: RunOutcome = {
-      schemaVersion: 1,
+    const outcome: RunFacts = {
       conclusion: "success",
       operation: "task",
       summary: "The requested state was already present",
@@ -311,19 +284,19 @@ describe("versioned action results", () => {
       changedPaths: [],
     };
 
-    const outputs = buildActionOutputs(outcome);
+    const outputs = buildActionOutputs(finishRunReport(outcome));
     expect(JSON.parse(String(outputs["result-json"]))).toMatchObject({
-      status: "success",
-      write: { status: "no-changes", changedPaths: [] },
+      termination: { status: "success" },
+      publication: { writeStatus: "no-changes", changedPaths: [] },
     });
-    expect(formatStepSummary(outcome)).toContain("**Write:** no-changes");
-    expect(outputs["task-output"]).toBe("");
-    expect(JSON.parse(String(outputs["result-json"]))).not.toHaveProperty("taskOutput");
+    expect(formatStepSummary(finishRunReport(outcome))).toContain("**Write:** no-changes");
+    expect(
+      fixtureObject(fixtureObject(JSON.parse(outputs["result-json"] ?? "")).operation),
+    ).not.toHaveProperty("taskOutput");
   });
 
   it("adds validated task output without replacing the fixed audit envelope", () => {
-    const outcome: RunOutcome = {
-      schemaVersion: 1,
+    const outcome: RunFacts = {
       conclusion: "success",
       operation: "task",
       summary: "Release assessment complete",
@@ -332,17 +305,21 @@ describe("versioned action results", () => {
       taskOutput: { releaseReady: true, checks: ["unit", "integration"] },
     };
 
-    const outputs = buildActionOutputs(outcome);
-    expect(JSON.parse(String(outputs["task-output"]))).toEqual(outcome.taskOutput);
-    expect(JSON.parse(String(outputs["result-json"]))).toEqual({
-      schemaVersion: 1,
-      status: "success",
-      conclusion: "success",
-      operation: "task",
-      summary: "Release assessment complete",
-      findingsCount: 0,
-      timing: { durationMs: 750 },
-      taskOutput: { releaseReady: true, checks: ["unit", "integration"] },
+    const outputs = buildActionOutputs(finishRunReport(outcome));
+    expect(JSON.parse(outputs["result-json"] ?? "")).toEqual({
+      schemaVersion: 2,
+      termination: {
+        status: "success",
+        conclusion: "success",
+        summary: "Release assessment complete",
+        durationMs: 750,
+      },
+      operation: {
+        kind: "task",
+        findingsCount: 0,
+        taskOutput: { releaseReady: true, checks: ["unit", "integration"] },
+      },
+      context: {},
     });
   });
 
@@ -488,7 +465,7 @@ describe("versioned action results", () => {
       new ExtensionPolicyError("Bridge-networked extensions are denied"),
       "context",
     );
-    const outputs = buildActionOutputs(failureOutcome(failure));
+    const outputs = buildActionOutputs(finishRunReport(failureOutcome(failure)));
     const structured = fixtureObject(JSON.parse(String(outputs["result-json"])));
 
     expect(failure).toMatchObject({
@@ -498,8 +475,7 @@ describe("versioned action results", () => {
       retryable: false,
     });
     expect(failure.code).not.toBe("CONTEXT_PREPARATION_FAILED");
-    expect(outputs["error-code"]).toBe("POLICY_DENIED");
-    expect(structured.error).toEqual(failure);
+    expect(fixtureObject(structured.termination).error).toEqual(failure);
   });
 
   it("keeps the generic runtime identity stable for unclassified errors across phases", () => {
@@ -579,8 +555,7 @@ describe("versioned action results", () => {
         reason: "Denied for @team ![pixel](https://tracker.invalid) `policy`",
       },
     ];
-    const outcome: RunOutcome = {
-      schemaVersion: 1,
+    const outcome: RunFacts = {
       conclusion: "success",
       operation: "fix",
       summary: "Updated code and tests",
@@ -596,7 +571,7 @@ describe("versioned action results", () => {
       validation: { status: "passed", commandCount: 2, integrity },
     };
 
-    const summary = formatStepSummary(outcome);
+    const summary = formatStepSummary(finishRunReport(outcome));
     expect(summary).toContain("### Effective Agent permissions");
     expect(summary).toContain("**DSH mode:** controlled");
     expect(summary).toContain("**DSH composition:** github-action-controlled");
@@ -622,8 +597,7 @@ describe("versioned action results", () => {
 
   it("labels a native DSH-owned runtime inventory as observed rather than effective", () => {
     const observedToolPolicy = buildDshToolPolicyAudit(["read", "grep"]);
-    const outcome: RunOutcome = {
-      schemaVersion: 1,
+    const outcome: RunFacts = {
       conclusion: "success",
       operation: "task",
       summary: "Observed runtime inventory",
@@ -633,8 +607,8 @@ describe("versioned action results", () => {
       toolPolicy: observedToolPolicy,
       dsh: { mode: "native", composition: "dsh-native-headless" },
     };
-    const summary = formatStepSummary(outcome);
-    const outputs = buildActionOutputs(outcome);
+    const summary = formatStepSummary(finishRunReport(outcome));
+    const outputs = buildActionOutputs(finishRunReport(outcome));
     const result = fixtureObject(JSON.parse(String(outputs["result-json"])));
 
     expect(summary).toContain("**DSH mode:** native");
@@ -644,14 +618,13 @@ describe("versioned action results", () => {
     expect(summary).toContain("**Controller boundary denials (1):**");
     expect(summary).not.toContain("**Requested tools:**");
     expect(summary).not.toContain("**Effective tools:**");
-    expect(outputs["dsh-mode"]).toBe("native");
-    expect(outputs["dsh-composition"]).toBe("dsh-native-headless");
-    expect(JSON.parse(String(outputs["effective-tools"]))).toEqual(permission.effectiveTools);
-    expect(result.dsh).toEqual({ mode: "native", composition: "dsh-native-headless" });
-    expect(result.toolPolicy).toEqual(observedToolPolicy);
-    expect(result.toolPolicy).not.toHaveProperty("requestedTools");
-    expect(result.toolPolicy).not.toHaveProperty("deniedTools");
-    expect(result.toolPolicy).not.toHaveProperty("effectiveTools");
+    const context = fixtureObject(result.context);
+    expect(context.dsh).toEqual({ mode: "native", composition: "dsh-native-headless" });
+    expect(context.permission).toEqual(permission);
+    expect(context.toolPolicy).toEqual(observedToolPolicy);
+    expect(context.toolPolicy).not.toHaveProperty("requestedTools");
+    expect(context.toolPolicy).not.toHaveProperty("deniedTools");
+    expect(context.toolPolicy).not.toHaveProperty("effectiveTools");
   });
 
   it("redacts failures and sanitizes user-visible step summaries", () => {
@@ -663,10 +636,9 @@ describe("versioned action results", () => {
       "agent",
     );
     const outcome = failureOutcome(failure);
-    const outputs = buildActionOutputs(outcome);
-    const summary = formatStepSummary(outcome);
+    const outputs = buildActionOutputs(finishRunReport(outcome));
+    const summary = formatStepSummary(finishRunReport(outcome));
 
-    expect(String(outputs["error-message"])).not.toContain(token);
     expect(String(outputs["result-json"])).not.toContain(token);
     expect(summary).not.toContain(token);
     expect(summary).not.toContain("dsh-action:v1");
@@ -674,9 +646,8 @@ describe("versioned action results", () => {
     expect(summary).toContain("**Next step:**");
   });
 
-  it("bounds duplicated receipt outputs below the reserved GitHub output budget", () => {
-    const outcome: RunOutcome = {
-      schemaVersion: 1,
+  it("bounds receipts in the canonical report below the GitHub output budget", () => {
+    const outcome: RunFacts = {
       conclusion: "success",
       operation: "task",
       summary: "Many calls completed",
@@ -708,18 +679,17 @@ describe("versioned action results", () => {
       },
     };
 
-    const outputs = buildActionOutputs(outcome);
-    const receiptsText = String(outputs["tool-receipts"]);
-    const resultText = String(outputs["result-json"]);
-    const receipts = fixtureObject(JSON.parse(receiptsText));
+    const outputs = buildActionOutputs(finishRunReport(outcome));
+    const resultText = outputs["result-json"] ?? "";
     const result = fixtureObject(JSON.parse(resultText));
-    const loop = fixtureObject(result.loop);
-
-    expect((receiptsText.length + resultText.length) * 2).toBeLessThanOrEqual(640 * 1024);
-    expect(receipts.truncated).toBe(true);
-    expect(receipts.droppedCount).toBeGreaterThan(0);
-    expect(loop.dshToolReceipts).toEqual(receipts.dsh);
-    expect(loop.toolReceiptsTruncated).toBe(true);
-    expect(loop.toolReceiptsDroppedCount).toBe(receipts.droppedCount);
+    const agent = fixtureObject(result.agent);
+    expect((resultText.length + (outputs.summary?.length ?? 0)) * 2).toBeLessThanOrEqual(
+      640 * 1024,
+    );
+    expect(agent.receiptsDropped).toBeGreaterThan(0);
+    expect(Array.isArray(agent.dshToolReceipts)).toBe(true);
+    if (!Array.isArray(agent.dshToolReceipts)) throw new Error("Expected receipt array");
+    expect(agent.dshToolReceipts.length + Number(agent.receiptsDropped)).toBe(10_000);
+    expect(outputs).not.toHaveProperty("tool-receipts");
   });
 });

@@ -17,6 +17,20 @@ import { issueContentFingerprint } from "../../src/github/issue-identity.js";
 import type { CommandResult } from "../../src/security/argv.js";
 import { createWorkspaceSnapshot } from "../../src/write/workspace.js";
 import { inputs } from "../helpers.js";
+import type { ActionInputs } from "../../src/inputs.js";
+import { WorkspaceValidation } from "../../src/write/workspace-validation.js";
+import { RepositoryWriter } from "../../src/write/transaction.js";
+
+interface FixtureControls {
+  readonly validationDeadlineMs?: number;
+  readonly signal?: AbortSignal;
+  readonly onPhase?: (phase: "validation" | "write") => void;
+  readonly runTests?: boolean;
+  readonly testCommands?: readonly (readonly string[])[];
+  readonly validation?: WorkspaceValidation;
+}
+type FixtureOverrides<T> = Partial<Omit<T, "inputs">> &
+  FixtureControls & { readonly inputs?: ActionInputs };
 
 export const baseSha = "a".repeat(40);
 export const commitSha = "c".repeat(40);
@@ -52,7 +66,7 @@ export function agentResult(
 ): DshRunResult {
   return {
     output: {
-      protocolVersion: 1,
+      protocolVersion: 2,
       operation,
       state: "final",
       summary,
@@ -116,7 +130,6 @@ export async function writeFixture() {
       throw new PolicyDeniedError("Current actor no longer has write authority");
     return Promise.resolve();
   });
-  const onValidationPassed = vi.fn();
   const api = {
     paginate: vi.fn(() => Promise.resolve([])),
     rest: {
@@ -210,10 +223,36 @@ export async function writeFixture() {
     repo: "r",
     baseBranch: "main",
     boundHeadSha: baseSha,
-    snapshot,
-    revalidateAuthority,
-    onValidationPassed,
-    validationDeadlineMs: Date.now() + 30_000,
+  };
+  let currentValidation: WorkspaceValidation | undefined;
+  const writeContext = (overrides: FixtureControls & { readonly inputs?: ActionInputs }) => {
+    const configured = overrides.inputs ?? inputs({ testCommands: [["npm", "test"]] });
+    const deadlineMs = overrides.validationDeadlineMs ?? Date.now() + 30_000;
+    const signal = overrides.signal ?? new AbortController().signal;
+    const validation =
+      overrides.validation ??
+      new WorkspaceValidation({
+        workspace: snapshot,
+        configuration: {
+          runTests: overrides.runTests ?? configured.runTests,
+          commands: overrides.testCommands ?? configured.testCommands,
+          containerImage: configured.containerImage,
+        },
+        integrityMode: configured.validationIntegrity,
+      });
+    currentValidation = validation;
+    return {
+      writer: new RepositoryWriter({
+        client,
+        repository: { owner: "o", repo: "r" },
+        workspace: snapshot,
+        validation,
+        revalidateAuthority,
+        signal,
+        onPhase: overrides.onPhase ?? (() => undefined),
+      }),
+      budget: { deadlineMs, signal },
+    };
   };
   return {
     api,
@@ -225,25 +264,27 @@ export async function writeFixture() {
     pulls,
     commits,
     revalidateAuthority,
-    onValidationPassed,
+    get validation() {
+      if (currentValidation === undefined) throw new Error("No write attempted");
+      return currentValidation;
+    },
     revoke: () => {
       permission = "read";
     },
-    task: (overrides: Partial<FinishAutomationTaskInput> = {}) =>
+    task: (overrides: FixtureOverrides<FinishAutomationTaskInput> = {}) =>
       finishAutomationTask({
         ...common,
+        ...writeContext(overrides),
         runIdentity: "10",
         taskIdentity: "task-identity",
         result: agentResult("task"),
         runUrl: "https://github.com/o/r/actions/runs/10",
-        runTests: true,
-        testCommands: [["npm", "test"]],
-        containerImage: inputs().containerImage,
         ...overrides,
       }),
-    implement: (overrides: Partial<FinishImplementationInput> = {}) =>
+    implement: (overrides: FixtureOverrides<FinishImplementationInput> = {}) =>
       finishImplementation({
         ...common,
+        ...writeContext(overrides),
         issueNumber: 7,
         issueTitle: issue.title,
         issueIdentity,
@@ -252,9 +293,10 @@ export async function writeFixture() {
         inputs: inputs({ testCommands: [["npm", "test"]] }),
         ...overrides,
       }),
-    fix: (overrides: Partial<FinishFixInput> = {}) =>
+    fix: (overrides: FixtureOverrides<FinishFixInput> = {}) =>
       finishFix({
         ...common,
+        ...writeContext(overrides),
         target: { owner: "o", repo: "r", issueNumber: 7 },
         expectedAuthorId: 41898282,
         identity: {

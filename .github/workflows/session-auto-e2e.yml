@@ -242,7 +242,7 @@ jobs:
           progress-comment: "false"
           run-tests: "true"
           test-commands: '[["npm","ci","--ignore-scripts"],["npm","run","typecheck"],["npm","test"]]'
-          max-turns: "1"
+          max-controller-steps: "1"
           timeout-minutes: "12"
           session-mode: auto
           session-key: ${{ inputs.session_key }}

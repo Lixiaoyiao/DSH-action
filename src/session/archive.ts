@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { crc32, inflateRawSync } from "node:zlib";
 
 import { PolicyDeniedError } from "../errors.js";
@@ -11,16 +10,12 @@ import {
   MAX_SESSION_ATTACHMENTS_BYTES,
   SESSION_MANIFEST_FILE,
   SESSION_PAYLOAD_FILE,
-  parseSessionManifest,
-  sessionAttachmentFiles,
+  admitSessionCheckpointEnvelope,
   type SessionCheckpoint,
 } from "./contracts.js";
 
 function denied(message: string): never {
   throw new PolicyDeniedError(message);
-}
-function digest(bytes: Uint8Array): string {
-  return createHash("sha256").update(bytes).digest("hex");
 }
 
 /** Bounded artifact transport for canonical DSH history and referenced bytes; never extracts paths. */
@@ -170,18 +165,17 @@ export function decodeSessionArchive(input: Uint8Array, now = Date.now()): Sessi
   } catch {
     denied("Session manifest must contain valid UTF-8 JSON");
   }
-  const manifest = parseSessionManifest(value, now);
   const payload = files.get(SESSION_PAYLOAD_FILE);
-  if (payload?.length !== manifest.payload.bytes || digest(payload) !== manifest.payload.sha256)
-    denied("Session payload size or SHA256 differs from its manifest");
+  if (payload === undefined) denied("Session archive is missing its payload");
   const attachments = Object.fromEntries(
     [...files].filter(([name]) => name !== SESSION_MANIFEST_FILE && name !== SESSION_PAYLOAD_FILE),
   );
-  const checkpoint = {
-    manifest,
-    payload,
-    ...(Object.keys(attachments).length > 0 ? { attachments } : {}),
-  };
-  sessionAttachmentFiles(checkpoint);
-  return checkpoint;
+  return admitSessionCheckpointEnvelope(
+    {
+      manifest: value,
+      payload,
+      ...(Object.keys(attachments).length > 0 ? { attachments } : {}),
+    },
+    now,
+  );
 }

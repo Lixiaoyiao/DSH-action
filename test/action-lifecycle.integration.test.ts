@@ -11,7 +11,6 @@ import { DshProcessError } from "../src/dsh/errors.js";
 import { runAction } from "../src/orchestrator.js";
 import { SessionCheckpointError } from "../src/session/errors.js";
 import type { ControllerSession } from "../src/session/controller.js";
-import type { SessionRunSummary } from "../src/result.js";
 import { githubClientFixture } from "./helpers/github-client.js";
 import { actionLifecycleGitHub } from "./helpers/action-lifecycle-github.js";
 import type { ReviewFinding } from "../src/review/schema.js";
@@ -40,15 +39,13 @@ vi.mock("../src/security/argv.js", async (original) => ({
 vi.mock("../src/session/controller.js", () => ({ createControllerSession: ports.session }));
 
 function checkpointSession(save: () => Promise<void>): ControllerSession {
-  let status: SessionRunSummary["status"] = "claimed";
   return {
     prepare: () => Promise.resolve(),
     restore: () => Promise.resolve(),
     save,
-    finish: (completion) => {
-      status = completion;
+    get facts(): ControllerSession["facts"] {
+      return { mode: "save", status: "claimed" };
     },
-    snapshot: () => ({ mode: "save", status }),
   };
 }
 
@@ -160,7 +157,7 @@ function readonlyWorkerResult(
 ): DshModule.DshRunResult {
   return {
     output: {
-      protocolVersion: 1,
+      protocolVersion: 2,
       operation: "task",
       state,
       summary: state === "blocked" ? "Cannot safely proceed" : "Task answered",
@@ -275,7 +272,7 @@ beforeEach(async () => {
     await writeFile(join(workerPath, "hello.txt"), "hello\n");
     return {
       output: {
-        protocolVersion: 1,
+        protocolVersion: 2,
         operation: "task",
         state: "final",
         summary: "Created hello.txt",
@@ -351,7 +348,9 @@ it.each(["prompt", "review"])(
       return readonlyWorkerResult("final");
     });
     const outcome = await runAction();
-    expect(outcome.conclusion, JSON.stringify(outcome.error)).toBe("success");
+    expect(outcome.termination.conclusion, JSON.stringify(outcome.termination.error)).toBe(
+      "success",
+    );
     expect(download).toHaveBeenCalledTimes(1);
     for (const effect of Object.values(created)) expect(effect).not.toHaveBeenCalled();
   },
@@ -373,7 +372,7 @@ it("reports unavailable image reading without fetching or overriding an explicit
     return Promise.resolve(readonlyWorkerResult("blocked"));
   });
   const outcome = await runAction();
-  expect(outcome.conclusion, JSON.stringify(outcome.error)).toBe("neutral");
+  expect(outcome.termination.conclusion, JSON.stringify(outcome.termination.error)).toBe("neutral");
   expect(download).not.toHaveBeenCalled();
 });
 
@@ -387,18 +386,24 @@ it.each([
     vi.stubEnv(name, value);
     const outcome = await runAction();
     expect(outcome).toMatchObject({
-      conclusion: "failure",
-      error: {
-        code: "POLICY_DENIED",
-        category: "policy",
-        phase: "configuration",
-        retryable: false,
+      termination: {
+        conclusion: "failure",
+        error: {
+          code: "POLICY_DENIED",
+          category: "policy",
+          phase: "configuration",
+          retryable: false,
+        },
       },
     });
-    expect(outcome.error?.message).toContain(diagnostic);
+    expect(outcome.termination.error?.message).toContain(diagnostic);
     const outputs = buildActionOutputs(outcome);
-    expect(outputs["error-code"]).toBe("POLICY_DENIED");
-    expect(record(JSON.parse(String(outputs["result-json"]))).status).toBe("denied");
+    expect(
+      record(record(record(JSON.parse(String(outputs["result-json"]))).termination).error).code,
+    ).toBe("POLICY_DENIED");
+    expect(record(record(JSON.parse(String(outputs["result-json"]))).termination).status).toBe(
+      "denied",
+    );
     expect(ports.client).not.toHaveBeenCalled();
     expect(ports.runDsh).not.toHaveBeenCalled();
     expect(ports.process).not.toHaveBeenCalled();
@@ -457,9 +462,9 @@ it.each(["main", "release/next"])(
     });
 
     const outcome = await runAction();
-    expect(outcome, JSON.stringify(outcome.error)).toMatchObject({
-      conclusion: "success",
-      writeStatus: "no-changes",
+    expect(outcome, JSON.stringify(outcome.termination.error)).toMatchObject({
+      termination: { conclusion: "success" },
+      publication: { writeStatus: "no-changes" },
     });
     expect(getRef).toHaveBeenCalledWith(expect.objectContaining({ ref: `heads/${branch}` }));
     expect(getCommit).toHaveBeenCalledWith(expect.objectContaining({ commit_sha: boundSha }));
@@ -479,8 +484,7 @@ it("does not publish a no-change answer after the Controller deadline expires", 
   });
   const outcome = await runAction();
   expect(outcome).toMatchObject({
-    conclusion: "failure",
-    error: { code: "AGENT_TIMEOUT", category: "runtime" },
+    termination: { conclusion: "failure", error: { code: "AGENT_TIMEOUT", category: "runtime" } },
   });
   expect(published.comment).not.toHaveBeenCalled();
   expect(ports.process).not.toHaveBeenCalled();
@@ -488,36 +492,34 @@ it("does not publish a no-change answer after the Controller deadline expires", 
 });
 
 it.each(["controlled", "native"] as const)(
-  "validates before the %s worker and defers metadata effects until finalization",
+  "defers %s metadata effects without repository validation or code write authority",
   async (mode) => {
     await selectEntity("task", "issue");
     vi.stubEnv("INPUT_DSH-MODE", mode);
     vi.stubEnv("INPUT_ALLOWED-TOOLS", '["workspace.edit","github.issue.labels.set"]');
     const metadata = issueMutationTransport();
+    vi.stubEnv("INPUT_TASK-ACCESS", "read");
+    vi.stubEnv("INPUT_RUN-TESTS", "false");
+    vi.stubEnv("INPUT_TEST-COMMANDS", "[]");
+    vi.stubEnv("INPUT_ALLOWED-TOOLS", '["github.issue.labels.set"]');
     const worker = readonlyWorkerResult("final", mode);
-    ports.runDsh.mockImplementationOnce(() => {
-      expect(ports.process).toHaveBeenCalledOnce();
+    ports.runDsh.mockImplementationOnce(async ({ controllerTools, workspacePath }) => {
+      expect(ports.process).not.toHaveBeenCalled();
+      if (controllerTools === undefined || workspacePath === undefined)
+        throw new Error("Missing Controller tools");
+      await controllerTools.invoke(
+        { callId: "triage", id: "github.issue.labels.set", input: { labels: ["triaged"] } },
+        { workspacePath, timeoutMs: 30_000 },
+      );
       expect(metadata.labels()).toEqual([]);
-      return Promise.resolve({
-        ...worker,
-        output: {
-          ...worker.output,
-          state: "needs_tool",
-          toolRequest: { id: "github.issue.labels.set", input: { labels: ["triaged"] } },
-        },
-      });
-    });
-    ports.runDsh.mockImplementationOnce(() => {
-      expect(metadata.labels()).toEqual([]);
-      return Promise.resolve(worker);
+      return worker;
     });
 
     const outcome = await runAction();
-    expect(outcome, JSON.stringify(outcome.error)).toMatchObject({
-      conclusion: "success",
-      validation: { status: "passed", commandCount: 1 },
+    expect(outcome, JSON.stringify(outcome.termination.error)).toMatchObject({
+      validation: { status: "not-applicable", commandCount: 0 },
       agent: {
-        turns: 2,
+        turns: 1,
         toolCalls: 1,
         toolReceipts: [
           {
@@ -529,8 +531,9 @@ it.each(["controlled", "native"] as const)(
           },
         ],
       },
+      termination: { conclusion: "success" },
     });
-    expect(ports.process).toHaveBeenCalledOnce();
+    expect(ports.process).not.toHaveBeenCalled();
     expect(metadata.labels()).toEqual(["triaged"]);
     expect(metadata.setLabels).toHaveBeenCalledOnce();
     for (const effect of Object.values(created)) expect(effect).not.toHaveBeenCalled();
@@ -538,21 +541,38 @@ it.each(["controlled", "native"] as const)(
 );
 
 it.each(["controlled", "native"] as const)(
-  "prevents the %s worker and metadata effects when baseline validation fails",
+  "prevents %s code and metadata effects when candidate validation fails",
   async (mode) => {
     await selectEntity("task", "issue");
     vi.stubEnv("INPUT_DSH-MODE", mode);
     vi.stubEnv("INPUT_ALLOWED-TOOLS", '["workspace.edit","github.issue.labels.set"]');
     const metadata = issueMutationTransport();
     ports.process.mockResolvedValueOnce({ ...passedProcess, exitCode: 1, stderr: "suite failed" });
+    ports.runDsh.mockImplementationOnce(async ({ controllerTools, workspacePath }) => {
+      if (controllerTools === undefined || workspacePath === undefined)
+        throw new Error("Missing Controller tools");
+      await controllerTools.invoke(
+        {
+          callId: "triage-before-validation",
+          id: "github.issue.labels.set",
+          input: { labels: ["triaged"] },
+        },
+        { workspacePath, timeoutMs: 30_000 },
+      );
+      await writeFile(join(workspacePath, "hello.txt"), "candidate with failing tests\n");
+      return readonlyWorkerResult("final", mode);
+    });
+    ports.runDsh.mockResolvedValueOnce(readonlyWorkerResult("blocked", mode));
     const outcome = await runAction();
     expect(outcome).toMatchObject({
-      conclusion: "failure",
       validation: { status: "failed", commandCount: 1 },
-      error: { code: "VALIDATION_FAILED", phase: "validation" },
+      termination: {
+        conclusion: "failure",
+        error: { code: "VALIDATION_FAILED", phase: "agent" },
+      },
     });
     expect(ports.process.mock.calls.filter(([{ args }]) => args[0] === "run")).toHaveLength(1);
-    expect(ports.runDsh).not.toHaveBeenCalled();
+    expect(ports.runDsh).toHaveBeenCalledTimes(2);
     expect(metadata.labels()).toEqual([]);
     expect(metadata.setLabels).not.toHaveBeenCalled();
     expect(published.comment).not.toHaveBeenCalled();
@@ -570,31 +590,28 @@ it("retains partial metadata effects and final receipts when a later postconditi
   // Acknowledged transport success is insufficient when a fresh read lacks its postcondition.
   metadata.updateIssue.mockResolvedValue({ data: {} });
   const worker = readonlyWorkerResult("final");
-  ports.runDsh.mockResolvedValueOnce({
-    ...worker,
-    output: {
-      ...worker.output,
-      state: "needs_tool",
-      toolRequest: { id: "github.issue.labels.set", input: { labels: ["triaged"] } },
-    },
+  ports.runDsh.mockImplementationOnce(async ({ controllerTools, workspacePath }) => {
+    if (controllerTools === undefined || workspacePath === undefined)
+      throw new Error("Missing Controller tools");
+    await controllerTools.invoke(
+      { callId: "partial-labels", id: "github.issue.labels.set", input: { labels: ["triaged"] } },
+      { workspacePath, timeoutMs: 30_000 },
+    );
+    await controllerTools.invoke(
+      {
+        callId: "partial-assignees",
+        id: "github.issue.assignees.set",
+        input: { assignees: ["alice"] },
+      },
+      { workspacePath, timeoutMs: 30_000 },
+    );
+    return worker;
   });
-  ports.runDsh.mockResolvedValueOnce({
-    ...worker,
-    output: {
-      ...worker.output,
-      state: "needs_tool",
-      toolRequest: { id: "github.issue.assignees.set", input: { assignees: ["alice"] } },
-    },
-  });
-  ports.runDsh.mockResolvedValueOnce(worker);
 
   const outcome = await runAction();
   expect(outcome).toMatchObject({
-    conclusion: "failure",
-    writeStatus: "partial-success",
-    error: { phase: "write" },
     agent: {
-      turns: 3,
+      turns: 1,
       toolCalls: 2,
       toolReceipts: [
         { id: "github.issue.labels.set", ok: true, effect: "updated", attempts: 1 },
@@ -608,13 +625,62 @@ it("retains partial metadata effects and final receipts when a later postconditi
         },
       ],
     },
+    termination: { conclusion: "failure", error: { phase: "write" } },
+    publication: { writeStatus: "partial-success" },
   });
   expect(metadata.labels()).toEqual(["triaged"]);
   expect(metadata.setLabels).toHaveBeenCalledOnce();
   expect(metadata.updateIssue).toHaveBeenCalledOnce();
-  expect(published.comment).not.toHaveBeenCalled();
+  expect(published.comment).toHaveBeenCalledOnce();
+  expect(outcome.publication?.commentId).toEqual(expect.any(Number));
   for (const effect of Object.values(created)) expect(effect).not.toHaveBeenCalled();
 });
+
+it.each([false, true])(
+  "settles a blocked Issue answer without flushing metadata when authority revoked=%s",
+  async (revoked) => {
+    await selectEntity("task", "issue");
+    vi.stubEnv("INPUT_TASK-ACCESS", "read");
+    vi.stubEnv("INPUT_PROGRESS-COMMENT", "false");
+    vi.stubEnv("INPUT_ALLOWED-TOOLS", '["github.issue.labels.set"]');
+    vi.stubEnv("INPUT_RUN-TESTS", "false");
+    vi.stubEnv("INPUT_TEST-COMMANDS", "[]");
+    const metadata = issueMutationTransport();
+    const save = vi.fn(() => Promise.resolve());
+    ports.session.mockReturnValue(checkpointSession(save));
+    ports.runDsh.mockImplementationOnce(async ({ controllerTools, workspacePath }) => {
+      if (controllerTools === undefined || workspacePath === undefined)
+        throw new Error("Missing Controller tools");
+      await controllerTools.invoke(
+        { callId: "blocked-triage", id: "github.issue.labels.set", input: { labels: ["triaged"] } },
+        { workspacePath, timeoutMs: 30_000 },
+      );
+      if (revoked) permission = "none";
+      return readonlyWorkerResult("blocked");
+    });
+    const outcome = await runAction();
+    if (revoked) {
+      expect(outcome).toMatchObject({
+        termination: { conclusion: "failure", error: { category: "policy", phase: "publication" } },
+      });
+      expect(published.comment).not.toHaveBeenCalled();
+      expect(outcome.publication?.commentId).toBeUndefined();
+    } else {
+      expect(outcome).toMatchObject({
+        termination: { conclusion: "neutral" },
+        validation: { status: "not-applicable", commandCount: 0 },
+        publication: { commentId: 901 },
+        agent: { toolReceipts: [{ effect: "scheduled" }] },
+      });
+      expect(published.comment).toHaveBeenCalledOnce();
+    }
+    expect(metadata.labels()).toEqual([]);
+    expect(metadata.setLabels).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    expect(ports.process).not.toHaveBeenCalled();
+    for (const effect of Object.values(created)) expect(effect).not.toHaveBeenCalled();
+  },
+);
 
 it("returns a blocked task without validation, repository writes or saving a Session", async () => {
   const save = vi.fn(() => Promise.resolve());
@@ -622,9 +688,8 @@ it("returns a blocked task without validation, repository writes or saving a Ses
   ports.runDsh.mockResolvedValue(readonlyWorkerResult("blocked"));
   const outcome = await runAction();
   expect(outcome).toMatchObject({
-    conclusion: "neutral",
-    summary: "Cannot safely proceed",
     validation: { status: "not-applicable", commandCount: 0 },
+    termination: { conclusion: "neutral", summary: "Cannot safely proceed" },
   });
   expect(save).not.toHaveBeenCalled();
   expect(ports.process).not.toHaveBeenCalled();
@@ -640,12 +705,11 @@ it.each(["controlled", "native"] as const)(
     ports.runDsh.mockResolvedValue(readonlyWorkerResult("final", mode));
     const outcome = await runAction();
     expect(outcome).toMatchObject({
-      conclusion: "success",
-      summary: "Task answered",
       validation: { status: "not-applicable", commandCount: 0 },
+      termination: { conclusion: "success", summary: "Task answered" },
     });
     if (mode === "native")
-      expect(outcome.toolPolicy).toEqual({
+      expect(outcome.context.toolPolicy).toEqual({
         schemaVersion: 1,
         policyOwner: "dsh",
         observedTools: ["grep", "read"],
@@ -655,7 +719,7 @@ it.each(["controlled", "native"] as const)(
   },
 );
 
-it("keeps a passed Gateway baseline when a no-change task loses publication authority", async () => {
+it("keeps no-change validation unexecuted when publication authority is revoked", async () => {
   await selectEntity("task", "issue");
   vi.stubEnv("INPUT_ALLOWED-TOOLS", '["workspace.edit","github.comment.create"]');
   ports.runDsh.mockImplementation(() => {
@@ -664,11 +728,10 @@ it("keeps a passed Gateway baseline when a no-change task loses publication auth
   });
   const outcome = await runAction();
   expect(outcome).toMatchObject({
-    conclusion: "failure",
-    validation: { status: "passed", commandCount: 1, integrity: { status: "clean" } },
-    error: { code: "POLICY_DENIED", phase: "publication" },
+    validation: { status: "not-applicable", commandCount: 0, integrity: { status: "clean" } },
+    termination: { conclusion: "failure", error: { code: "POLICY_DENIED", phase: "publication" } },
   });
-  expect(ports.process).toHaveBeenCalledOnce();
+  expect(ports.process).not.toHaveBeenCalled();
   expect(published.comment).not.toHaveBeenCalled();
   for (const effect of Object.values(created)) expect(effect).not.toHaveBeenCalled();
 });
@@ -692,8 +755,11 @@ it("keeps failed native worker evidence and known usage without publishing a wri
     }),
   );
   const outcome = await runAction();
-  expect(outcome).toMatchObject({ conclusion: "failure", agent: { durationMs: 20, usage } });
-  expect(outcome.toolPolicy).toEqual({
+  expect(outcome).toMatchObject({
+    agent: { durationMs: 20, usage },
+    termination: { conclusion: "failure" },
+  });
+  expect(outcome.context.toolPolicy).toEqual({
     schemaVersion: 1,
     policyOwner: "dsh",
     observedTools: ["grep", "read"],
@@ -712,9 +778,8 @@ it("denies an actor revoked during the model turn before any persistent GitHub e
   });
   const outcome = await runAction();
   expect(outcome).toMatchObject({
-    conclusion: "failure",
     validation: { status: "passed", commandCount: 1 },
-    error: { code: "POLICY_DENIED" },
+    termination: { conclusion: "failure", error: { code: "POLICY_DENIED" } },
   });
   for (const effect of Object.values(created)) expect(effect).not.toHaveBeenCalled();
   await expect(readFile(join(workerPath, "hello.txt"))).rejects.toThrow();
@@ -730,9 +795,11 @@ it.each(["controlled", "native"] as const)(
     });
     const outcome = await runAction();
     expect(outcome).toMatchObject({
-      conclusion: "failure",
       validation: { status: "not-applicable", commandCount: 0, integrity: { status: "clean" } },
-      error: { code: "POLICY_DENIED", phase: "publication" },
+      termination: {
+        conclusion: "failure",
+        error: { code: "POLICY_DENIED", phase: "publication" },
+      },
     });
     expect(ports.process).not.toHaveBeenCalled();
     for (const effect of Object.values(created)) expect(effect).not.toHaveBeenCalled();
@@ -747,11 +814,12 @@ it("keeps passed validation and confirmed PR evidence when checkpoint upload fai
   );
   const outcome = await runAction();
   expect(outcome).toMatchObject({
-    conclusion: "failure",
     validation: { status: "passed", commandCount: 1 },
-    writeStatus: "partial-success",
-    pullRequestNumber: 123,
-    error: { code: "SESSION_CHECKPOINT", phase: "publication" },
+    termination: {
+      conclusion: "failure",
+      error: { code: "SESSION_CHECKPOINT", phase: "publication" },
+    },
+    publication: { writeStatus: "partial-success", pullRequestNumber: 123 },
   });
   expect(created.blob).toHaveBeenCalledOnce();
   expect(created.commit).toHaveBeenCalledOnce();
@@ -801,14 +869,20 @@ it.each([
     const ref = created.branch.mock.calls[0]?.[0].ref;
     expect(ref).toBeTypeOf("string");
     expect(outcome).toMatchObject({
-      conclusion: "failure",
-      writeStatus: "partial-success",
-      commitSha: commit,
-      branchName: ref?.replace(/^refs\/heads\//u, ""),
       validation: { status: "passed", commandCount: 1 },
-      error: { code: failure === "pr-create" ? "ACTION_RUNTIME_FAILED" : "ENTITY_BINDING_CHANGED" },
+      termination: {
+        conclusion: "failure",
+        error: {
+          code: failure === "pr-create" ? "ACTION_RUNTIME_FAILED" : "ENTITY_BINDING_CHANGED",
+        },
+      },
+      publication: {
+        writeStatus: "partial-success",
+        commitSha: commit,
+        branchName: ref?.replace(/^refs\/heads\//u, ""),
+      },
     });
-    expect(outcome.pullRequestNumber).toBeUndefined();
+    expect(outcome.publication?.pullRequestNumber).toBeUndefined();
     expect(created.pull).toHaveBeenCalledTimes(failure === "pr-create" ? 1 : 0);
     expect(ports.runDsh).toHaveBeenCalledOnce();
     await expect(readFile(join(workerPath, "hello.txt"))).rejects.toThrow();
@@ -821,12 +895,11 @@ it("does not report a branch when its creation and reconciliation cannot confirm
   );
   const outcome = await runAction();
   expect(outcome).toMatchObject({
-    conclusion: "failure",
-    error: { code: "ACTION_RUNTIME_FAILED" },
+    termination: { conclusion: "failure", error: { code: "ACTION_RUNTIME_FAILED" } },
   });
-  expect(outcome.writeStatus).toBeUndefined();
-  expect(outcome.branchName).toBeUndefined();
-  expect(outcome.commitSha).toBeUndefined();
+  expect(outcome.publication?.writeStatus).toBeUndefined();
+  expect(outcome.publication?.branchName).toBeUndefined();
+  expect(outcome.publication?.commitSha).toBeUndefined();
   expect(created.branch).toHaveBeenCalledOnce();
   expect(created.pull).not.toHaveBeenCalled();
   expect(ports.runDsh).toHaveBeenCalledOnce();
@@ -877,12 +950,11 @@ it("retains the confirmed PR when final progress publication fails without a Ses
     }),
   );
   const outcome = await runAction();
-  expect(outcome.error).toBeUndefined();
+  expect(outcome.termination.error).toBeUndefined();
   expect(outcome).toMatchObject({
-    conclusion: "success",
-    writeStatus: "success",
-    pullRequestNumber: 123,
     validation: { status: "passed" },
+    termination: { conclusion: "success" },
+    publication: { writeStatus: "success", pullRequestNumber: 123 },
   });
   expect(created.pull).toHaveBeenCalledOnce();
   expect(comment).toHaveBeenCalled();
@@ -893,11 +965,10 @@ it("publishes a current-head review and projects selected inline and summary-onl
   ports.runDsh.mockResolvedValue(reviewWorkerResult());
   const outcome = await runAction();
   expect(outcome).toMatchObject({
-    conclusion: "success",
-    operation: "review",
-    findingsCount: 2,
-    publication: { selected: 2, inlinePublished: 1, summaryOnly: 1, failures: [] },
     validation: { status: "not-applicable", commandCount: 0 },
+    termination: { conclusion: "success" },
+    publication: { review: { selected: 2, inlinePublished: 1, summaryOnly: 1, failures: [] } },
+    operation: { kind: "review", findingsCount: 2 },
   });
   expect(published.inline).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({
@@ -933,10 +1004,9 @@ it("publishes a bounded CI diagnosis from failed checks through the real read li
   });
   const outcome = await runAction();
   expect(outcome).toMatchObject({
-    conclusion: "success",
-    operation: "diagnose",
-    findingsCount: 1,
     validation: { status: "not-applicable", commandCount: 0 },
+    termination: { conclusion: "success" },
+    operation: { kind: "diagnose", findingsCount: 1 },
   });
   expect(ports.runDsh.mock.calls[0]?.[0].prompt).toContain("FAILED_CHECK_MARKER");
   expect(published.comment).toHaveBeenCalledExactlyOnceWith(
@@ -965,42 +1035,42 @@ it.each(["controlled", "native"] as const)(
     });
     const outcome = await runAction();
     expect(outcome).toMatchObject({
-      conclusion: "success",
-      operation: "task",
-      writeStatus: "no-changes",
-      changedPaths: [],
-      taskOutput: { needsChange: false },
       validation: { status: "not-applicable", commandCount: 0, integrity: { status: "clean" } },
-      authority: {
-        schemaVersion: 1,
-        scope: "action-known-sources",
-        knownSources: [
-          {
-            kind: "controller-credential",
-            service: "github",
-            holder: "controller",
-            credentialExposure: "not-exposed-to-worker",
-          },
-          {
-            kind: "controller-credential",
-            service: "deepseek",
-            holder: "controller",
-            credentialExposure: "not-exposed-to-worker",
-            mediation: "run-scoped-proxy",
-          },
-        ],
+      termination: { conclusion: "success" },
+      context: {
+        authority: {
+          schemaVersion: 1,
+          scope: "action-known-sources",
+          knownSources: [
+            {
+              kind: "controller-credential",
+              service: "github",
+              holder: "controller",
+              credentialExposure: "not-exposed-to-worker",
+            },
+            {
+              kind: "controller-credential",
+              service: "deepseek",
+              holder: "controller",
+              credentialExposure: "not-exposed-to-worker",
+              mediation: "run-scoped-proxy",
+            },
+          ],
+        },
       },
+      publication: { writeStatus: "no-changes", changedPaths: [] },
+      operation: { kind: "task", taskOutput: { needsChange: false } },
     });
     if (mode === "native") {
-      expect(outcome.dsh).toEqual({ mode: "native", composition: "dsh-native-headless" });
-      expect(outcome.permission?.network).toBe("mediated-web");
-      expect(outcome.toolPolicy).toEqual({
+      expect(outcome.context.dsh).toEqual({ mode: "native", composition: "dsh-native-headless" });
+      expect(outcome.context.permission?.network).toBe("mediated-web");
+      expect(outcome.context.toolPolicy).toEqual({
         schemaVersion: 1,
         policyOwner: "dsh",
         observedTools: ["grep", "read"],
       });
     } else {
-      expect(outcome.toolPolicy).toMatchObject({
+      expect(outcome.context.toolPolicy).toMatchObject({
         schemaVersion: 1,
         policyOwner: "controller",
         requestedTools: ["workspace.edit", "workspace.read", "workspace.search"],
@@ -1030,11 +1100,9 @@ it("answers an Issue write task with no changes using a tracked comment instead 
   ports.runDsh.mockResolvedValue(readonlyWorkerResult("final"));
   const outcome = await runAction();
   expect(outcome).toMatchObject({
-    conclusion: "success",
-    writeStatus: "no-changes",
-    changedPaths: [],
-    commentId: 901,
     validation: { status: "not-applicable", commandCount: 0 },
+    termination: { conclusion: "success" },
+    publication: { writeStatus: "no-changes", changedPaths: [], commentId: 901 },
   });
   expect(published.comment).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({ issue_number: 7 }),
@@ -1055,9 +1123,12 @@ it("retains confirmed review publication when a later checkpoint upload fails", 
   ports.session.mockReturnValue(checkpointSession(save));
   const outcome = await runAction();
   expect(outcome).toMatchObject({
-    conclusion: "failure",
-    publication: { selected: 2, inlinePublished: 1, summaryOnly: 1, failures: [] },
-    error: { code: "SESSION_CHECKPOINT", phase: "publication" },
+    termination: {
+      conclusion: "failure",
+      error: { code: "SESSION_CHECKPOINT", phase: "publication" },
+    },
+    publication: { review: { selected: 2, inlinePublished: 1, summaryOnly: 1, failures: [] } },
+    operation: { kind: "review", findingsCount: 2 },
   });
   expect(published.inline).toHaveBeenCalledOnce();
   expect(published.comment).toHaveBeenCalledOnce();
@@ -1091,10 +1162,12 @@ it.each(["summary-503", "head-advanced"] as const)(
     ports.client.mockReturnValue(client);
     const outcome = await runAction();
     expect(outcome).toMatchObject({
-      conclusion: "failure",
-      operation: "review",
-      publication: { selected: 2, inlinePublished: 1, inlineUpdated: 0 },
-      error: { phase: "publication", code: "ACTION_RUNTIME_FAILED" },
+      termination: {
+        conclusion: "failure",
+        error: { phase: "publication", code: "ACTION_RUNTIME_FAILED" },
+      },
+      publication: { review: { selected: 2, inlinePublished: 1, inlineUpdated: 0 } },
+      operation: { kind: "review" },
     });
     expect(published.inline).toHaveBeenCalledOnce();
     expect(published.comment).toHaveBeenCalledTimes(failure === "summary-503" ? 1 : 0);
@@ -1104,7 +1177,15 @@ it.each(["summary-503", "head-advanced"] as const)(
 
 it("retains an already published no-change answer when its Session checkpoint fails", async () => {
   await selectEntity("task", "issue");
-  ports.runDsh.mockResolvedValue(readonlyWorkerResult("final"));
+  vi.stubEnv(
+    "INPUT_TASK-OUTPUT-SCHEMA",
+    '{"type":"object","properties":{"needsChange":{"type":"boolean"}},"required":["needsChange"],"additionalProperties":false}',
+  );
+  const result = readonlyWorkerResult("final");
+  ports.runDsh.mockResolvedValue({
+    ...result,
+    output: { ...result.output, taskOutput: { needsChange: false } },
+  });
   ports.session.mockReturnValue(
     checkpointSession(() =>
       Promise.reject(new SessionCheckpointError("artifact upload failed", "runtime")),
@@ -1112,10 +1193,12 @@ it("retains an already published no-change answer when its Session checkpoint fa
   );
   const outcome = await runAction();
   expect(outcome).toMatchObject({
-    conclusion: "failure",
-    operation: "task",
-    commentId: 901,
-    error: { code: "SESSION_CHECKPOINT", phase: "publication" },
+    termination: {
+      conclusion: "failure",
+      error: { code: "SESSION_CHECKPOINT", phase: "publication" },
+    },
+    publication: { commentId: 901 },
+    operation: { kind: "task", findingsCount: 0, taskOutput: { needsChange: false } },
   });
   expect(published.comment).toHaveBeenCalledOnce();
   for (const effect of Object.values(created)) expect(effect).not.toHaveBeenCalled();
@@ -1131,12 +1214,14 @@ it("implements an Issue through validation and projects its newly created PR", a
   });
   const outcome = await runAction();
   expect(outcome).toMatchObject({
-    conclusion: "success",
-    operation: "implement",
-    writeStatus: "success",
-    pullRequestNumber: 123,
-    pullRequestUrl: "https://github.com/octo/repo/pull/123",
     validation: { status: "passed", commandCount: 1 },
+    termination: { conclusion: "success" },
+    publication: {
+      writeStatus: "success",
+      pullRequestNumber: 123,
+      pullRequestUrl: "https://github.com/octo/repo/pull/123",
+    },
+    operation: { kind: "implement" },
   });
   expect(created.blob).toHaveBeenCalledOnce();
   expect(created.commit).toHaveBeenCalledOnce();
@@ -1160,14 +1245,16 @@ it.each([false, true])(
     if (commentFails)
       published.comment.mockRejectedValue(new Error("Final status comment unavailable"));
     const outcome = await runAction();
-    expect(outcome.error).toBeUndefined();
+    expect(outcome.termination.error).toBeUndefined();
     expect(outcome).toMatchObject({
-      conclusion: "success",
-      operation: "fix",
-      writeStatus: commentFails ? "partial-success" : "success",
-      commitSha: commit,
-      changedPaths: ["hello.txt"],
       validation: { status: "passed", commandCount: 1 },
+      termination: { conclusion: "success" },
+      publication: {
+        writeStatus: commentFails ? "partial-success" : "success",
+        commitSha: commit,
+        changedPaths: ["hello.txt"],
+      },
+      operation: { kind: "fix" },
     });
     expect(created.updateBranch).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ ref: "heads/feature", sha: commit, force: false }),
@@ -1194,10 +1281,12 @@ it("retains a published diagnosis when its Session checkpoint fails", async () =
   );
   const outcome = await runAction();
   expect(outcome).toMatchObject({
-    conclusion: "failure",
-    operation: "diagnose",
-    commentId: 901,
-    error: { code: "SESSION_CHECKPOINT", phase: "publication" },
+    termination: {
+      conclusion: "failure",
+      error: { code: "SESSION_CHECKPOINT", phase: "publication" },
+    },
+    publication: { commentId: 901 },
+    operation: { kind: "diagnose" },
   });
   expect(published.comment).toHaveBeenCalledOnce();
   expect(ports.process).not.toHaveBeenCalled();

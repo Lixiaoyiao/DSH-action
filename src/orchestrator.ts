@@ -11,11 +11,11 @@ import { throwIfCancelled } from "./lifecycle/cancellation.js";
 import {
   describeActionFailure,
   describeCancellationFailure,
-  type RunOutcome,
-  type ValidationSummary,
+  finishRunReport,
+  type RunFacts,
+  type RunReport,
 } from "./result.js";
 import { buildAuthorityAudit } from "./security/authority.js";
-import { ValidationIntegrityError } from "./write/validation-integrity.js";
 import { AgentPhase } from "./orchestration/agent-phase.js";
 import { ExecutionPreparation } from "./orchestration/execution.js";
 import {
@@ -43,16 +43,15 @@ export interface RunActionOptions {
 }
 
 /** Domain owners retain their own facts; orchestration only orders their lifecycles. */
-export async function runAction(options: RunActionOptions = {}): Promise<RunOutcome> {
+export async function runAction(options: RunActionOptions = {}): Promise<RunReport> {
   const startedAt = Date.now();
   const lifecycle = new RunLifecycle();
   let deadline: RunDeadline | undefined;
   let preparation: RunPreparation | undefined;
   let execution: ExecutionPreparation | undefined;
   let agent: AgentPhase | undefined;
-  let runtime: Pick<RunOutcome, "dsh" | "authority"> = {};
+  let runtime: Pick<RunFacts, "dsh" | "authority"> = {};
   const observations = () => ({
-    schemaVersion: 1 as const,
     durationMs: Math.max(0, Date.now() - startedAt),
     ...runtime,
     ...preparation?.snapshot(),
@@ -86,7 +85,8 @@ export async function runAction(options: RunActionOptions = {}): Promise<RunOutc
     const { signal, deadlineMs } = deadline;
     preparation = new RunPreparation({ lifecycle, deadlineMs, inputs, signal });
     const prepared = await preparation.run();
-    if (prepared.kind === "complete") return { ...observations(), ...prepared.outcome };
+    if (prepared.kind === "complete")
+      return finishRunReport({ ...observations(), ...prepared.outcome });
 
     lifecycle.enter("context");
     let workspace: PreparedWorkspace | undefined;
@@ -127,7 +127,7 @@ export async function runAction(options: RunActionOptions = {}): Promise<RunOutc
         deadlineMs,
       });
       const outcome = await agent.run();
-      return { ...observations(), ...outcome };
+      return finishRunReport({ ...observations(), ...outcome });
     } catch (error: unknown) {
       // Begin terminal reporting before bounded workspace cleanup.
       startFailure(error);
@@ -141,27 +141,14 @@ export async function runAction(options: RunActionOptions = {}): Promise<RunOutc
       ? describeCancellationFailure(lifecycle.phase)
       : describeActionFailure(effectiveError, lifecycle.phase);
     await lifecycle.finishFailure(effectiveError, failure);
-    const accepted = execution?.validation?.snapshot();
-    const integrity = error instanceof ValidationIntegrityError ? error.audit : accepted?.integrity;
-    const validation: ValidationSummary | undefined =
-      failure.phase === "validation" || integrity !== undefined
-        ? {
-            status:
-              integrity?.status === "blocked" ? "failed" : (accepted?.status ?? "not-applicable"),
-            commandCount: accepted?.status === "not-applicable" ? 0 : (accepted?.commandCount ?? 0),
-            ...(integrity === undefined ? {} : { integrity }),
-          }
-        : undefined;
     const observed = observations();
-    delete observed.validation;
-    return {
+    return finishRunReport({
       ...observed,
       conclusion: "failure",
       summary: failure.title,
-      findingsCount: 0,
-      ...(validation === undefined ? {} : { validation }),
+      findingsCount: observed.findingsCount ?? 0,
       error: failure,
-    };
+    });
   } finally {
     deadline?.dispose();
     options.signal?.removeEventListener("abort", beginCancellationFinalization);

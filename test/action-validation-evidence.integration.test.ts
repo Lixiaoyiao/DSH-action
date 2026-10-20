@@ -11,7 +11,7 @@ import { DshAbortedError } from "../src/dsh/errors.js";
 import { runAction } from "../src/orchestrator.js";
 import { loadInputs } from "../src/inputs.js";
 import { WorkspaceValidation } from "../src/write/workspace-validation.js";
-import { createWorkspaceSnapshot } from "../src/write/workspace.js";
+import { createWorkspaceSnapshot, inspectWorkspaceChanges } from "../src/write/workspace.js";
 import { actionLifecycleGitHub } from "./helpers/action-lifecycle-github.js";
 import { githubClientFixture } from "./helpers/github-client.js";
 
@@ -61,7 +61,7 @@ it.each(["controlled", "native"] as const)(
       setTimeout(() => controller.abort(new DshAbortedError()), 0);
       return Promise.resolve({
         output: {
-          protocolVersion: 1,
+          protocolVersion: 2,
           operation: "task",
           state: "final",
           summary: "No change needed",
@@ -91,8 +91,7 @@ it.each(["controlled", "native"] as const)(
         validation: outcome.validation,
       }),
     ).toMatchObject({
-      conclusion: "failure",
-      error: { code: "DSH_ABORTED", phase: "validation" },
+      termination: { conclusion: "failure", error: { code: "DSH_ABORTED", phase: "validation" } },
       validation: { status: "not-applicable", commandCount: 0 },
     });
     for (const effect of Object.values(github.created)) expect(effect).not.toHaveBeenCalled();
@@ -133,7 +132,7 @@ async function configuredAction(files: Readonly<Record<string, string>>) {
     "INPUT_PROGRESS-COMMENT": "false",
     "INPUT_TEST-COMMANDS": '[["npm","test"]]',
     "INPUT_ALLOWED-TOOLS": '["workspace.read","workspace.edit"]',
-    "INPUT_MAX-TURNS": "1",
+    "INPUT_MAX-CONTROLLER-STEPS": "1",
   }))
     vi.stubEnv(name, value);
   const base = "a".repeat(40),
@@ -191,7 +190,7 @@ async function configuredAction(files: Readonly<Record<string, string>>) {
 function finalWriteResponse(): DshModule.DshRunResult {
   return {
     output: {
-      protocolVersion: 1,
+      protocolVersion: 2,
       operation: "task",
       state: "final",
       summary: "Updated validation script",
@@ -233,15 +232,17 @@ it("reports zero candidate commands when strict integrity blocks before executio
       validation: outcome.validation,
     }),
   ).toMatchObject({
-    conclusion: "failure",
-    error: { code: "VALIDATION_INTEGRITY", phase: "validation" },
+    termination: {
+      conclusion: "failure",
+      error: { code: "VALIDATION_INTEGRITY", phase: "validation" },
+    },
     validation: { status: "failed", commandCount: 0, integrity: { status: "blocked" } },
   });
   for (const effect of Object.values(github.created)) expect(effect).not.toHaveBeenCalled();
 });
 
 it.each(["deadline", "cancelled"] as const)(
-  "does not report configured commands when Gateway preparation is %s",
+  "does not report configured commands when workspace inspection is %s",
   async (failure) => {
     const { root } = await configuredAction({});
     const source = join(root, "source");
@@ -264,18 +265,20 @@ it.each(["deadline", "cancelled"] as const)(
         containerImage: loadInputs().containerImage,
       },
       integrityMode: loadInputs().validationIntegrity,
-      onPhase: () => undefined,
-      deadlineMs: Date.now() + (failure === "deadline" ? -1 : 30_000),
-      signal: controller.signal,
     });
-    await expect(gate.validate()).rejects.toMatchObject({
-      name: failure === "deadline" ? "AgentDeadlineError" : "DshAbortedError",
+    await expect(
+      gate.prepareWrite(await inspectWorkspaceChanges(workspace), {
+        deadlineMs: Date.now() + (failure === "deadline" ? -1 : 30_000),
+        signal: controller.signal,
+      }),
+    ).rejects.toMatchObject({
+      name: failure === "deadline" ? "ValidationFailureError" : "DshAbortedError",
     });
     expect(ports.process).not.toHaveBeenCalled();
-    expect(gate.snapshot().status).toBe("failed");
+    expect(gate.snapshot().status).toBe("not-applicable");
     expect(
       gate.snapshot().commandCount,
-      "Gateway failed before any candidate process was dispatched",
+      "Inspection failed before any candidate process was dispatched",
     ).toBe(0);
   },
 );
@@ -312,19 +315,21 @@ it.each(["passed", "failed", "cancelled"] as const)(
     const outcome = await runAction();
     expect(invocations).toBe(completion === "passed" ? 3 : 2);
     expect(outcome).toMatchObject({
-      conclusion: completion === "passed" ? "success" : "failure",
+      termination: {
+        conclusion: completion === "passed" ? "success" : "failure",
+        ...(completion === "passed"
+          ? {}
+          : {
+              error: {
+                code: completion === "cancelled" ? "DSH_ABORTED" : "VALIDATION_FAILED",
+                phase: "validation",
+              },
+            }),
+      },
       validation: {
         status: completion === "passed" ? "passed" : "failed",
         commandCount: completion === "passed" ? 3 : 2,
       },
-      ...(completion === "passed"
-        ? {}
-        : {
-            error: {
-              code: completion === "cancelled" ? "DSH_ABORTED" : "VALIDATION_FAILED",
-              phase: "validation",
-            },
-          }),
     });
     if (completion !== "passed") {
       expect(ports.process.mock.calls.filter(([{ args }]) => args[0] === "rm")).toHaveLength(1);
@@ -355,8 +360,7 @@ it("keeps failed baseline replay evidence separate from zero candidate invocatio
   const outcome = await runAction();
   expect(ports.process.mock.calls.filter(([{ args }]) => args[0] === "run")).toHaveLength(1);
   expect(outcome).toMatchObject({
-    conclusion: "failure",
-    error: { code: "VALIDATION_INTEGRITY" },
+    termination: { conclusion: "failure", error: { code: "VALIDATION_INTEGRITY" } },
     validation: {
       status: "failed",
       commandCount: 0,
@@ -364,75 +368,4 @@ it("keeps failed baseline replay evidence separate from zero candidate invocatio
     },
   });
   for (const effect of Object.values(github.created)) expect(effect).not.toHaveBeenCalled();
-});
-
-it("preserves a passed Gateway revision without dispatching the same suite again", async () => {
-  const { root } = await configuredAction({});
-  const source = join(root, "source");
-  await mkdir(source);
-  const workspace = await createWorkspaceSnapshot(
-    { kind: "materialized-tree", root: source },
-    join(root, "worker"),
-  );
-  const gate = new WorkspaceValidation({
-    workspace,
-    configuration: {
-      runTests: loadInputs().runTests,
-      commands: loadInputs().testCommands,
-      containerImage: loadInputs().containerImage,
-    },
-    integrityMode: loadInputs().validationIntegrity,
-    onPhase: () => undefined,
-    deadlineMs: Date.now() + 30_000,
-    signal: new AbortController().signal,
-  });
-  ports.process.mockResolvedValue(passedCommand);
-  await gate.validate();
-  await gate.validate();
-  expect(ports.process).toHaveBeenCalledOnce();
-  expect(gate.snapshot()).toMatchObject({ status: "passed", commandCount: 1 });
-});
-
-it("restores passed Gateway evidence when a failed candidate returns to the validated revision", async () => {
-  const { root } = await configuredAction({});
-  vi.stubEnv("INPUT_TEST-COMMANDS", '[["node","one"],["node","two"]]');
-  const source = join(root, "source");
-  await mkdir(source);
-  const workspace = await createWorkspaceSnapshot(
-    { kind: "materialized-tree", root: source },
-    join(root, "worker"),
-  );
-  const gate = new WorkspaceValidation({
-    workspace,
-    configuration: {
-      runTests: loadInputs().runTests,
-      commands: loadInputs().testCommands,
-      containerImage: loadInputs().containerImage,
-    },
-    integrityMode: loadInputs().validationIntegrity,
-    onPhase: () => undefined,
-    deadlineMs: Date.now() + 30_000,
-    signal: new AbortController().signal,
-  });
-  ports.process.mockImplementation(({ args }) =>
-    Promise.resolve(
-      args[0] === "rm" || ports.process.mock.calls.length <= 2
-        ? passedCommand
-        : { ...passedCommand, exitCode: 1 },
-    ),
-  );
-  await gate.validate();
-  await writeFile(join(workspace.workerRoot, "candidate.txt"), "candidate\n");
-  await expect(gate.validate()).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
-  expect(gate.snapshot().status).toBe("failed");
-  expect(gate.snapshot().commandCount).toBe(1);
-  await rm(join(workspace.workerRoot, "candidate.txt"));
-  const processCalls = ports.process.mock.calls.length;
-  await gate.validate();
-  expect(ports.process).toHaveBeenCalledTimes(processCalls);
-  expect(gate.snapshot()).toMatchObject({
-    status: "passed",
-    commandCount: 2,
-    integrity: { status: "clean" },
-  });
 });

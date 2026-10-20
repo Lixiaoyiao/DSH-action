@@ -52,6 +52,7 @@ export interface AgentRunSummary {
 
 export interface ValidationSummary {
   readonly status: "passed" | "failed" | "skipped" | "not-applicable";
+  readonly provenance?: "current-workspace" | "completed-operation";
   /** Invocations in the latest candidate suite, excluding baseline replay and cleanup. */
   readonly commandCount: number;
   readonly integrity?: ValidationIntegritySummary;
@@ -72,8 +73,7 @@ export interface SessionRunSummary {
   readonly expiresAt?: string;
 }
 
-export interface RunOutcome {
-  readonly schemaVersion: 1;
+export interface RunFacts {
   readonly conclusion: ActionConclusion;
   readonly operation?: Operation;
   readonly summary: string;
@@ -104,4 +104,45 @@ export interface RunOutcome {
     readonly instruction?: RepositoryTextFileAudit;
     readonly contexts: readonly RepositoryTextFileAudit[];
   };
+}
+
+/** The sole public report. Domain owners contribute facts; renderers never reclassify them. */
+export interface RunReport {
+  readonly schemaVersion: 2;
+  readonly termination: {
+    readonly conclusion: ActionConclusion;
+    readonly status: ActionStatus;
+    readonly summary: string;
+    readonly durationMs: number;
+    readonly error?: ActionFailure;
+  };
+  readonly operation: {
+    readonly kind: Operation | "none";
+    readonly findingsCount: number;
+    readonly taskOutput?: unknown;
+  };
+  readonly context: Pick<
+    RunFacts,
+    | "runUrl"
+    | "policy"
+    | "permission"
+    | "toolPolicy"
+    | "dsh"
+    | "authority"
+    | "githubRequests"
+    | "textSources"
+  >;
+  readonly agent?: AgentRunSummary & { readonly receiptsDropped?: number };
+  readonly validation?: ValidationSummary;
+  readonly publication?: Pick<
+    RunFacts,
+    | "writeStatus"
+    | "commitSha"
+    | "changedPaths"
+    | "branchName"
+    | "pullRequestNumber"
+    | "pullRequestUrl"
+    | "commentId"
+  > & { readonly review?: PublicationResult };
+  readonly session?: SessionRunSummary;
 }

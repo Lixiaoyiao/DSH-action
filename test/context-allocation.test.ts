@@ -241,6 +241,6 @@ describe("fair model context allocation", () => {
     });
     expect(action?.with.prompt).toContain("contextTruncated");
     expect(action?.with.prompt).toContain("not proof that a file was completely reviewed");
-    expect(action?.with["max-turns"]).toBeUndefined();
+    expect(action?.with["max-controller-steps"]).toBeUndefined();
   });
 });

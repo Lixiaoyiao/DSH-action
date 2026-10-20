@@ -1,3 +1,4 @@
+import { finishRunReport } from "../src/result.js";
 import { createHash } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
@@ -5,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { extensionCredentialOwnerFacts } from "../src/extensions/credentials.js";
 import { resolveExtensionPlan } from "../src/extensions/plan.js";
 import { parseMcpConfiguration, parsePluginConfiguration } from "../src/extensions/schema.js";
-import { buildActionOutputs, formatStepSummary, type RunOutcome } from "../src/result.js";
+import { buildActionOutputs, formatStepSummary, type RunFacts } from "../src/result.js";
 import { buildAuthorityAudit } from "../src/security/authority.js";
 import type { SecurityPolicy } from "../src/security/policy.js";
 
@@ -236,17 +237,20 @@ describe("known authority sources", () => {
   it("reports one entry per effective owner and never serializes secret bytes or hashes", () => {
     const authority = buildAuthorityAudit(effectivePlan());
     const outcome = {
-      schemaVersion: 1,
       conclusion: "success",
       operation: "task",
       summary: "Authority audit complete",
       findingsCount: 0,
       durationMs: 10,
       authority,
-    } satisfies RunOutcome;
-    const outputs = buildActionOutputs(outcome);
+    } satisfies RunFacts;
+    const outputs = buildActionOutputs(finishRunReport(outcome));
     const serialized = JSON.stringify(authority);
-    const publicSurfaces = [serialized, String(outputs["result-json"]), formatStepSummary(outcome)];
+    const publicSurfaces = [
+      serialized,
+      String(outputs["result-json"]),
+      formatStepSummary(finishRunReport(outcome)),
+    ];
 
     expect(serialized).not.toContain("unused-mcp");
     expect(serialized).not.toContain("unused-plugin");

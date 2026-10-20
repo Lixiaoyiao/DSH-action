@@ -33,16 +33,17 @@ function sourceReported(output) {
 
 let result;
 try {
-  const parsed = JSON.parse(process.env.RESULT_JSON ?? "");
-  if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) result = parsed;
+  const text = process.env.RESULT_JSON ?? "";
+  const parsed = text.length <= 640 * 1024 ? JSON.parse(text) : undefined;
+  if (parsed?.schemaVersion === 2) result = parsed;
 } catch {
   /* Missing results stay unknown. */
 }
-const receipts = Array.isArray(result?.loop?.dshToolReceipts) ? result.loop.dshToolReceipts : [];
+const receipts = Array.isArray(result?.agent?.dshToolReceipts) ? result.agent.dshToolReceipts : [];
 const evidence = {
   actionOutcome: outcome(process.env.WEB_ACTION_OUTCOME),
-  conclusion: conclusion(result?.conclusion),
-  errorCode: errorCode(result?.error?.code),
+  conclusion: conclusion(result?.termination?.conclusion),
+  errorCode: errorCode(result?.termination?.error?.code),
   receiptCount: result === undefined ? null : Math.min(receipts.length, 10_000),
   completedWebSearchCount:
     result === undefined
@@ -58,7 +59,7 @@ const evidence = {
         ),
   // This is presence/shape evidence, not independent verification of the URL
   // or title against upstream content. The mandatory receipt proves execution.
-  sourceReported: sourceReported(result?.taskOutput),
+  sourceReported: sourceReported(result?.operation?.taskOutput),
 };
 const text = JSON.stringify(evidence);
 await writeFile(evidencePath, JSON.stringify(evidence, null, 2) + "\n");

@@ -1,15 +1,12 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-
 import { sessionFormatCatalog } from "@deepseek-ai/dsh-session-format-catalog";
 import { zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-
 import { parseTaskOutputSchema, validateTaskOutput } from "../src/dsh/task-output.js";
 import { loadInputs } from "../src/inputs.js";
 import { assertSessionWorkflowPolicy } from "../src/session/workflow-policy.js";
-
 import * as fixture from "../.github/e2e/session-auto-e2e-proof.mjs";
 import { fixtureObject as object } from "./helpers/json-fixture.js";
 const now = Date.parse("2026-10-04T01:00:00Z");
@@ -17,7 +14,6 @@ const id = "session-11111111-1111-4111-8111-111111111111";
 const memory = "a".repeat(48);
 const challenge = "b".repeat(24);
 const hash = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
-
 function identity(extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     phase: "save",
@@ -37,7 +33,6 @@ function identity(extra: Record<string, unknown> = {}): Record<string, unknown> 
     ...extra,
   };
 }
-
 function checkpoint(
   options: {
     generation?: number;
@@ -80,7 +75,7 @@ function checkpoint(
       .join("\n") + "\n",
   );
   const manifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     repository: { id: 1, owner: "octo", repo: "repo" },
     workflow: {
       path: ".github/workflows/session-auto-e2e.yml",
@@ -111,16 +106,9 @@ function checkpoint(
     }),
   };
 }
-
 function successResult(extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    conclusion: "success",
-    operation: "task",
-    taskOutput: { memory, challenge, phase: "save" },
-    policy: { trust: "trusted-write" },
-    permissions: { workspaceWrite: true },
-    isolation: { backend: "docker", processIsolated: true, workspaceAccess: "read-write" },
-    dsh: { mode: "controlled" },
+    schemaVersion: 2,
     session: {
       mode: "save",
       status: "saved",
@@ -129,13 +117,36 @@ function successResult(extra: Record<string, unknown> = {}): Record<string, unkn
       payloadSha256: "f".repeat(64),
       sessionId: id,
     },
-    loop: { turns: 1, toolCalls: 0 },
-    write: { status: "no-changes", changedPaths: [] },
     validation: { status: "not-applicable", commandCount: 0 },
     ...extra,
+    termination: {
+      conclusion: "success",
+      ...object(extra.termination ?? {}),
+    },
+    operation: {
+      kind: "task",
+      taskOutput: { memory, challenge, phase: "save" },
+      ...object(extra.operation ?? {}),
+    },
+    context: {
+      policy: { trust: "trusted-write" },
+      permission: { workspaceWrite: true },
+      dsh: { mode: "controlled" },
+      ...object(extra.context ?? {}),
+    },
+    agent: {
+      isolation: { backend: "docker", processIsolated: true, workspaceAccess: "read-write" },
+      turns: 1,
+      toolCalls: 0,
+      ...object(extra.agent ?? {}),
+    },
+    publication: {
+      writeStatus: "no-changes",
+      changedPaths: [],
+      ...object(extra.publication ?? {}),
+    },
   };
 }
-
 describe("independent Actions Session qualification fixture", () => {
   it("supplies a new challenge while withholding historical memory from every resume input", () => {
     const save = fixture.buildSessionTask("save", challenge, memory);
@@ -151,7 +162,6 @@ describe("independent Actions Session qualification fixture", () => {
       maxLength: 48,
     });
   });
-
   it.each(["save", "resume"])(
     "admits the real prepare-generated %s schema through public schema and workflow input parsers",
     async (phase) => {
@@ -183,11 +193,14 @@ describe("independent Actions Session qualification fixture", () => {
       });
       expect(
         fixture.resultChecks(
-          { taskOutput: { memory: wrongMemory, challenge, phase } },
+          {
+            operation: {
+              taskOutput: { memory: wrongMemory, challenge, phase },
+            },
+          },
           identity({ phase }),
         ).memory,
       ).toBe(false);
-
       const workflow = object(
         parse(
           await readFile(
@@ -236,7 +249,6 @@ describe("independent Actions Session qualification fixture", () => {
       }
     },
   );
-
   it.each([
     "repository",
     "runId",
@@ -253,7 +265,6 @@ describe("independent Actions Session qualification fixture", () => {
       fixture.assertSourceProof({ ...proof, [key]: "different-source" }, expected),
     ).toThrow("SOURCE_BINDING");
   });
-
   it.each(["controlled", "native"])(
     "decodes complete released v4 persistence and verifies %s checksum and current policy",
     (mode) => {
@@ -268,7 +279,6 @@ describe("independent Actions Session qualification fixture", () => {
       });
     },
   );
-
   it.each([
     { payloadSha256: "0".repeat(64) },
     { sessionId: id.replace("11111111", "33333333") },
@@ -285,7 +295,6 @@ describe("independent Actions Session qualification fixture", () => {
       fixture.inspectCheckpointArchive(value.archive, { ...value.expected, ...extra }),
     ).toThrow();
   });
-
   it("rejects hidden extra files and does not accept an extra replayed task", () => {
     const extra = checkpoint({ extraFile: true });
     expect(() => fixture.inspectCheckpointArchive(extra.archive, extra.expected)).toThrow(
@@ -298,7 +307,6 @@ describe("independent Actions Session qualification fixture", () => {
     const resumed = checkpoint({ generation: 2, mode: "read-only" });
     expect(fixture.inspectCheckpointArchive(resumed.archive, resumed.expected).generation).toBe(2);
   });
-
   it("requires genuine independent-run memory plus current read-only policy and fresh artifact", () => {
     const expected = identity({
       phase: "resume",
@@ -308,10 +316,6 @@ describe("independent Actions Session qualification fixture", () => {
       payloadSha256: "0".repeat(64),
     });
     const result = successResult({
-      taskOutput: { memory, challenge, phase: "resume" },
-      policy: { trust: "trusted-read" },
-      permissions: { workspaceWrite: false },
-      isolation: { backend: "docker", processIsolated: true, workspaceAccess: "read-only" },
       session: {
         mode: "resume",
         status: "saved",
@@ -321,27 +325,58 @@ describe("independent Actions Session qualification fixture", () => {
         artifactId: 31,
         payloadSha256: "f".repeat(64),
       },
-      write: {},
+      operation: {
+        taskOutput: { memory, challenge, phase: "resume" },
+      },
+      context: {
+        policy: { trust: "trusted-read" },
+        permission: { workspaceWrite: false },
+      },
+      agent: {
+        isolation: { backend: "docker", processIsolated: true, workspaceAccess: "read-only" },
+      },
+      publication: {},
     });
     expect(Object.values(fixture.resultChecks(result, expected)).every(Boolean)).toBe(true);
     expect(
       fixture.resultChecks(
-        { ...result, taskOutput: { memory: "wrong", challenge, phase: "resume" } },
+        {
+          ...result,
+          operation: {
+            ...object(result.operation),
+            taskOutput: { memory: "wrong", challenge, phase: "resume" },
+          },
+        },
         expected,
       ).memory,
     ).toBe(false);
     expect(
-      fixture.resultChecks({ ...result, permissions: { workspaceWrite: true } }, expected)
-        .currentPermission,
+      fixture.resultChecks(
+        {
+          ...result,
+          context: {
+            ...object(result.context),
+            permission: { workspaceWrite: true },
+          },
+        },
+        expected,
+      ).currentPermission,
     ).toBe(false);
     expect(
-      fixture.resultChecks({ ...result, loop: { dshToolReceipts: [{ ok: true }] } }, expected)
-        .noUnexpectedToolsOrWrites,
+      fixture.resultChecks(
+        {
+          ...result,
+          agent: {
+            ...object(result.agent),
+            dshToolReceipts: [{ ok: true }],
+          },
+        },
+        expected,
+      ).noUnexpectedToolsOrWrites,
     ).toBe(false);
     expect(fixture.resultChecks(result, { ...expected, runId: 10 }).newRun).toBe(false);
     expect(Object.values(fixture.resultChecks(undefined, expected)).every(Boolean)).toBe(false);
   });
-
   it("keeps one static trusted producer, read-only fixture tokens and a real fail-closed validator", async () => {
     const workflow = await readFile(
       new URL("../.github/workflows/session-auto-e2e.yml", import.meta.url),
@@ -388,7 +423,7 @@ describe("independent Actions Session qualification fixture", () => {
     expect(inputs["base-branch"]).toBe(
       "${{ inputs.image_attachment && 'codex/v0110-session-image-fixture' || '' }}",
     );
-    expect(inputs["max-turns"]).toBe("1");
+    expect(inputs["max-controller-steps"]).toBe("1");
     expect(inputs["run-tests"]).toBe("true");
     expect(JSON.parse(String(inputs["test-commands"]))).toEqual([
       ["npm", "ci", "--ignore-scripts"],
@@ -418,7 +453,6 @@ describe("independent Actions Session qualification fixture", () => {
     expect(inputs["fixture-source-run-id"]).toBeUndefined();
     expect(inputs["fixture-kind"]).toBeUndefined();
   });
-
   it("independently distinguishes first use, successful history, failed history and unknown history", () => {
     const current = { runId: 20, runTitle: "dsh-session-Fixture-Key" };
     const run = {
@@ -450,7 +484,6 @@ describe("independent Actions Session qualification fixture", () => {
         .status,
     ).toBe("first");
   });
-
   it("requires the auto selection, source run and advancing generation rather than a fresh replacement", () => {
     const expected = identity({
       sessionMode: "auto",
@@ -460,10 +493,6 @@ describe("independent Actions Session qualification fixture", () => {
       sourceRunId: 11,
     });
     const result = successResult({
-      taskOutput: { memory, challenge, phase: "resume" },
-      policy: { trust: "trusted-read" },
-      permissions: { workspaceWrite: false },
-      isolation: { backend: "docker", processIsolated: true, workspaceAccess: "read-only" },
       session: {
         mode: "auto",
         selection: "resumed",
@@ -474,7 +503,17 @@ describe("independent Actions Session qualification fixture", () => {
         artifactId: 32,
         payloadSha256: "f".repeat(64),
       },
-      write: {},
+      operation: {
+        taskOutput: { memory, challenge, phase: "resume" },
+      },
+      context: {
+        policy: { trust: "trusted-read" },
+        permission: { workspaceWrite: false },
+      },
+      agent: {
+        isolation: { backend: "docker", processIsolated: true, workspaceAccess: "read-only" },
+      },
+      publication: {},
     });
     expect(Object.values(fixture.resultChecks(result, expected)).every(Boolean)).toBe(true);
     expect(
@@ -490,21 +529,26 @@ describe("independent Actions Session qualification fixture", () => {
       ).checkpoint,
     ).toBe(false);
   });
-
   it.each(["failed", "unknown", "expired", "missing", "incompatible", "corrupt"])(
     "requires actual fail-closed Action output for the %s boundary",
     (expectedFailure) => {
       const result = {
-        conclusion: "failure",
-        error: {
-          code: "SESSION_CHECKPOINT",
-          message:
-            expectedFailure === "corrupt"
-              ? "Session ZIP file metadata is invalid"
-              : `Automatic Session history is ${expectedFailure}`,
-        },
+        schemaVersion: 2,
         session: { mode: "auto", status: "failed" },
-        loop: { turns: 0, toolCalls: 0 },
+        termination: {
+          conclusion: "failure",
+          error: {
+            code: "SESSION_CHECKPOINT",
+            message:
+              expectedFailure === "corrupt"
+                ? "Session ZIP file metadata is invalid"
+                : `Automatic Session history is ${expectedFailure}`,
+          },
+        },
+        agent: {
+          turns: 0,
+          toolCalls: 0,
+        },
       };
       const expected = { expectedFailure };
       expect(Object.values(fixture.failureChecks(result, expected, "failure")).every(Boolean)).toBe(
@@ -512,12 +556,27 @@ describe("independent Actions Session qualification fixture", () => {
       );
       expect(fixture.failureChecks(result, expected, "success").actionDenied).toBe(false);
       expect(
-        fixture.failureChecks({ ...result, loop: { turns: 1 } }, expected, "failure")
-          .noTaskExecution,
+        fixture.failureChecks(
+          {
+            ...result,
+            agent: {
+              ...object(result.agent),
+              turns: 1,
+            },
+          },
+          expected,
+          "failure",
+        ).noTaskExecution,
       ).toBe(false);
       expect(
         fixture.failureChecks(
-          { ...result, error: { code: "SESSION_CHECKPOINT", message: "Unrelated failure" } },
+          {
+            ...result,
+            termination: {
+              ...object(result.termination),
+              error: { code: "SESSION_CHECKPOINT", message: "Unrelated failure" },
+            },
+          },
           expected,
           "failure",
         ).exactBoundary,
@@ -526,13 +585,19 @@ describe("independent Actions Session qualification fixture", () => {
   );
   it("accepts only the exact orphan provenance denial after an independently verified fixture", () => {
     const result = {
-      conclusion: "failure",
-      error: {
-        code: "SESSION_CHECKPOINT",
-        message: "Automatic Session run-name does not match its verified logical key",
-      },
+      schemaVersion: 2,
       session: { mode: "auto", status: "failed" },
-      loop: { turns: 0, toolCalls: 0 },
+      termination: {
+        conclusion: "failure",
+        error: {
+          code: "SESSION_CHECKPOINT",
+          message: "Automatic Session run-name does not match its verified logical key",
+        },
+      },
+      agent: {
+        turns: 0,
+        toolCalls: 0,
+      },
     };
     expect(
       fixture.failureChecks(result, { expectedFailure: "unknown" }, "failure").exactBoundary,
@@ -542,11 +607,27 @@ describe("independent Actions Session qualification fixture", () => {
       true,
     );
     expect(
-      fixture.failureChecks({ ...result, loop: { turns: 1 } }, expected, "failure").noTaskExecution,
+      fixture.failureChecks(
+        {
+          ...result,
+          agent: {
+            ...object(result.agent),
+            turns: 1,
+          },
+        },
+        expected,
+        "failure",
+      ).noTaskExecution,
     ).toBe(false);
     expect(
       fixture.failureChecks(
-        { ...result, error: { ...result.error, message: "Automatic Session history is unknown" } },
+        {
+          ...result,
+          termination: {
+            ...object(result.termination),
+            error: { ...result.termination.error, message: "Automatic Session history is unknown" },
+          },
+        },
         expected,
         "failure",
       ).exactBoundary,
@@ -555,13 +636,19 @@ describe("independent Actions Session qualification fixture", () => {
   });
   it("accepts the exact manifest-expiry denial only with independent evidence and keeps every no-effect check", () => {
     const result = {
-      conclusion: "failure",
-      error: {
-        code: "SESSION_CHECKPOINT",
-        message: "Session checkpoint is expired or has an invalid retention window",
-      },
+      schemaVersion: 2,
       session: { mode: "auto", status: "failed" },
-      loop: { turns: 0, toolCalls: 0 },
+      termination: {
+        conclusion: "failure",
+        error: {
+          code: "SESSION_CHECKPOINT",
+          message: "Session checkpoint is expired or has an invalid retention window",
+        },
+      },
+      agent: {
+        turns: 0,
+        toolCalls: 0,
+      },
     };
     expect(
       fixture.failureChecks(result, { expectedFailure: "expired" }, "failure").exactBoundary,
@@ -572,14 +659,43 @@ describe("independent Actions Session qualification fixture", () => {
     );
     expect(fixture.failureChecks(result, expected, "success").actionDenied).toBe(false);
     expect(
-      fixture.failureChecks({ ...result, isolation: {} }, expected, "failure").noWorkerStart,
+      fixture.failureChecks(
+        {
+          ...result,
+          agent: {
+            ...object(result.agent),
+            isolation: {},
+          },
+        },
+        expected,
+        "failure",
+      ).noWorkerStart,
     ).toBe(false);
     expect(
-      fixture.failureChecks({ ...result, loop: { turns: 1 } }, expected, "failure").noTaskExecution,
+      fixture.failureChecks(
+        {
+          ...result,
+          agent: {
+            ...object(result.agent),
+            turns: 1,
+          },
+        },
+        expected,
+        "failure",
+      ).noTaskExecution,
     ).toBe(false);
     expect(
-      fixture.failureChecks({ ...result, loop: { toolCalls: 1 } }, expected, "failure")
-        .noToolExecution,
+      fixture.failureChecks(
+        {
+          ...result,
+          agent: {
+            ...object(result.agent),
+            toolCalls: 1,
+          },
+        },
+        expected,
+        "failure",
+      ).noToolExecution,
     ).toBe(false);
     expect(
       fixture.failureChecks(
@@ -590,14 +706,25 @@ describe("independent Actions Session qualification fixture", () => {
     ).toBe(false);
     expect(
       fixture.failureChecks(
-        { ...result, write: { commitSha: "c".repeat(40) } },
+        {
+          ...result,
+          publication: {
+            commitSha: "c".repeat(40),
+          },
+        },
         expected,
         "failure",
       ).noWrites,
     ).toBe(false);
     expect(
       fixture.failureChecks(
-        { ...result, error: { ...result.error, message: "Automatic Session history is expired" } },
+        {
+          ...result,
+          termination: {
+            ...object(result.termination),
+            error: { ...result.termination.error, message: "Automatic Session history is expired" },
+          },
+        },
         expected,
         "failure",
       ).exactBoundary,

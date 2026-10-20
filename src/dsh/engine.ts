@@ -2,7 +2,12 @@ import type { ActionInputs } from "../inputs.js";
 import { runDsh, type DshRunResult, type DshRuntime } from "./runner.js";
 import type { SecurityPolicy } from "../security/policy.js";
 import { removeMarkdownImages } from "../security/redaction.js";
-import type { AgentEngine, AgentToolManifest, AgentTurnRequest } from "../agent/contracts.js";
+import type {
+  AgentEngine,
+  AgentToolManifest,
+  AgentTurnRequest,
+  ToolProvider,
+} from "../agent/contracts.js";
 import type { ExtensionPlan } from "../extensions/plan.js";
 import { nativeToolSchema, type NativeToolId } from "../tools/schema.js";
 import type { DshComposition } from "./composition.js";
@@ -49,6 +54,7 @@ export class DshAgentEngine implements AgentEngine<DshRunResult> {
     private readonly runtime?: DshRuntime,
     private readonly extensions?: ExtensionPlan,
     composition?: DshComposition,
+    private readonly controllerTools?: ToolProvider,
   ) {
     this.version = inputs.dshVersion;
     this.composition = composition ?? selectDshComposition(inputs.dshMode).create();
@@ -91,7 +97,7 @@ export class DshAgentEngine implements AgentEngine<DshRunResult> {
   }
 
   private async executeTurn(request: AgentTurnRequest) {
-    const { nativeTools, controllerTools, extensionTools } = partitionDshToolPlanes(request.tools);
+    const { nativeTools, extensionTools } = partitionDshToolPlanes(request.tools);
     const actualExtensionIds = extensionTools.map(({ id }) => id).sort();
     if (this.extensions?.profileName === "github-action") {
       const plannedExtensionIds = this.extensions.manifests.map(({ id }) => id).sort();
@@ -109,7 +115,7 @@ export class DshAgentEngine implements AgentEngine<DshRunResult> {
         ),
         trustedInstructions: removeMarkdownImages(request.instructions),
         workspacePath: request.workspacePath,
-        toolCatalog: controllerTools,
+        ...(this.controllerTools === undefined ? {} : { controllerTools: this.controllerTools }),
         nativeTools,
         ...(request.operation !== "task" || this.inputs.taskOutputSchema === undefined
           ? {}

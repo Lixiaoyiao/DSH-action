@@ -1,5 +1,5 @@
 import { execFile, spawn } from "node:child_process";
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough, Readable, Writable } from "node:stream";
@@ -16,6 +16,7 @@ const exec = promisify(execFile);
 const releaseSha = "0123456789abcdef0123456789abcdef01234567";
 let suite = "";
 let templates = "";
+let repositoryTemplate = "";
 class Capture extends Writable {
   text = "";
   onChunk?: (text: string) => void;
@@ -43,6 +44,13 @@ interface Call {
 }
 async function project() {
   const root = await mkdtemp(join(suite, "repo-"));
+  // Each case owns physical copies of the Git config, index, refs and objects.
+  // Repeated Git startup belongs to the installer behavior, not fixture setup.
+  await cp(repositoryTemplate, root, { recursive: true });
+  return root;
+}
+async function createRepositoryTemplate() {
+  const root = join(suite, "repository-template");
   await exec("git", ["init", "-b", "main", root]);
   await exec("git", ["config", "user.name", "Installer Test"], { cwd: root });
   await exec("git", ["config", "user.email", "installer@example.invalid"], { cwd: root });
@@ -243,6 +251,7 @@ beforeAll(async () => {
     { env: { ...process.env, DSH_ACTION_RELEASE_SHA: releaseSha }, windowsHide: true },
   );
   templates = join(built, "templates");
+  repositoryTemplate = await createRepositoryTemplate();
 });
 afterAll(async () => {
   if (suite) await rm(suite, { recursive: true, force: true });

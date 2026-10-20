@@ -1,4 +1,4 @@
-name: v0.11.0 release canary
+name: v0.12.0 release canary
 
 on:
   workflow_dispatch:
@@ -67,7 +67,7 @@ jobs:
     environment: core-e2e
     timeout-minutes: 35
     env:
-      RELEASE_TAG: v0.11.0
+      RELEASE_TAG: v0.12.0
       RELEASE_SHA: ${{ vars.DSH_RELEASE_CANARY_SHA }}
     steps:
       - name: Validate protected canary secret
@@ -144,7 +144,7 @@ jobs:
           allowed-tools: "[]"
           disallowed-tools: "[]"
           progress-comment: "false"
-          max-turns: "2"
+          max-controller-steps: "2"
           timeout-minutes: "12"
 
       - name: Assert controlled schema composition and tool policy
@@ -152,40 +152,28 @@ jobs:
         continue-on-error: true
         env:
           DSH_RESULT_JSON: ${{ steps.controlled.outputs['result-json'] }}
-          DSH_MODE: ${{ steps.controlled.outputs['dsh-mode'] }}
-          DSH_COMPOSITION: ${{ steps.controlled.outputs['dsh-composition'] }}
-          DSH_PERMISSION_PROFILE: ${{ steps.controlled.outputs['permission-profile'] }}
-          DSH_EFFECTIVE_TOOLS: ${{ steps.controlled.outputs['effective-tools'] }}
-          DSH_NETWORK_ACCESS: ${{ steps.controlled.outputs['network-access'] }}
-          DSH_WORKSPACE_WRITE: ${{ steps.controlled.outputs['workspace-write'] }}
         run: |
           set -euo pipefail
-          test "$DSH_MODE" = controlled
-          test "$DSH_COMPOSITION" = github-action-controlled
-          test "$DSH_PERMISSION_PROFILE" = strict
-          test "$DSH_NETWORK_ACCESS" = host-gateway
-          test "$DSH_WORKSPACE_WRITE" = false
-          jq -e 'type == "array"' <<<"$DSH_EFFECTIVE_TOOLS" >/dev/null
-          jq -e --argjson effectiveTools "$DSH_EFFECTIVE_TOOLS" '
-            .schemaVersion == 1 and
-            .conclusion == "success" and
-            .operation == "task" and
-            .textSources.instruction.path == "examples/prompts/repository-summary.md" and
-            (.textSources.contexts | length == 1) and
-            .githubRequests.clientRole == "main-controller" and
-            .githubRequests.cacheHits > 0 and
-            .dsh.mode == "controlled" and
-            .dsh.composition == "github-action-controlled" and
-            .permissions.profile == "strict" and
-            .permissions.workspaceWrite == false and
-            .permissions.effectiveTools == ["workspace.read","workspace.search"] and
-            .permissions.effectiveTools == $effectiveTools and
-            .toolPolicy.schemaVersion == 1 and
-            .toolPolicy.policyOwner == "controller" and
-            .toolPolicy.effectiveTools == $effectiveTools and
-            (.toolPolicy | has("requestedTools")) and
-            (.toolPolicy | has("deniedTools")) and
-            (.toolPolicy | has("observedTools") | not)
+          jq -e '
+            .schemaVersion == 2 and
+            .termination.conclusion == "success" and
+            .operation.kind == "task" and
+            .context.textSources.instruction.path == "examples/prompts/repository-summary.md" and
+            (.context.textSources.contexts | length == 1) and
+            .context.githubRequests.clientRole == "main-controller" and
+            .context.githubRequests.cacheHits > 0 and
+            .context.dsh.mode == "controlled" and
+            .context.dsh.composition == "github-action-controlled" and
+            .context.permission.profile == "strict" and
+            .context.permission.workspaceWrite == false and
+            .context.permission.network == "host-gateway" and
+            .context.permission.effectiveTools == ["workspace.read","workspace.search"] and
+            .context.toolPolicy.schemaVersion == 1 and
+            .context.toolPolicy.policyOwner == "controller" and
+            .context.toolPolicy.effectiveTools == .context.permission.effectiveTools and
+            (.context.toolPolicy | has("requestedTools")) and
+            (.context.toolPolicy | has("deniedTools")) and
+            (.context.toolPolicy | has("observedTools") | not)
           ' <<<"$DSH_RESULT_JSON" >/dev/null
 
       - name: Native read-only smoke
@@ -202,7 +190,7 @@ jobs:
           allow-write: "false"
           permission-profile: strict
           progress-comment: "false"
-          max-turns: "2"
+          max-controller-steps: "2"
           timeout-minutes: "12"
 
       - name: Assert native schema composition and observed tool policy
@@ -210,36 +198,30 @@ jobs:
         continue-on-error: true
         env:
           DSH_RESULT_JSON: ${{ steps.native.outputs['result-json'] }}
-          DSH_MODE: ${{ steps.native.outputs['dsh-mode'] }}
-          DSH_COMPOSITION: ${{ steps.native.outputs['dsh-composition'] }}
-          DSH_WORKSPACE_WRITE: ${{ steps.native.outputs['workspace-write'] }}
         run: |
           set -euo pipefail
-          test "$DSH_MODE" = native
-          test "$DSH_COMPOSITION" = dsh-native-headless
-          test "$DSH_WORKSPACE_WRITE" = false
           jq -e '
-            .schemaVersion == 1 and
-            .conclusion == "success" and
-            .operation == "task" and
-            .dsh.mode == "native" and
-            .textSources.instruction.path == "examples/prompts/repository-summary.md" and
-            (.textSources.contexts | length == 1) and
-            .githubRequests.clientRole == "main-controller" and
-            .githubRequests.cacheHits > 0 and
-            .dsh.composition == "dsh-native-headless" and
-            .policy.trust == "trusted-read" and
-            .permissions.profile == "strict" and
-            .permissions.workspaceWrite == false and
-            .isolation.backend == "docker" and
-            .isolation.workspaceAccess == "read-only" and
-            .toolPolicy.schemaVersion == 1 and
-            .toolPolicy.policyOwner == "dsh" and
-            (.toolPolicy.observedTools | length > 0) and
-            (.toolPolicy.observedTools | index("read") != null) and
-            (.toolPolicy | has("effectiveTools") | not) and
-            (.toolPolicy | has("requestedTools") | not) and
-            (.toolPolicy | has("deniedTools") | not)
+            .schemaVersion == 2 and
+            .termination.conclusion == "success" and
+            .operation.kind == "task" and
+            .context.dsh.mode == "native" and
+            .context.textSources.instruction.path == "examples/prompts/repository-summary.md" and
+            (.context.textSources.contexts | length == 1) and
+            .context.githubRequests.clientRole == "main-controller" and
+            .context.githubRequests.cacheHits > 0 and
+            .context.dsh.composition == "dsh-native-headless" and
+            .context.policy.trust == "trusted-read" and
+            .context.permission.profile == "strict" and
+            .context.permission.workspaceWrite == false and
+            .agent.isolation.backend == "docker" and
+            .agent.isolation.workspaceAccess == "read-only" and
+            .context.toolPolicy.schemaVersion == 1 and
+            .context.toolPolicy.policyOwner == "dsh" and
+            (.context.toolPolicy.observedTools | length > 0) and
+            (.context.toolPolicy.observedTools | index("read") != null) and
+            (.context.toolPolicy | has("effectiveTools") | not) and
+            (.context.toolPolicy | has("requestedTools") | not) and
+            (.context.toolPolicy | has("deniedTools") | not)
           ' <<<"$DSH_RESULT_JSON" >/dev/null
 
       - name: Record diagnostics and require both release modes
@@ -247,27 +229,34 @@ jobs:
         env:
           CONTROLLED_OUTCOME: ${{ steps.controlled.outcome }}
           CONTROLLED_ASSERTION: ${{ steps.controlled_assert.outcome }}
-          CONTROLLED_ERROR_CODE: ${{ steps.controlled.outputs['error-code'] }}
+          CONTROLLED_RESULT_JSON: ${{ steps.controlled.outputs['result-json'] }}
           NATIVE_OUTCOME: ${{ steps.native.outcome }}
           NATIVE_ASSERTION: ${{ steps.native_assert.outcome }}
-          NATIVE_ERROR_CODE: ${{ steps.native.outputs['error-code'] }}
+          NATIVE_RESULT_JSON: ${{ steps.native.outputs['result-json'] }}
         run: |
           node --input-type=module <<'NODE'
           import { appendFileSync } from "node:fs";
 
-          // Keep diagnostics independent of model-authored summary/result bytes.
+          // Emit only bounded machine error codes, never raw reports or model text.
           // continue-on-error preserves the second mode's evidence, never the gate.
           const outcome = (value) => ["success", "failure", "cancelled", "skipped"].includes(value)
             ? value : "not-run";
-          const errorCode = (value) => !value ? "none"
-            : /^[A-Z][A-Z0-9_]{0,79}$/.test(value) ? value : "invalid-code";
+          const errorCode = (text) => {
+            if (!text) return "none";
+            if (text.length > 640 * 1024) return "invalid-report";
+            let report;
+            try { report = JSON.parse(text); } catch { return "invalid-report"; }
+            const value = report?.termination?.error?.code;
+            return !value ? "none" : typeof value === "string" && /^[A-Z][A-Z0-9_]{0,79}$/.test(value)
+              ? value : "invalid-code";
+          };
           const results = ["controlled", "native"].map((mode) => {
             const prefix = mode.toUpperCase();
             return {
               mode,
               action: outcome(process.env[`${prefix}_OUTCOME`]),
               assertion: outcome(process.env[`${prefix}_ASSERTION`]),
-              errorCode: errorCode(process.env[`${prefix}_ERROR_CODE`]),
+              errorCode: errorCode(process.env[`${prefix}_RESULT_JSON`]),
             };
           });
           for (const result of results) console.log(JSON.stringify(result));

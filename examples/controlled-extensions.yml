@@ -29,7 +29,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      - uses: Lixiaoyiao/deepseek-harness-action@v0.11.0
+      - uses: Lixiaoyiao/deepseek-harness-action@v0.12.0
         id: dsh
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
@@ -117,14 +117,12 @@ jobs:
               "plugins": []
             }
 
-      - name: Inspect extension audit outputs
-        if: ${{ always() }}
+      - name: Inspect extension audit report
+        if: ${{ always() && steps.dsh.outputs['result-json'] != '' }}
         env:
-          DSH_PROFILE_DIGEST: ${{ steps.dsh.outputs['extension-profile-digest'] }}
-          DSH_TOOL_RECEIPTS: ${{ steps.dsh.outputs['tool-receipts'] }}
+          DSH_RESULT_JSON: ${{ steps.dsh.outputs['result-json'] }}
         run: |
-          printf 'profile=%s\n' "$DSH_PROFILE_DIGEST"
-          printf '%s\n' "$DSH_TOOL_RECEIPTS" | jq .
+          printf '%s\n' "$DSH_RESULT_JSON" | jq '.agent | {extensionAudit, toolReceipts, dshToolReceipts, receiptsDropped}'
 
 # For stdio MCP, replace the server object with transport: "stdio", an audited
 # executable already built into the digest-pinned image, fixed args, optional

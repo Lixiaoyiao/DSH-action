@@ -1,6 +1,6 @@
 {
   "name": "create-deepseek-harness-action",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "Create safe DeepSeek Harness GitHub workflows",
   "private": false,
   "type": "module",

@@ -110,17 +110,17 @@ The full read/write dispatch template is [`examples/task-automation.yml`](../exa
 
 ## Multi-turn tools, validation, and repair
 
-Every outer iteration is a fresh DSH turn bound to the same task, workspace, and Controller policy:
+DSH runs tools within one Agent execution. Only failed Controller validation starts a fresh repair execution, bound to the same task, workspace, and policy:
 
 ```text
 DSH turn
-  ├─ needs_tool → an allowed tool runs → bounded, redacted result → next turn
+  ├─ MCP tool call → allowed Controller tool → result returns within DSH
   ├─ final → Controller validation fails → bounded output → repair turn
   ├─ final → validation passes → Controller publishes or writes
   └─ blocked → neutral only when no Controller validation failure is pending
 ```
 
-`max-turns` defaults to 3 and counts tool requests and validation repair turns. The Action's `timeout-minutes` is the overall setup and execution deadline. Runtime setup, extension installation, each Agent turn, and validation also have independent caps. Repeating the same validation failure on the same workspace revision stops with a no-progress error.
+`max-controller-steps` defaults to 3 (range 1–10) and counts the initial execution, each Controller tool call, and each validation repair execution. DSH internal tools retain their own budgets. The Action's `timeout-minutes` is the overall setup and execution deadline. Runtime setup, extension installation, each Agent turn, and validation also have independent caps. Repeating the same validation failure on the same workspace revision stops with a no-progress error.
 
 A repair turn cannot erase an unresolved validation or Validation Integrity failure by returning `blocked`, exhausting its turns, or emitting malformed structured output. The original Controller failure remains authoritative until a later finalization passes.
 
@@ -137,7 +137,7 @@ For an authorized read operation with an Issue or PR target, the Controller upda
 
 `progress-comment` defaults to `true`. Setting it to `false` disables intermediate lifecycle updates only; normal summaries, inline findings, diagnoses, and authorized final results remain enabled.
 
-Write requests deliberately publish no lifecycle/status comment until validation succeeds or actual-change inspection confirms a no-change task. On failure, inspect the step summary and outputs. The Action sets scalar outputs and the schema-v1 `result-json` on success, neutral, and failure paths. A configured task schema adds only a Controller-validated `task-output`/`taskOutput` value; it does not replace the audit envelope.
+Write requests deliberately publish no lifecycle/status comment until validation succeeds or actual-change inspection confirms a no-change task. On failure, inspect the step summary and outputs. The Action sets `conclusion`, `summary`, and the schema-v2 `result-json` on success, neutral, and failure paths. A configured task schema adds a Controller-validated `operation.taskOutput` value inside that report.
 
 Cancellation finalization is bounded and best effort. `SIGTERM` or `SIGINT` can update an eligible sticky comment, but `SIGKILL`, runner/host loss, a process crash, or GitHub API failure can leave it at “In progress.” See [Troubleshooting](troubleshooting.md) and treat the Actions conclusion as authoritative.
 

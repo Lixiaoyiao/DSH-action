@@ -14,7 +14,7 @@ import { parseDshOutput } from "../src/dsh/schema.js";
 import { parseTaskOutputSchema } from "../src/dsh/task-output.js";
 
 const final = {
-  protocolVersion: 1,
+  protocolVersion: 2,
   operation: "task",
   state: "final",
   summary: "The README describes a credential-isolated GitHub Action.",
@@ -117,7 +117,7 @@ describe("tool-free result formatting", () => {
     },
     { ...final, state: "unknown", diagnosis: "" },
     { ...final, operation: "fix", diagnosis: "" },
-    { ...final, protocolVersion: 2, diagnosis: "" },
+    { ...final, protocolVersion: 1, diagnosis: "" },
     [final],
     null,
     "final",
@@ -130,15 +130,15 @@ describe("tool-free result formatting", () => {
   });
 
   it.each([
-    { state: "final", toolRequest: { id: "command.prepare-validation", input: {} } },
-    { state: "blocked", toolRequest: { id: "command.prepare-validation", input: {} } },
-    { state: "final", toolRequest: null },
-    { state: "blocked", toolRequest: null },
+    { state: "final", unknown: { diagnostic: "extra" } },
+    { state: "blocked", unknown: { diagnostic: "extra" } },
+    { state: "final", unknown: null },
+    { state: "blocked", unknown: null },
   ] as const)(
-    "discards leftover terminal toolRequest data without authorizing it: %j",
-    async ({ state, toolRequest }) => {
+    "repairs unknown fields in a terminal v2 envelope without exposing tools: %j",
+    async ({ state, unknown }) => {
       const output = { ...final, state };
-      const raw = JSON.stringify({ ...output, toolRequest });
+      const raw = JSON.stringify({ ...output, unknown });
       expect(() => parseDshOutput(raw, "task")).toThrow(DshMalformedOutputError);
       const fetcher = vi.fn<typeof fetch>().mockResolvedValue(completion(JSON.stringify(output)));
       expect(await repairDshOutput({ ...options(), raw, fetchImplementation: fetcher })).toEqual(
@@ -150,8 +150,10 @@ describe("tool-free result formatting", () => {
       const request = z.record(z.string(), z.unknown()).parse(JSON.parse(body));
       expect(request).not.toHaveProperty("tools");
       expect(request).not.toHaveProperty("functions");
-      expect(body).toContain("remove that leftover field only");
-      expect(body).toContain("do not execute, replay, continue, or infer completion");
+      expect(request.messages).toEqual([
+        { role: "system", content: expect.any(String) as unknown },
+        { role: "user", content: JSON.stringify({ untrustedPreviousResult: raw }) },
+      ]);
     },
   );
 
@@ -160,7 +162,6 @@ describe("tool-free result formatting", () => {
       ...final,
       state,
       diagnosis: "",
-      toolRequest: { id: "command.prepare-validation", input: {} },
     });
     const fetcher = vi
       .fn<typeof fetch>()

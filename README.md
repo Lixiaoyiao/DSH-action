@@ -1,5 +1,7 @@
 # DeepSeek Harness for GitHub
 
+> This branch prepares v0.12.0 and installer 0.7.2 for evaluation. Neither is published; production stays pinned to v0.11.0 until final approval.
+
 [![CI](https://github.com/Lixiaoyiao/deepseek-harness-action/actions/workflows/ci.yml/badge.svg)](https://github.com/Lixiaoyiao/deepseek-harness-action/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/Lixiaoyiao/deepseek-harness-action?display_name=tag)](https://github.com/Lixiaoyiao/deepseek-harness-action/releases/latest)
 [![MIT](https://img.shields.io/github/license/Lixiaoyiao/deepseek-harness-action)](LICENSE)
@@ -75,7 +77,7 @@ File-only and non-interactive setup remains available:
 npm.cmd create deepseek-harness-action@latest -- --mode both --dsh-mode native
 ```
 
-Controlled remains the default. Coding writes require explicit validation commands; the installer tells you where to configure them. Installer `0.7.1` targets Action `v0.11.0` and DSH `0.2.1-rc.2`. Its build binds the qualified Action commit through `DSH_ACTION_RELEASE_SHA`; its source tag is `create-deepseek-harness-action-v0.7.1`. See the [setup guide](docs/setup.md) for manual setup and recovery.
+Controlled remains the default. Coding writes require explicit validation commands; the installer tells you where to configure them. Installer `0.7.2` targets Action `v0.12.0` and DSH `0.2.1-rc.2`. Its build binds the qualified Action commit through `DSH_ACTION_RELEASE_SHA`; its source tag is `create-deepseek-harness-action-v0.7.2`. See the [setup guide](docs/setup.md) for manual setup and recovery.
 
 ### Manual installation
 
@@ -103,7 +105,7 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
           fetch-depth: 1
-      - uses: Lixiaoyiao/deepseek-harness-action@v0.11.0
+      - uses: Lixiaoyiao/deepseek-harness-action@v0.12.0
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           dsh-version: 0.2.1-rc.2
@@ -123,11 +125,11 @@ For production, pin the complete commit published in the corresponding GitHub Re
 | Issue implementation    | Turns an authorized Issue request into a validated branch and pull request                                       |
 | Composition modes       | Keeps the existing controlled tool profile by default and offers an experimental native DSH mode                 |
 | Controlled tools        | Adds exact profiles for native, fixed-command, typed Controller GitHub, MCP, Bundle, and Plugin tools            |
-| Structured results      | Keeps the schema-v1 audit envelope and can validate an optional maintainer-defined task result                   |
+| Structured results      | Keeps the schema-v2 audit envelope and can validate an optional maintainer-defined task result                   |
 | Images and binary files | Reads PNG/JPEG/WebP/GIF through official DSH tools, downloads eligible GitHub images, and preserves binary bytes |
 | Explicit Session resume | Continues a completed task in a new Actions run using a verified raw DSH checkpoint and current permissions      |
 
-The Action provides the experimental `dsh-mode: native` path over the locked DSH `0.2.1-rc.2` runtime and its official ecosystem composition. Native MCP servers, Profile Bundles, direct Cordis Plugins, repository Skills, Subagents, and Workflows retain DSH-native discovery and behavior. `controlled` remains the compatible default, so workflows that omit `dsh-mode` retain their existing composition, permissions, tools, budgets, receipts, and outputs.
+The Action provides the experimental `dsh-mode: native` path over the locked DSH `0.2.1-rc.2` runtime and its official ecosystem composition. Native MCP servers, Profile Bundles, direct Cordis Plugins, repository Skills, Subagents, and Workflows retain DSH-native discovery and behavior. `controlled` remains the default composition. The v0.12 Controller budget and report changes apply to both modes; see the [migration guide](docs/migration-v0.12.md).
 
 Native mode is not an unsafe mode. It returns ownership of DSH's internal headless composition, capability graph, and model-visible inventory to DSH. Native MCP servers load through official `@deepseek-ai/dsh-mcp-client`; Bundles become official Profile layers; direct Plugins load through Cordis; and repository Skills, Subagents, and Workflows retain DSH-native behavior. Its definition-only extension schema declares owners and process requirements, not Action tools, grants, or per-tool budgets. Dynamic ecosystem tools appear only in runtime `observedTools`, and native `toolPolicy` never claims Controller `effectiveTools`.
 
@@ -174,8 +176,8 @@ Maintainers can change the trigger phrase, add label/assignee routes, filter act
 - The Agent receives neither the real `GITHUB_TOKEN` nor the real DeepSeek key. Only the Controller can call Action-owned `github.*` mutation APIs; an explicitly configured external GitHub MCP uses its own credential and authority as described below.
 - Repository content, diffs, issues, pull requests, comments, logs, model output, and tool output remain untrusted data.
 - Fork review uses a `.git`-less, credential-free worker and must check out only the trusted base SHA with `persist-credentials: false`.
-- Writes require a trusted same-repository context, authorized actors, Docker, `allow-write: "true"`, non-empty fixed validation commands, and successful validation. Protected-path and Validation Integrity checks still apply.
-- Typed `github.*` mutations are exact-ID, entity-bound, deferred until Controller validation, and reconciled with bounded receipts. No arbitrary REST, GraphQL, URL, or credential pass-through exists.
+- Repository code writes require a trusted same-repository context, authorized actors, Docker, `allow-write: "true"`, non-empty fixed validation commands, and successful validation. Protected-path and Validation Integrity checks still apply.
+- Typed `github.*` mutations are exact-ID, entity-bound, queued until a valid final result, reauthorized before execution, and reconciled with bounded receipts. Pure metadata does not require repository tests; code writes still do. No arbitrary REST, GraphQL, URL, or credential pass-through exists.
 - Validation Integrity provides high-confidence weakening detection plus baseline replay for its supported entrypoints, scripts, test/config weakening, lock/toolchain controls, and known wrappers/interpreters; it is not complete cross-language dependency provenance or a formal proof.
 - Validation may use Docker bridge networking. On self-hosted or corporate-network runners, repository validation code may reach runner-accessible network services; use dedicated runners and runner-level segmentation/egress controls.
 - An approved Bundle, Plugin, or stdio MCP server is trusted worker code. Controlled ToolRuntime limits model-routed calls; native leaves routing and inventory to DSH. Neither model is a sandbox for extension startup, background work, or direct process I/O, and any bridge/RW capability applies to the whole worker.

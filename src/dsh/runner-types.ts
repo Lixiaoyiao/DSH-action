@@ -1,5 +1,5 @@
 import type { ModelUsage } from "./usage.js";
-import type { AgentToolManifest } from "../agent/contracts.js";
+import type { ToolProvider } from "../agent/contracts.js";
 import type { AnyExtensionAudit, ExtensionPlan } from "../extensions/plan.js";
 import type { NativeToolId } from "../tools/schema.js";
 import type { DshComposition } from "./composition.js";
@@ -14,6 +14,8 @@ export type DshTrust = "untrusted" | "trusted-read" | "trusted-write";
 export type DshIsolation = "docker" | "none";
 
 export interface DshRunRequest {
+  /** Borrowed Controller authority; never serialized into the worker Profile. */
+  readonly controllerTools?: ToolProvider;
   readonly operation: DshOperation;
   readonly prompt: string;
   readonly trustedInstructions?: string;
@@ -35,7 +37,6 @@ export interface DshRunRequest {
   /** Absolute path to @deepseek-ai/dsh/lib/bin.js for isolation=none. */
   readonly dshExecutable?: string;
   readonly containerImage: string;
-  readonly toolCatalog?: readonly AgentToolManifest[];
   /** Controller-resolved outer capability inputs; not native DSH inventory. */
   readonly nativeTools?: readonly NativeToolId[];
   /** Trusted maintainer schema. It affects task result validation only. */

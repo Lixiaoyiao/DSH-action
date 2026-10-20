@@ -15,7 +15,6 @@ import {
   githubToolManifest,
   mergeGitHubFlushReceipts,
   resolveGitHubTools,
-  type GitHubMutationValidationGate,
   type GitHubToolBinding,
 } from "../src/tools/github.js";
 import type {
@@ -174,7 +173,7 @@ function provider(options: {
   readonly allowWrite?: boolean;
   readonly backend?: GitHubToolBackend;
   readonly expectedAuthorId?: number;
-  readonly validationGate?: GitHubMutationValidationGate;
+  readonly revalidateAuthority?: () => Promise<void>;
 }): GitHubToolProvider {
   return new GitHubToolProvider({
     ids: options.ids,
@@ -183,8 +182,7 @@ function provider(options: {
     allowWrite: options.allowWrite ?? true,
     expectedAuthorId: options.expectedAuthorId ?? 41898282,
     backend: options.backend ?? fakeBackend(),
-    validationGate: options.validationGate ?? (() => Promise.resolve()),
-    revalidateAuthority: () => Promise.resolve(),
+    revalidateAuthority: options.revalidateAuthority ?? (() => Promise.resolve()),
   });
 }
 
@@ -196,18 +194,33 @@ describe("Controller-owned typed GitHub tools", () => {
     expect(provider({ ids: [] })).toBeInstanceOf(GitHubAuthorityGateway);
   });
 
-  it("requires a Controller validation gate whenever mutation authority is enabled", () => {
-    expect(
-      () =>
-        new GitHubAuthorityGateway({
-          ids: ["github.issue.labels.set"],
-          binding: issueBinding,
-          policy: policy(),
-          allowWrite: true,
-          expectedAuthorId: 41898282,
-          backend: fakeBackend(),
-        }),
-    ).toThrow(/requires a Controller validation gate/u);
+  it("publishes typed metadata without repository write capability or a validation suite", async () => {
+    let labels: readonly string[] = [];
+    const authorize = vi.fn(() => Promise.resolve());
+    const gateway = new GitHubAuthorityGateway({
+      ids: ["github.issue.labels.set"],
+      binding: issueBinding,
+      policy: policy("trusted-read", { modifyWorkspace: false, commit: false, push: false }),
+      allowWrite: true,
+      expectedAuthorId: 41898282,
+      backend: fakeBackend({
+        getIssue: () => Promise.resolve(issueSnapshot({ labels: [...labels] })),
+        setLabels: (_target, value) => {
+          labels = value;
+          return Promise.resolve();
+        },
+      }),
+      revalidateAuthority: authorize,
+    });
+    await gateway.invoke(
+      { callId: "metadata-only", id: "github.issue.labels.set", input: { labels: ["triaged"] } },
+      invocation,
+    );
+    expect(labels).toEqual([]);
+    const receipts = await gateway.flush(invocation);
+    expect(authorize).toHaveBeenCalledOnce();
+    expect(labels).toEqual(["triaged"]);
+    expect(receipts[0]?.result.output).toMatchObject({ effect: "updated" });
   });
 
   it("projects final Gateway effects into the original Controller receipt", () => {
@@ -401,7 +414,7 @@ describe("Controller-owned typed GitHub tools", () => {
       {
         id: "github.comment.create",
         reasonCode: "CAPABILITY_NOT_GRANTED",
-        reason: "GitHub mutation tools require trusted-write policy and allow-write=true",
+        reason: "GitHub metadata tools require a trusted actor and allow-write=true",
       },
     ]);
 
@@ -487,11 +500,9 @@ describe("Controller-owned typed GitHub tools", () => {
     ).rejects.toThrow(/Invalid input/u);
   });
 
-  it("runs the typed validation gate before any backend effect and keeps the queue on denial", async () => {
-    const validationFailure = new Error("workspace validation denied GitHub mutation");
-    const validationGate = vi.fn<GitHubMutationValidationGate>(() =>
-      Promise.reject(validationFailure),
-    );
+  it("reauthorizes before any metadata effect and discards the queue on denial", async () => {
+    const authorityFailure = new Error("actor authority was revoked");
+    const revalidateAuthority = vi.fn(() => Promise.reject(authorityFailure));
     const getRepository = vi.fn<GitHubToolBackend["getRepository"]>(() =>
       Promise.resolve({ id: 42 }),
     );
@@ -499,7 +510,7 @@ describe("Controller-owned typed GitHub tools", () => {
     const setLabels = vi.fn<GitHubToolBackend["setLabels"]>(() => Promise.resolve());
     const gateway = provider({
       ids: ["github.issue.labels.set"],
-      validationGate,
+      revalidateAuthority,
       backend: fakeBackend({ getRepository, getIssue, setLabels }),
     });
     await gateway.invoke(
@@ -511,19 +522,12 @@ describe("Controller-owned typed GitHub tools", () => {
       invocation,
     );
 
-    await expect(gateway.flush(invocation)).rejects.toBe(validationFailure);
-
-    expect(validationGate).toHaveBeenCalledOnce();
-    const validationRequest = validationGate.mock.calls[0]?.[0];
-    expect(validationRequest).toMatchObject({
-      workspacePath: invocation.workspacePath,
-      mutations: [{ callId: "call-validation-denied", id: "github.issue.labels.set" }],
-    });
-    expect(validationRequest?.timeoutMs).toBeGreaterThan(0);
+    await expect(gateway.flush(invocation)).rejects.toBe(authorityFailure);
+    expect(revalidateAuthority).toHaveBeenCalledOnce();
     expect(getRepository).not.toHaveBeenCalled();
     expect(getIssue).not.toHaveBeenCalled();
     expect(setLabels).not.toHaveBeenCalled();
-    expect(gateway.hasPendingMutations()).toBe(true);
+    expect(gateway.hasPendingMutations()).toBe(false);
   });
 
   it("flushes a deferred mutation with a postcondition and bounded receipt", async () => {

@@ -56,8 +56,7 @@ describe("complete Controller write transactions", () => {
     "publishes one owned %s PR and recognizes its completed operation",
     async (operation) => {
       const fixture = await writeFixture();
-      const onValidationCommandCount = vi.fn();
-      const first = await fixture[operation]({ onValidationCommandCount });
+      const first = await fixture[operation]();
       expect(first.pullNumber).toBe(9);
       expect(fixture.refs.get("main")).toBe(baseSha);
       expect(fixture.refs.get(first.branch)).toBe(commitSha);
@@ -66,18 +65,20 @@ describe("complete Controller write transactions", () => {
       );
       const effects = [...fixture.effects];
       expect(effects).toEqual(["blob", "tree", "commit", "create_ref", "pull_request"]);
-      expect(onValidationCommandCount.mock.calls).toEqual([[0], [1]]);
-      expect(fixture.onValidationPassed).toHaveBeenLastCalledWith(
-        expect.objectContaining({ kind: "current-workspace", commandCount: 1 }),
-      );
-      onValidationCommandCount.mockClear();
+      expect(fixture.validation.snapshot()).toMatchObject({
+        status: "passed",
+        commandCount: 1,
+        provenance: "current-workspace",
+      });
       const processCalls = processTransport.run.mock.calls.length;
-      await expect(fixture[operation]({ onValidationCommandCount })).resolves.toEqual(first);
-      expect(onValidationCommandCount).not.toHaveBeenCalled();
+      await expect(fixture[operation]()).resolves.toEqual(first);
       expect(processTransport.run).toHaveBeenCalledTimes(processCalls);
       expect(fixture.effects).toEqual(effects);
-      expect(fixture.onValidationPassed).toHaveBeenCalledTimes(2);
-      expect(fixture.onValidationPassed).toHaveBeenLastCalledWith({ kind: "completed-operation" });
+      expect(fixture.validation.snapshot()).toMatchObject({
+        status: "passed",
+        commandCount: 0,
+        provenance: "completed-operation",
+      });
     },
   );
   it.each(["task", "implement", "fix"] as const)(
@@ -92,7 +93,7 @@ describe("complete Controller write transactions", () => {
         return success;
       });
       await expect(fixture[operation]()).rejects.toMatchObject({ code: "POLICY_DENIED" });
-      expect(fixture.onValidationPassed).not.toHaveBeenCalled();
+      expect(fixture.validation.snapshot().status).toBe("failed");
       expect(fixture.effects).toEqual([]);
     },
   );

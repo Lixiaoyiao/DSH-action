@@ -22,6 +22,7 @@ import {
   buildValidationCommandGraph,
   recordScripts,
   type PackageGraphDetail,
+  type CommandDependencyGraph,
 } from "../validation/validation-command-graph.js";
 
 import {
@@ -31,6 +32,7 @@ import {
 } from "./validate.js";
 import {
   isIgnoredGeneratedRootEntry,
+  fingerprintWorkspace,
   inspectWorkspaceChanges,
   type WorkspaceChanges,
   type WorkspaceSnapshot,
@@ -84,6 +86,7 @@ export interface InspectValidationIntegrityInput {
   readonly commands: readonly (readonly string[])[];
   readonly mode: ValidationIntegrityMode;
   readonly maxReportedChanges?: number;
+  readonly commandGraph?: CommandDependencyGraph;
 }
 
 export type ValidationIntegrityRunner = (
@@ -116,6 +119,10 @@ export interface EnforceValidationIntegrityInput {
   readonly audit: ValidationIntegritySummary;
   /** Omit only when the Controller deliberately wants classification-only strict enforcement. */
   readonly baselineReplay?: ValidationBaselineReplayOptions;
+  readonly analysis?: {
+    readonly fingerprint: string;
+    readonly commandGraph: CommandDependencyGraph;
+  };
 }
 
 type ClassifiedChange = ValidationDefinitionChange;
@@ -180,7 +187,7 @@ async function textIfPresent(root: string, path: string): Promise<string | undef
   }
 }
 
-function buildCommandDependencyGraph(
+export function buildCommandDependencyGraph(
   snapshot: WorkspaceSnapshot,
   commands: readonly (readonly string[])[],
   additionalPaths: readonly string[] = [],
@@ -492,11 +499,9 @@ export async function inspectValidationIntegrity(
     MAX_REPORTED_CHANGES,
     Math.max(1, input.maxReportedChanges ?? DEFAULT_MAX_REPORTED_CHANGES),
   );
-  const graph = await buildCommandDependencyGraph(
-    input.snapshot,
-    input.commands,
-    input.changes.added,
-  );
+  const graph =
+    input.commandGraph ??
+    (await buildCommandDependencyGraph(input.snapshot, input.commands, input.changes.added));
   const directTargets = graph.entrypoints;
   const packageCommands: string[] = [];
   for (const detail of graph.packageDetails.values()) {
@@ -836,6 +841,7 @@ async function prepareBaselineReplayWorkspace(
   snapshot: WorkspaceSnapshot,
   audit: ValidationIntegritySummary,
   commands: readonly (readonly string[])[],
+  analysis: EnforceValidationIntegrityInput["analysis"],
 ): Promise<{ parent: string; root: string }> {
   const parent = await mkdtemp(join(tmpdir(), "dsh-action-integrity-"));
   const root = join(parent, "workspace");
@@ -846,8 +852,20 @@ async function prepareBaselineReplayWorkspace(
       errorOnExist: true,
       filter: (source) => includeInReplayCopy(snapshot.workerRoot, source),
     });
-    const replayChanges = await inspectWorkspaceChanges(snapshot);
-    const graph = await buildCommandDependencyGraph(snapshot, commands, replayChanges.added);
+    if (
+      analysis !== undefined &&
+      (await fingerprintWorkspace(snapshot.workerRoot)) !== analysis.fingerprint
+    )
+      throw new Error(
+        "Workspace changed after validation integrity analysis; refusing stale replay",
+      );
+    const graph =
+      analysis?.commandGraph ??
+      (await buildCommandDependencyGraph(
+        snapshot,
+        commands,
+        (await inspectWorkspaceChanges(snapshot)).added,
+      ));
     for (const [manifestPath, detail] of graph.packageDetails) {
       await restorePackageValidationControls(
         snapshot.sourceRoot,
@@ -892,7 +910,12 @@ export async function enforceValidationIntegrity(
   if (input.audit.controlPlaneChangeCount === 0 || input.baselineReplay === undefined) {
     return input.audit;
   }
-  const replay = await prepareBaselineReplayWorkspace(input.snapshot, input.audit, input.commands);
+  const replay = await prepareBaselineReplayWorkspace(
+    input.snapshot,
+    input.audit,
+    input.commands,
+    input.analysis,
+  );
   try {
     const runner = input.baselineReplay.runner ?? defaultValidationIntegrityRunner;
     const results = await runner(

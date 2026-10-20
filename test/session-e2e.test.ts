@@ -1,14 +1,11 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-
 import { sessionFormatCatalog } from "@deepseek-ai/dsh-session-format-catalog";
 import { unzipSync, zipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
-
 import { parseTaskOutputSchema, validateTaskOutput } from "../src/dsh/task-output.js";
 import { loadInputs } from "../src/inputs.js";
-
 import * as fixture from "../.github/e2e/session-e2e-proof.mjs";
 import * as automaticFixture from "../.github/e2e/session-auto-e2e-proof.mjs";
 import {
@@ -21,7 +18,6 @@ const id = "session-11111111-1111-4111-8111-111111111111";
 const memory = "a".repeat(48);
 const challenge = "b".repeat(24);
 const hash = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
-
 function identity(extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     phase: "save",
@@ -41,7 +37,6 @@ function identity(extra: Record<string, unknown> = {}): Record<string, unknown> 
     ...extra,
   };
 }
-
 function checkpoint(
   options: {
     generation?: number;
@@ -161,7 +156,7 @@ function checkpoint(
       .join("\n") + "\n",
   );
   const manifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     repository: { id: 1, owner: "octo", repo: "repo" },
     workflow: {
       path: ".github/workflows/session-e2e.yml",
@@ -196,16 +191,9 @@ function checkpoint(
     }),
   };
 }
-
 function successResult(extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    conclusion: "success",
-    operation: "task",
-    taskOutput: { memory, challenge, phase: "save" },
-    policy: { trust: "trusted-write" },
-    permissions: { workspaceWrite: true },
-    isolation: { backend: "docker", processIsolated: true, workspaceAccess: "read-write" },
-    dsh: { mode: "controlled" },
+    schemaVersion: 2,
     session: {
       mode: "save",
       status: "saved",
@@ -214,13 +202,36 @@ function successResult(extra: Record<string, unknown> = {}): Record<string, unkn
       payloadSha256: "f".repeat(64),
       sessionId: id,
     },
-    loop: { turns: 1, toolCalls: 0 },
-    write: { status: "no-changes", changedPaths: [] },
     validation: { status: "not-applicable", commandCount: 0 },
     ...extra,
+    termination: {
+      conclusion: "success",
+      ...object(extra.termination ?? {}),
+    },
+    operation: {
+      kind: "task",
+      taskOutput: { memory, challenge, phase: "save" },
+      ...object(extra.operation ?? {}),
+    },
+    context: {
+      policy: { trust: "trusted-write" },
+      permission: { workspaceWrite: true },
+      dsh: { mode: "controlled" },
+      ...object(extra.context ?? {}),
+    },
+    agent: {
+      isolation: { backend: "docker", processIsolated: true, workspaceAccess: "read-write" },
+      turns: 1,
+      toolCalls: 0,
+      ...object(extra.agent ?? {}),
+    },
+    publication: {
+      writeStatus: "no-changes",
+      changedPaths: [],
+      ...object(extra.publication ?? {}),
+    },
   };
 }
-
 describe("independent Actions Session qualification fixture", () => {
   it("reads the fixed image workspace ref once and leaves text-task reads unchanged", () => {
     const json = vi.fn().mockReturnValue({
@@ -236,7 +247,6 @@ describe("independent Actions Session qualification fixture", () => {
       `repos/octo/repo/git/ref/heads/${SESSION_IMAGE_WORKSPACE.branch}`,
     );
   });
-
   it.each([
     { ref: "refs/heads/main", object: { type: "commit", sha: SESSION_IMAGE_WORKSPACE.sha } },
     {
@@ -255,7 +265,6 @@ describe("independent Actions Session qualification fixture", () => {
       ),
     ).toThrow("SESSION_E2E_IMAGE_WORKSPACE");
   });
-
   it.each([fixture, automaticFixture])(
     "binds image source proof to the same immutable workspace",
     (producer) => {
@@ -280,7 +289,6 @@ describe("independent Actions Session qualification fixture", () => {
       ).toThrow("SOURCE_IMAGE_BINDING");
     },
   );
-
   it("binds the optional PNG to its actual bytes and permits no second image read on resume", async () => {
     const imageBytes = await readFile(new URL("./fixtures/images/solid.png", import.meta.url));
     const first = checkpoint({ imageBytes });
@@ -326,25 +334,35 @@ describe("independent Actions Session qualification fixture", () => {
     expect(task.prompt).not.toContain(memory);
     expect(task.prompt).toContain("Do not call tools");
   });
-
   it("requires the Controlled save image receipt and rejects replayed reads on resume", () => {
     const receipt = { id: "workspace.read", runtimeName: "read_image", completed: true, ok: true };
     const expected = identity({ imageAttachment: true });
     expect(fixture.resultChecks(successResult(), expected).noUnexpectedToolsOrWrites).toBe(false);
     expect(
       fixture.resultChecks(
-        successResult({ loop: { turns: 1, toolCalls: 0, dshToolReceipts: [receipt] } }),
+        successResult({
+          agent: {
+            turns: 1,
+            toolCalls: 0,
+            dshToolReceipts: [receipt],
+          },
+        }),
         expected,
       ).noUnexpectedToolsOrWrites,
     ).toBe(true);
     expect(
       fixture.resultChecks(
-        successResult({ loop: { turns: 1, toolCalls: 0, dshToolReceipts: [receipt] } }),
+        successResult({
+          agent: {
+            turns: 1,
+            toolCalls: 0,
+            dshToolReceipts: [receipt],
+          },
+        }),
         { ...expected, phase: "resume" },
       ).noUnexpectedToolsOrWrites,
     ).toBe(false);
   });
-
   it("supplies a new challenge while withholding historical memory from every resume input", () => {
     const save = fixture.buildSessionTask("save", challenge, memory);
     const resume = fixture.buildSessionTask("resume", challenge, memory);
@@ -359,7 +377,6 @@ describe("independent Actions Session qualification fixture", () => {
       maxLength: 48,
     });
   });
-
   it.each(["save", "resume"])(
     "admits the real prepare-generated %s schema through public schema and workflow input parsers",
     async (phase) => {
@@ -391,11 +408,14 @@ describe("independent Actions Session qualification fixture", () => {
       });
       expect(
         fixture.resultChecks(
-          { taskOutput: { memory: wrongMemory, challenge, phase } },
+          {
+            operation: {
+              taskOutput: { memory: wrongMemory, challenge, phase },
+            },
+          },
           identity({ phase }),
         ).memory,
       ).toBe(false);
-
       const workflow = object(
         parse(
           await readFile(new URL("../.github/workflows/session-e2e.yml", import.meta.url), "utf8"),
@@ -439,7 +459,6 @@ describe("independent Actions Session qualification fixture", () => {
       }
     },
   );
-
   it.each([
     "repository",
     "runId",
@@ -456,7 +475,6 @@ describe("independent Actions Session qualification fixture", () => {
       fixture.assertSourceProof({ ...proof, [key]: "different-source" }, expected),
     ).toThrow("SOURCE_BINDING");
   });
-
   it.each(["controlled", "native"])(
     "decodes complete released v4 persistence and verifies %s checksum and current policy",
     (mode) => {
@@ -470,7 +488,6 @@ describe("independent Actions Session qualification fixture", () => {
       });
     },
   );
-
   it.each([
     { payloadSha256: "0".repeat(64) },
     { sessionId: id.replace("11111111", "33333333") },
@@ -487,7 +504,6 @@ describe("independent Actions Session qualification fixture", () => {
       fixture.inspectCheckpointArchive(value.archive, { ...value.expected, ...extra }),
     ).toThrow();
   });
-
   it("rejects hidden extra files and does not accept an extra replayed task", () => {
     const extra = checkpoint({ extraFile: true });
     expect(() => fixture.inspectCheckpointArchive(extra.archive, extra.expected)).toThrow(
@@ -500,7 +516,6 @@ describe("independent Actions Session qualification fixture", () => {
     const resumed = checkpoint({ generation: 2, mode: "read-only" });
     expect(fixture.inspectCheckpointArchive(resumed.archive, resumed.expected).generation).toBe(2);
   });
-
   it("requires genuine independent-run memory plus current read-only policy and fresh artifact", () => {
     const expected = identity({
       phase: "resume",
@@ -509,10 +524,6 @@ describe("independent Actions Session qualification fixture", () => {
       payloadSha256: "0".repeat(64),
     });
     const result = successResult({
-      taskOutput: { memory, challenge, phase: "resume" },
-      policy: { trust: "trusted-read" },
-      permissions: { workspaceWrite: false },
-      isolation: { backend: "docker", processIsolated: true, workspaceAccess: "read-only" },
       session: {
         mode: "resume",
         status: "saved",
@@ -522,27 +533,58 @@ describe("independent Actions Session qualification fixture", () => {
         artifactId: 31,
         payloadSha256: "f".repeat(64),
       },
-      write: {},
+      operation: {
+        taskOutput: { memory, challenge, phase: "resume" },
+      },
+      context: {
+        policy: { trust: "trusted-read" },
+        permission: { workspaceWrite: false },
+      },
+      agent: {
+        isolation: { backend: "docker", processIsolated: true, workspaceAccess: "read-only" },
+      },
+      publication: {},
     });
     expect(Object.values(fixture.resultChecks(result, expected)).every(Boolean)).toBe(true);
     expect(
       fixture.resultChecks(
-        { ...result, taskOutput: { memory: "wrong", challenge, phase: "resume" } },
+        {
+          ...result,
+          operation: {
+            ...object(result.operation),
+            taskOutput: { memory: "wrong", challenge, phase: "resume" },
+          },
+        },
         expected,
       ).memory,
     ).toBe(false);
     expect(
-      fixture.resultChecks({ ...result, permissions: { workspaceWrite: true } }, expected)
-        .currentPermission,
+      fixture.resultChecks(
+        {
+          ...result,
+          context: {
+            ...object(result.context),
+            permission: { workspaceWrite: true },
+          },
+        },
+        expected,
+      ).currentPermission,
     ).toBe(false);
     expect(
-      fixture.resultChecks({ ...result, loop: { dshToolReceipts: [{ ok: true }] } }, expected)
-        .noUnexpectedToolsOrWrites,
+      fixture.resultChecks(
+        {
+          ...result,
+          agent: {
+            ...object(result.agent),
+            dshToolReceipts: [{ ok: true }],
+          },
+        },
+        expected,
+      ).noUnexpectedToolsOrWrites,
     ).toBe(false);
     expect(fixture.resultChecks(result, { ...expected, runId: 10 }).newRun).toBe(false);
     expect(Object.values(fixture.resultChecks(undefined, expected)).every(Boolean)).toBe(false);
   });
-
   it("keeps one static trusted producer, read-only fixture tokens and a real fail-closed validator", async () => {
     const workflow = await readFile(
       new URL("../.github/workflows/session-e2e.yml", import.meta.url),
@@ -585,7 +627,7 @@ describe("independent Actions Session qualification fixture", () => {
     expect(inputs["base-branch"]).toBe(
       "${{ inputs.image_attachment && 'codex/v0110-session-image-fixture' || '' }}",
     );
-    expect(inputs["max-turns"]).toBe("1");
+    expect(inputs["max-controller-steps"]).toBe("1");
     expect(inputs["run-tests"]).toBe("true");
     expect(JSON.parse(String(inputs["test-commands"]))).toEqual([
       ["npm", "ci", "--ignore-scripts"],

@@ -45,7 +45,7 @@ async function runImages(textOnly: boolean): Promise<void> {
   let proxy: DeepSeekProxyHandle | undefined;
   const task = "Read the repository image fixtures using the official read_image tool.";
   const output = {
-    protocolVersion: 1,
+    protocolVersion: 2,
     operation: "task",
     state: "final",
     summary: textOnly ? "image route refused" : "images read",

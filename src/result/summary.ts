@@ -2,7 +2,7 @@ import type { PermissionAudit, ToolPolicyAudit } from "../permissions/profile.js
 import type { AuthorityAudit, KnownAuthoritySource } from "../security/authority.js";
 import { sanitizeUntrustedText } from "../security/redaction.js";
 import { stripTrackingMarkers } from "../review/tracking.js";
-import type { RunOutcome, ValidationSummary } from "./types.js";
+import type { RunReport, ValidationSummary } from "./types.js";
 
 function safeMarkdown(value: string): string {
   return sanitizeUntrustedText(stripTrackingMarkers(value));
@@ -136,19 +136,21 @@ function validationSummaryLines(validation: ValidationSummary | undefined): read
   return lines;
 }
 
-export function formatStepSummary(outcome: RunOutcome): string {
+export function formatStepSummary(outcome: RunReport): string {
   const lines = [
-    `**Status:** ${outcome.conclusion}`,
-    `**Operation:** ${outcome.operation ?? "none"}`,
-    `**Trust:** ${outcome.policy?.trust ?? "not resolved"}`,
-    `**DSH mode:** ${outcome.dsh?.mode ?? "none"}`,
-    `**DSH composition:** ${outcome.dsh?.composition ?? "none"}`,
-    ...(outcome.writeStatus === undefined ? [] : [`**Write:** ${outcome.writeStatus}`]),
-    `**Duration:** ${(outcome.durationMs / 1_000).toFixed(1)}s`,
+    `**Status:** ${outcome.termination.conclusion}`,
+    `**Operation:** ${outcome.operation.kind}`,
+    `**Trust:** ${outcome.context.policy?.trust ?? "not resolved"}`,
+    `**DSH mode:** ${outcome.context.dsh?.mode ?? "none"}`,
+    `**DSH composition:** ${outcome.context.dsh?.composition ?? "none"}`,
+    ...(outcome.publication?.writeStatus === undefined
+      ? []
+      : [`**Write:** ${outcome.publication.writeStatus}`]),
+    `**Duration:** ${(outcome.termination.durationMs / 1_000).toFixed(1)}s`,
     "",
-    safeMarkdown(outcome.summary),
-    ...permissionSummaryLines(outcome.permission, outcome.toolPolicy),
-    ...authoritySummaryLines(outcome.authority),
+    safeMarkdown(outcome.termination.summary),
+    ...permissionSummaryLines(outcome.context.permission, outcome.context.toolPolicy),
+    ...authoritySummaryLines(outcome.context.authority),
     ...validationSummaryLines(outcome.validation),
   ];
   const usage = outcome.agent?.usage;
@@ -175,8 +177,8 @@ export function formatStepSummary(outcome: RunOutcome): string {
       `**Model usage (worker reported):** ${usage.completeness}; ${String(usage.reportedSteps)}/${String(usage.observedSteps)} steps; ${buckets.join("; ")}.`,
     );
   }
-  if (outcome.githubRequests !== undefined) {
-    const audit = outcome.githubRequests;
+  if (outcome.context.githubRequests !== undefined) {
+    const audit = outcome.context.githubRequests;
     lines.push(
       "",
       `**GitHub requests (production Action main client; lifecycle comments use a separate client):** ${String(audit.requests)}; immutable cache hits ${String(audit.cacheHits)}; merged reads ${String(audit.coalesced)}; retries ${String(audit.retries)}; quota wait ${String(audit.waitMs)}ms.`,
@@ -201,24 +203,25 @@ export function formatStepSummary(outcome: RunOutcome): string {
         `**Session checkpoint:** ${inlineCode(session.artifactName)}${session.expiresAt === undefined ? "" : `; expires ${session.expiresAt}`}.`,
       );
   }
-  if (outcome.error !== undefined) {
+  if (outcome.termination.error !== undefined) {
     lines.push(
       "",
-      `### ${safeMarkdown(outcome.error.title)}`,
+      `### ${safeMarkdown(outcome.termination.error.title)}`,
       "",
-      `**Code:** \`${outcome.error.code}\` · **Category:** \`${outcome.error.category}\` · **Phase:** \`${outcome.error.phase}\``,
+      `**Code:** \`${outcome.termination.error.code}\` · **Category:** \`${outcome.termination.error.category}\` · **Phase:** \`${outcome.termination.error.phase}\``,
       "",
-      safeMarkdown(outcome.error.message),
+      safeMarkdown(outcome.termination.error.message),
       "",
-      `**Next step:** ${safeMarkdown(outcome.error.guidance)}`,
+      `**Next step:** ${safeMarkdown(outcome.termination.error.guidance)}`,
     );
   }
-  if (outcome.pullRequestUrl !== undefined) {
-    lines.push("", `**Pull request:** ${outcome.pullRequestUrl}`);
+  if (outcome.publication?.pullRequestUrl !== undefined) {
+    lines.push("", `**Pull request:** ${outcome.publication.pullRequestUrl}`);
   }
-  if (outcome.commitSha !== undefined) {
-    lines.push("", `**Commit:** \`${outcome.commitSha}\``);
+  if (outcome.publication?.commitSha !== undefined) {
+    lines.push("", `**Commit:** \`${outcome.publication.commitSha}\``);
   }
-  if (outcome.runUrl !== undefined) lines.push("", `[Workflow run](${outcome.runUrl})`);
+  if (outcome.context.runUrl !== undefined)
+    lines.push("", `[Workflow run](${outcome.context.runUrl})`);
   return lines.join("\n");
 }

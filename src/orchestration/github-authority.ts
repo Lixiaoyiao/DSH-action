@@ -7,7 +7,6 @@ import {
   GitHubToolFlushError,
   githubFlushHasExternalEffect,
   mergeGitHubFlushReceipts,
-  type GitHubMutationValidationGate,
   type GitHubToolBinding,
   type GitHubToolFlushReceipt,
 } from "../tools/github.js";
@@ -68,14 +67,12 @@ export class GitHubAuthoritySession {
     readonly expectedAuthorId: number;
     readonly backend: GitHubToolBackend;
     readonly revalidateAuthority: () => Promise<void>;
-    readonly validationGate?: GitHubMutationValidationGate;
     readonly onPhase: () => void;
     readonly workspacePath: string;
     readonly deadlineMs: number;
     readonly signal: AbortSignal;
   }) {
     this.options = options;
-    const validationGate = options.validationGate;
     this.gateway = new GitHubAuthorityGateway({
       ids: options.ids,
       binding: options.binding,
@@ -84,14 +81,6 @@ export class GitHubAuthoritySession {
       expectedAuthorId: options.expectedAuthorId,
       backend: options.backend,
       revalidateAuthority: options.revalidateAuthority,
-      ...(validationGate === undefined
-        ? {}
-        : {
-            validationGate: async (request) => {
-              await validationGate(request);
-              options.onPhase();
-            },
-          }),
     });
   }
 
@@ -114,6 +103,7 @@ export class GitHubAuthoritySession {
 
   public async flush(remainingMs: number): Promise<void> {
     if (!this.gateway.hasPendingMutations()) return;
+    this.options.onPhase();
     try {
       this.record(
         await this.gateway.flush({

@@ -1,26 +1,16 @@
 import * as core from "@actions/core";
 
 import type { DshRunResult } from "../dsh/runner.js";
-import type { ActionInputs } from "../inputs.js";
 import type { GitHubClient } from "../github/client.js";
 import { publishStatusComment } from "../github/status.js";
 import type { BoundPullRequestIdentity } from "../write/pr.js";
-import type { WorkspaceSnapshot } from "../write/workspace.js";
-import {
-  executeValidatedRepositoryWrite,
-  type ControllerWriteControl,
-} from "../write/transaction.js";
-export interface FinishFixInput extends ControllerWriteControl {
+import { type RepositoryWriteContext } from "../write/transaction.js";
+export interface FinishFixInput extends RepositoryWriteContext {
   readonly client: GitHubClient;
   readonly target: { owner: string; repo: string; issueNumber: number };
   readonly expectedAuthorId: number;
-  readonly snapshot: WorkspaceSnapshot;
   readonly identity: BoundPullRequestIdentity;
   readonly result: DshRunResult;
-  readonly inputs: Pick<
-    ActionInputs,
-    "runTests" | "testCommands" | "containerImage" | "branchPrefix" | "branchNameTemplate"
-  >;
   readonly runUrl: string;
 }
 
@@ -31,22 +21,14 @@ export async function finishFix(input: FinishFixInput): Promise<{
 }> {
   const task = input.result.output.operation === "task";
   const label = task ? "task" : "fix";
-  const created = await executeValidatedRepositoryWrite({
-    client: input.client,
-    repository: { owner: input.target.owner, repo: input.target.repo },
-    workspace: input.snapshot,
-    plan: {
+  const created = await input.writer.write(
+    {
       kind: "pr-head",
       target: { number: input.target.issueNumber, identity: input.identity },
       commitMessage: task ? "feat: apply DeepSeek Harness task" : "fix: apply DeepSeek Harness fix",
     },
-    validation: {
-      runTests: input.inputs.runTests,
-      commands: input.inputs.testCommands,
-      containerImage: input.inputs.containerImage,
-    },
-    control: input,
-  });
+    input.budget,
+  );
   try {
     await publishStatusComment(
       input.client,

@@ -84,7 +84,7 @@ function checkpoint(runId = 100, generation = 1): SessionCheckpoint {
   const now = Date.now();
   const source = identity(runId);
   const manifest: SessionManifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     repository: binding.repository,
     workflow: { ...binding.workflow, sourceSha: sha, runId, runAttempt: 1 },
     task: binding.task,
@@ -446,7 +446,7 @@ describe("Session trusted workflow policy", () => {
       if (session === undefined) throw new Error("Expected enabled Session");
       await Promise.all([session.prepare(), session.prepare()]);
       await session.prepare();
-      expect(session.snapshot()).toMatchObject({ status: "claimed", generation: 1 });
+      expect(session.facts).toMatchObject({ status: "claimed", generation: 1 });
       expect(warning).toHaveBeenCalledExactlyOnceWith(expect.stringContaining("queue: max"));
       expect(upload).toHaveBeenCalledTimes(1);
     } finally {
@@ -927,6 +927,25 @@ describe("Controller Session artifact admission and advance", () => {
         signal: f.options.signal,
       }),
     ).resolves.toMatchObject({ generation: 2 });
+  });
+  it("rejects a v0.11 parent in auto mode without claiming a replacement session", async () => {
+    const f = automaticFixture();
+    const legacy = zipSync(
+      {
+        "manifest.json": Buffer.from(JSON.stringify({ ...f.saved.manifest, schemaVersion: 1 })),
+        "session.jsonl": f.saved.payload,
+      },
+      { level: 0 },
+    );
+    f.state.history.push(successfulHistory());
+    f.state.sources.push({
+      ...f.metadata(100),
+      size_in_bytes: legacy.length,
+      digest: `sha256:${hash(legacy)}`,
+    });
+    f.fetchArchive.mockResolvedValueOnce(new Response(Buffer.from(legacy)));
+    await expect(prepareSessionArtifacts(f.options)).rejects.toThrow(/malformed or incompatible/u);
+    expect(f.uploader.uploadArtifact).not.toHaveBeenCalled();
   });
   it("auto uses case-insensitive run titles matching GitHub key concurrency", async () => {
     const f = automaticFixture();

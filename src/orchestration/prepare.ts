@@ -12,7 +12,7 @@ import { checkActorPermissions } from "../github/permissions.js";
 import { StickyProgressReporter } from "../github/progress.js";
 import type { ActionInputs } from "../inputs.js";
 import { throwIfCancelled } from "../lifecycle/cancellation.js";
-import type { RunOutcome } from "../result.js";
+import type { RunFacts } from "../result.js";
 import { evaluatePolicy, type SecurityPolicy } from "../security/policy.js";
 import {
   assertOperationContext,
@@ -43,7 +43,7 @@ export interface AuthorizedRun {
 export type PrepareRunResult =
   | {
       readonly kind: "complete";
-      readonly outcome: Omit<RunOutcome, "schemaVersion" | "durationMs">;
+      readonly outcome: Omit<RunFacts, "durationMs">;
     }
   | { readonly kind: "authorized"; readonly run: AuthorizedRun };
 

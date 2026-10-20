@@ -71,7 +71,7 @@ export function dockerInstallAdapter(
       workerLaunches += 1;
       return {
         stdout: JSON.stringify({
-          protocolVersion: 1,
+          protocolVersion: 2,
           operation: "review",
           state: "final",
           summary: "Installed safely.",

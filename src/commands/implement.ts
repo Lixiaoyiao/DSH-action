@@ -1,32 +1,22 @@
 import type { DshRunResult } from "../dsh/runner.js";
 import type { ActionInputs } from "../inputs.js";
-import type { GitHubClient } from "../github/client.js";
 import { buildImplementationOperation } from "../write/implementation.js";
 import type { BoundIssueIdentity } from "../write/issue.js";
-import type { WorkspaceSnapshot } from "../write/workspace.js";
 import { sanitizeUntrustedText } from "../security/redaction.js";
 import { stripTrackingMarkers } from "../review/tracking.js";
-import {
-  executeValidatedRepositoryWrite,
-  type ControllerWriteControl,
-} from "../write/transaction.js";
+import { type RepositoryWriteContext } from "../write/transaction.js";
 
-export interface FinishImplementationInput extends ControllerWriteControl {
-  readonly client: GitHubClient;
+export interface FinishImplementationInput extends RepositoryWriteContext {
   readonly owner: string;
   readonly repo: string;
   readonly issueNumber: number;
   readonly issueTitle: string;
   readonly issueIdentity: BoundIssueIdentity;
   readonly baseBranch: string;
-  readonly snapshot: WorkspaceSnapshot;
   readonly boundHeadSha: string;
   readonly operationKey: string;
   readonly result: DshRunResult;
-  readonly inputs: Pick<
-    ActionInputs,
-    "runTests" | "testCommands" | "containerImage" | "branchPrefix" | "branchNameTemplate"
-  >;
+  readonly inputs: Pick<ActionInputs, "branchPrefix" | "branchNameTemplate">;
 }
 
 export async function finishImplementation(
@@ -54,11 +44,8 @@ export async function finishImplementation(
     "",
     "Created by dsh-action.",
   ].join("\n");
-  return await executeValidatedRepositoryWrite({
-    client: input.client,
-    repository: { owner: input.owner, repo: input.repo },
-    workspace: input.snapshot,
-    plan: {
+  return await input.writer.write(
+    {
       kind: "new-pr",
       operationKind: "implement",
       target: {
@@ -76,11 +63,6 @@ export async function finishImplementation(
         body,
       },
     },
-    validation: {
-      runTests: input.inputs.runTests,
-      commands: input.inputs.testCommands,
-      containerImage: input.inputs.containerImage,
-    },
-    control: input,
-  });
+    input.budget,
+  );
 }

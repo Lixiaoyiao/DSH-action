@@ -16,7 +16,7 @@ input and a fresh consumer, rather than only changing a constant.
 | Installation container                      | 4 GiB, 2 CPUs, 256 PIDs                     | Package extraction and dependency resolution need more memory than the bounded worker. Worker and installer authority remain separate.                           |
 | Container temporary storage                 | 512 MiB                                     | Permit normal temporary files without an unbounded writable filesystem. The worker `/tmp` also uses `noexec,nosuid,nodev`.                                       |
 | DSH output                                  | 2 MiB                                       | Bound process buffering and schema input; truncation is an explicit failure, never accepted as a complete model result.                                          |
-| Public receipt outputs                      | 640 KiB in UTF-16 bytes                     | Reserve headroom under GitHub's job output budget for other outputs. Old receipts are dropped with counts; final status and confirmed effects remain.            |
+| Canonical report and summary outputs        | 640 KiB in UTF-16 bytes                     | Reserve headroom under GitHub's job output budget for other outputs. Old receipts are dropped with counts; final status and confirmed effects remain.            |
 | GitHub image downloads                      | 8 attempts; 4 MiB each; 16 MiB total        | Bound Controller download bytes; unsupported URLs and failed images report their reason.                                                                         |
 | Image download request chain                | 30 seconds; 3 redirects                     | Bound one supported GitHub upload; redirect destinations remain restricted to GitHub image storage.                                                              |
 | Official DSH image source                   | 20 MiB; 64 million pixels; 8,192 per side   | Official attachment admission bounds decoding. DSH may normalize the model image without rewriting the repository source.                                        |
@@ -37,7 +37,7 @@ Source owners are [lifecycle/deadline.ts](../src/lifecycle/deadline.ts),
 [repository materialization](../src/github/repository.ts),
 [GitHub publication](../src/write/github.ts),
 [model proxy](../src/dsh/proxy.ts),
-[result/outputs.ts](../src/result/outputs.ts), and
+[result/report.ts](../src/result/report.ts), and
 [session contracts](../src/session/contracts.ts) /
 [checkpoint inspection](../src/session/checkpoint.ts) /
 [artifact transport](../src/session/artifact-store.ts).

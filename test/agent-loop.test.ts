@@ -16,6 +16,7 @@ import {
   DshAbortedError,
   DshMalformedOutputError,
   DshProcessError,
+  attachDshFailureTelemetry,
 } from "../src/dsh/errors.js";
 import type { DshOutput } from "../src/dsh/schema.js";
 import { parseTaskOutputSchema } from "../src/dsh/task-output.js";
@@ -89,7 +90,7 @@ const runtime: DshRuntime = {
 
 function output(state: DshOutput["state"], extra: Partial<DshOutput> = {}): DshOutput {
   return {
-    protocolVersion: 1,
+    protocolVersion: 2,
     operation: "task",
     state,
     summary: state === "blocked" ? "Cannot continue safely" : "Task result",
@@ -169,6 +170,54 @@ function engine(
         durationMs: 10,
         isolationReport: isolation,
       });
+    },
+  };
+}
+
+function retryValidationOnce(): () => Promise<string> {
+  let finalized = false;
+  return () => {
+    if (!finalized) {
+      finalized = true;
+      return Promise.reject(validationFailure("repair required"));
+    }
+    return Promise.resolve("done");
+  };
+}
+
+/** Simulate a DSH tool invocation inside a worker attempt, through its borrowed Controller port. */
+function controllerToolEngine(
+  provider: ToolProvider | undefined,
+  requests: AgentTurnRequest[],
+  responses: readonly DshOutput[] = [output("final")],
+  toolTurn = 0,
+): AgentEngine<DshRunResult> {
+  let turn = 0;
+  return {
+    id: "native-controller-tool",
+    version: "1",
+    runTurn: async (request) => {
+      requests.push(request);
+      const index = turn++;
+      if (index === toolTurn) {
+        if (provider === undefined) throw new Error("Controller tool is unavailable");
+        try {
+          await provider.invoke(
+            { callId: "call-controller-fixture", id: "command.test", input: {} },
+            {
+              workspacePath: request.workspacePath,
+              timeoutMs: request.timeoutMs,
+              ...(request.signal === undefined ? {} : { signal: request.signal }),
+            },
+          );
+        } catch (error: unknown) {
+          attachDshFailureTelemetry(error, { durationMs: 0, isolationReport: isolation });
+          throw error;
+        }
+      }
+      const next = responses[index];
+      if (next === undefined) throw new Error("Unexpected turn");
+      return { output: next, durationMs: 10, isolationReport: isolation };
     },
   };
 }
@@ -282,7 +331,7 @@ describe("Controller Session lifecycle hooks", () => {
     let turn = 0;
     const result = await runAgentLoop(
       task(),
-      inputs({ maxTurns: 2 }),
+      inputs({ maxControllerSteps: 2 }),
       {
         deadlineMs: Date.now() + 60_000,
         toolProvider: {
@@ -291,11 +340,12 @@ describe("Controller Session lifecycle hooks", () => {
           invoke: (call) => Promise.resolve({ ...call, ok: true, output: {} }),
         },
         blocked: () => Promise.resolve("blocked"),
-        finalize: () => Promise.resolve("done"),
+        finalize: retryValidationOnce(),
       },
       {
         createRuntime: () => Promise.resolve(runtime),
         disposeRuntime: () => Promise.resolve(),
+        workspaceFingerprint: () => Promise.resolve("revision-1"),
         createEngine: () => ({
           id: "unknown-then-measured",
           version: "1",
@@ -303,10 +353,7 @@ describe("Controller Session lifecycle hooks", () => {
             turn += 1;
             return Promise.resolve({
               durationMs: 10,
-              output:
-                turn === 1
-                  ? output("needs_tool", { toolRequest: { id: "command.test", input: {} } })
-                  : output("final"),
+              output: output("final"),
               isolationReport: isolation,
               ...(turn === 1
                 ? {}
@@ -336,7 +383,7 @@ describe("Controller Session lifecycle hooks", () => {
     let turn = 0;
     const result = await runAgentLoop(
       task(),
-      inputs({ maxTurns: 2 }),
+      inputs({ maxControllerSteps: 2 }),
       {
         deadlineMs: Date.now() + 60_000,
         toolProvider: {
@@ -345,11 +392,12 @@ describe("Controller Session lifecycle hooks", () => {
           invoke: (call) => Promise.resolve({ ...call, ok: true, output: {} }),
         },
         blocked: () => Promise.resolve("blocked"),
-        finalize: () => Promise.resolve("done"),
+        finalize: retryValidationOnce(),
       },
       {
         createRuntime: () => Promise.resolve(runtime),
         disposeRuntime: () => Promise.resolve(),
+        workspaceFingerprint: () => Promise.resolve("revision-1"),
         createEngine: () => ({
           id: "fixture",
           version: "1",
@@ -357,10 +405,7 @@ describe("Controller Session lifecycle hooks", () => {
             turn += 1;
             return Promise.resolve({
               durationMs: 10,
-              output:
-                turn === 1
-                  ? output("needs_tool", { toolRequest: { id: "command.test", input: {} } })
-                  : output("final"),
+              output: output("final"),
               isolationReport: isolation,
               usage: {
                 source: "headless-worker" as const,
@@ -808,7 +853,7 @@ describe("controller-owned agent loop", () => {
       const onValidationRetry = vi.fn(() => new Promise<void>(() => undefined));
       const running = runAgentLoop(
         task(),
-        inputs({ maxTurns: 2 }),
+        inputs({ maxControllerSteps: 2 }),
         {
           deadlineMs: 20 * 60_000,
           onValidationRetry,
@@ -860,7 +905,7 @@ describe("controller-owned agent loop", () => {
     let finalizations = 0;
     const result = await runAgentLoop(
       task({ identity: "TASK-ID", large: "z".repeat(100_000) }),
-      inputs({ maxTurns: 3 }),
+      inputs({ maxControllerSteps: 3 }),
       {
         deadlineMs: Date.now() + 60_000,
         toolProvider: provider,
@@ -876,44 +921,29 @@ describe("controller-owned agent loop", () => {
       {
         createRuntime: () => Promise.resolve(runtime),
         disposeRuntime,
-        createEngine: () =>
-          engine(
-            [
-              output("needs_tool", {
-                toolRequest: { id: "command.test", input: {} },
-              }),
-              output("final"),
-              output("final", { summary: "Repaired" }),
-            ],
-            requests,
-          ),
+        createEngine: (_runtime, controllerTools) =>
+          controllerToolEngine(controllerTools, requests, [
+            output("final"),
+            output("final", { summary: "Repaired" }),
+          ]),
         workspaceFingerprint: () => Promise.resolve("revision-1"),
       },
     );
     expect(result.finalization).toBe("done");
-    expect(result.stats).toMatchObject({ turns: 3, toolCalls: 1, validationRetries: 1 });
+    expect(result.stats).toMatchObject({ turns: 2, toolCalls: 1, validationRetries: 1 });
     expect(result.stats.toolReceipts).toHaveLength(1);
-    expect(result.stats.toolReceipts[0]?.callId).toMatch(/^call-[a-f0-9]{40}$/u);
+    expect(result.stats.toolReceipts[0]?.callId).toMatch(/^call-/u);
     expect(result.stats.toolReceipts[0]).toMatchObject({
       effect: "scheduled",
       target: "repository:42/issue:7",
       attempts: 0,
       reconciled: false,
     });
-    const toolFeedbackPrompt = buildDshPrompt({
-      operation: "task",
-      prompt: JSON.stringify(requests[1]?.context),
-      trust: "trusted-write",
-      toolCatalog: task().tools.manifests,
-      maxBytes: WINDOWS_MAX_PROMPT_BYTES,
-    });
-    expect(toolFeedbackPrompt).toContain("TOOL_TAIL");
-    const repairContext = requests[2]?.context;
+    const repairContext = requests[1]?.context;
     const prompt = buildDshPrompt({
       operation: "task",
       prompt: JSON.stringify(repairContext),
       trust: "trusted-write",
-      toolCatalog: task().tools.manifests,
       maxBytes: WINDOWS_MAX_PROMPT_BYTES,
     });
     expect(prompt).toContain("TAIL_ERROR");
@@ -932,16 +962,17 @@ describe("controller-owned agent loop", () => {
     };
     const result = await runAgentLoop(
       task(),
-      inputs({ maxTurns: 2 }),
+      inputs({ maxControllerSteps: 2 }),
       {
         deadlineMs: Date.now() + 60_000,
         toolProvider: provider,
         blocked: () => Promise.resolve("blocked"),
-        finalize: () => Promise.resolve("done"),
+        finalize: retryValidationOnce(),
       },
       {
         createRuntime: () => Promise.resolve(runtime),
         disposeRuntime: () => Promise.resolve(),
+        workspaceFingerprint: () => Promise.resolve("revision-1"),
         createEngine: () => ({
           id: "fake-mcp",
           version: "1",
@@ -949,10 +980,7 @@ describe("controller-owned agent loop", () => {
             turn += 1;
             return Promise.resolve({
               ...workerEvidence,
-              output:
-                turn === 1
-                  ? output("needs_tool", { toolRequest: { id: "command.test", input: {} } })
-                  : output("final"),
+              output: output("final"),
               durationMs: 10,
               rawStdout: `worker terminal evidence for turn ${String(turn)}`,
               toolReceipts: [
@@ -1004,26 +1032,24 @@ describe("controller-owned agent loop", () => {
     };
     const result = await runAgentLoop(
       task(),
-      inputs({ dshMode: "native", maxTurns: 2 }),
+      inputs({ dshMode: "native", maxControllerSteps: 2 }),
       {
         deadlineMs: Date.now() + 60_000,
         toolProvider: provider,
         blocked: () => Promise.resolve("blocked"),
-        finalize: () => Promise.resolve("done"),
+        finalize: retryValidationOnce(),
       },
       {
         createRuntime: () => Promise.resolve(runtime),
         disposeRuntime: () => Promise.resolve(),
+        workspaceFingerprint: () => Promise.resolve("revision-1"),
         createEngine: () => ({
           id: "fake-native",
           version: "1",
           runTurn: () => {
             turn += 1;
             return Promise.resolve({
-              output:
-                turn === 1
-                  ? output("needs_tool", { toolRequest: { id: "command.test", input: {} } })
-                  : output("final"),
+              output: output("final"),
               durationMs: 10,
               isolationReport: isolation,
               observedTools: turn === 1 ? ["read", "glob"] : ["grep", "read"],
@@ -1042,7 +1068,7 @@ describe("controller-owned agent loop", () => {
     await expect(
       runAgentLoop(
         task(),
-        inputs({ maxTurns: 3 }),
+        inputs({ maxControllerSteps: 3 }),
         {
           deadlineMs: Date.now() + 60_000,
           blocked: () => Promise.resolve("blocked"),
@@ -1090,7 +1116,7 @@ describe("controller-owned agent loop", () => {
     await expect(
       runAgentLoop(
         task(),
-        inputs({ maxTurns: 2 }),
+        inputs({ maxControllerSteps: 2 }),
         { deadlineMs: Date.now() + 60_000, blocked, finalize },
         {
           createRuntime: () => Promise.resolve(runtime),
@@ -1124,7 +1150,7 @@ describe("controller-owned agent loop", () => {
     await expect(
       runAgentLoop(
         task(),
-        inputs({ maxTurns: 2 }),
+        inputs({ maxControllerSteps: 2 }),
         {
           deadlineMs: Date.now() + 60_000,
           toolProvider: provider,
@@ -1134,14 +1160,8 @@ describe("controller-owned agent loop", () => {
         {
           createRuntime: () => Promise.resolve(runtime),
           disposeRuntime: () => Promise.resolve(),
-          createEngine: () =>
-            engine(
-              [
-                output("final"),
-                output("needs_tool", { toolRequest: { id: "command.test", input: {} } }),
-              ],
-              requests,
-            ),
+          createEngine: (_runtime, controllerTools) =>
+            controllerToolEngine(controllerTools, requests, [output("final"), output("final")], 1),
           workspaceFingerprint: () => Promise.resolve("weakened-validation-entrypoint"),
         },
       ),
@@ -1178,7 +1198,7 @@ describe("controller-owned agent loop", () => {
     await expect(
       runAgentLoop(
         task(),
-        inputs({ maxTurns: 2 }),
+        inputs({ maxControllerSteps: 2 }),
         {
           deadlineMs: Date.now() + 60_000,
           blocked: () => Promise.resolve("blocked"),
@@ -1216,7 +1236,7 @@ describe("controller-owned agent loop", () => {
     await expect(
       runAgentLoop(
         task(),
-        inputs({ maxTurns: 2 }),
+        inputs({ maxControllerSteps: 2 }),
         {
           deadlineMs: Date.now() + 60_000,
           blocked: () => Promise.resolve("blocked"),
@@ -1471,7 +1491,7 @@ describe("controller-owned agent loop", () => {
     const controller = new AbortController();
     let workerPid: number | undefined;
     const turnRequest: AgentTurnRequest = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       operation: "task",
       requestedAccess: "read",
       instructions: "test",
@@ -1534,7 +1554,7 @@ describe("controller-owned agent loop", () => {
           toolProvider: provider,
           blocked: () => Promise.resolve("blocked"),
           finalize: () => Promise.resolve("done"),
-          onState: (_agent, stats) => {
+          onEngineFailure: (_agent, stats) => {
             states.push({
               toolCalls: stats.toolCalls,
               receipts: stats.toolReceipts.length,
@@ -1545,8 +1565,7 @@ describe("controller-owned agent loop", () => {
         {
           createRuntime: () => Promise.resolve(runtime),
           disposeRuntime: () => Promise.resolve(),
-          createEngine: () =>
-            engine([output("needs_tool", { toolRequest: { id: "command.test", input: {} } })], []),
+          createEngine: (_runtime, controllerTools) => controllerToolEngine(controllerTools, []),
         },
       ),
     ).rejects.toThrow("tool transport failed");
@@ -1585,7 +1604,7 @@ describe("controller-owned agent loop", () => {
       await expect(
         runAgentLoop(
           task(),
-          inputs({ maxTurns: 2 }),
+          inputs({ maxControllerSteps: 3 }),
           {
             deadlineMs: Date.now() + 60_000,
             toolProvider: {
@@ -1594,13 +1613,14 @@ describe("controller-owned agent loop", () => {
               invoke: (call) => Promise.resolve({ ...call, ok: true, output: {} }),
             },
             blocked: () => Promise.resolve("blocked"),
-            finalize: () => Promise.resolve("done"),
+            finalize: retryValidationOnce(),
             onEngineFailure,
             onState,
           },
           {
             createRuntime: () => Promise.resolve(runtime),
             disposeRuntime: () => Promise.resolve(),
+            workspaceFingerprint: () => Promise.resolve("revision-1"),
             createEngine: () => ({
               id: "failing-dsh",
               version: "1",
@@ -1609,9 +1629,7 @@ describe("controller-owned agent loop", () => {
                 return turn === 1
                   ? Promise.resolve({
                       ...workerEvidence,
-                      output: output("needs_tool", {
-                        toolRequest: { id: "command.test", input: {} },
-                      }),
+                      output: output("final"),
                     })
                   : Promise.reject(error);
               },
@@ -1659,14 +1677,13 @@ describe("controller-owned agent loop", () => {
         {
           createRuntime: () => Promise.resolve(runtime),
           disposeRuntime: () => Promise.resolve(),
-          createEngine: () =>
-            engine([output("needs_tool", { toolRequest: { id: "command.test", input: {} } })], []),
+          createEngine: (_runtime, controllerTools) => controllerToolEngine(controllerTools, []),
         },
       ),
-    ).rejects.toThrow("requested unavailable tool");
+    ).rejects.toThrow("Controller tool is unavailable");
   });
 
-  it("bounds generic tool payloads and stops at the configured turn limit", async () => {
+  it("stops an in-worker Controller call when the shared step budget is exhausted", async () => {
     const provider: ToolProvider = {
       id: "future-provider",
       manifest: () => [],
@@ -1681,7 +1698,7 @@ describe("controller-owned agent loop", () => {
     await expect(
       runAgentLoop(
         task(),
-        inputs({ maxTurns: 1 }),
+        inputs({ maxControllerSteps: 1 }),
         {
           deadlineMs: Date.now() + 60_000,
           toolProvider: provider,
@@ -1691,8 +1708,7 @@ describe("controller-owned agent loop", () => {
         {
           createRuntime: () => Promise.resolve(runtime),
           disposeRuntime: () => Promise.resolve(),
-          createEngine: () =>
-            engine([output("needs_tool", { toolRequest: { id: "command.test", input: {} } })], []),
+          createEngine: (_runtime, controllerTools) => controllerToolEngine(controllerTools, []),
         },
       ),
     ).rejects.toBeInstanceOf(AgentLoopLimitError);

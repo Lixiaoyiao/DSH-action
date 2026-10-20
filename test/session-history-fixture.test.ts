@@ -88,7 +88,7 @@ async function fixture(extra: Record<string, string> = {}, now = Date.now()) {
       .join("\n") + "\n",
   );
   const manifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     repository: binding.repository,
     workflow: { ...binding.workflow, runId: 10, runAttempt: 1, sourceSha: "d".repeat(40) },
     task: binding.task,
@@ -127,13 +127,25 @@ async function fixture(extra: Record<string, string> = {}, now = Date.now()) {
   await writeFile(join(directory, "proof", "proof.json"), JSON.stringify(proof));
   await writeFile(join(directory, "current-checkpoint.zip"), archive);
   const result = {
-    conclusion: "success",
-    operation: "task",
-    dsh: { mode: "controlled" },
-    policy: { trust: "trusted-write" },
-    permissions: { workspaceWrite: true },
-    isolation: { backend: "docker", processIsolated: true, workspaceAccess: "read-write" },
-    taskOutput: { memory, challenge, phase: "save" },
+    schemaVersion: 2,
+    termination: {
+      conclusion: "success",
+      status: "success",
+      summary: "Session checkpoint saved",
+      durationMs: 1,
+    },
+    operation: { kind: "task", findingsCount: 0, taskOutput: { memory, challenge, phase: "save" } },
+    context: {
+      dsh: { mode: "controlled" },
+      policy: { trust: "trusted-write" },
+      permission: { workspaceWrite: true },
+    },
+    agent: {
+      durationMs: 1,
+      isolation: { backend: "docker", processIsolated: true, workspaceAccess: "read-write" },
+      turns: 1,
+      toolCalls: 0,
+    },
     session: {
       mode: "auto",
       selection: "created",
@@ -144,8 +156,7 @@ async function fixture(extra: Record<string, string> = {}, now = Date.now()) {
       sessionId,
       payloadSha256: hash(payload),
     },
-    loop: { turns: 1, toolCalls: 0 },
-    write: { status: "no-changes", changedPaths: [] },
+    publication: { writeStatus: "no-changes", changedPaths: [] },
     validation: { status: "not-applicable", commandCount: 0 },
   };
   const env = {
@@ -216,6 +227,7 @@ async function fixture(extra: Record<string, string> = {}, now = Date.now()) {
     binding,
     artifactName,
     proof,
+    result,
     manifest,
     payload,
   };
@@ -598,6 +610,30 @@ syncBuiltinESMExports();
     });
     expect(await readFile(join(value.directory, "proof", "proof.json"), "utf8")).toContain(memory);
   });
+  it.each([
+    "schema-version",
+    "task-output",
+    "artifact-id",
+    "artifact-name",
+    "session-id",
+    "payload-sha",
+  ] as const)(
+    "rejects a changed canonical qualification result before any SDK effect: %s",
+    async (change) => {
+      const value = await fixture();
+      const result = structuredClone(value.result);
+      if (change === "schema-version") result.schemaVersion = 1;
+      if (change === "task-output") result.operation.taskOutput.challenge = "0".repeat(24);
+      if (change === "artifact-id") result.session.artifactId = 99;
+      if (change === "artifact-name") result.session.artifactName += "-different";
+      if (change === "session-id")
+        result.session.sessionId = "session-22222222-2222-4222-8222-222222222222";
+      if (change === "payload-sha") result.session.payloadSha256 = "0".repeat(64);
+      value.env.RESULT_JSON = JSON.stringify(result);
+      await expect(seedSessionHistoryFixture(value)).rejects.toThrow("QUALIFIED_RESULT_BINDING");
+      expect(value.calls).toEqual([]);
+    },
+  );
   it.each([
     { ACTION_OUTCOME: "failure" },
     { EXPECTED_FAILURE: "corrupt" },

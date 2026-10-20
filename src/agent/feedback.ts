@@ -1,10 +1,9 @@
-import { isRecord } from "../security/record.js";
 import { createHash } from "node:crypto";
 import { utf8Prefix, utf8Suffix } from "../security/utf8.js";
 import type { ValidationFailureError } from "../write/validate.js";
 
 export interface LoopFeedback {
-  readonly kind: "tool" | "validation";
+  readonly kind: "validation";
   readonly turn: number;
   readonly data: unknown;
 }
@@ -29,31 +28,6 @@ function boundedHeadTail(value: string, maximumBytes = 6 * 1024): string {
   const headBytes = Math.floor(available / 3);
   const tailBytes = available - headBytes;
   return utf8Prefix(value, headBytes) + marker + utf8Suffix(value, tailBytes);
-}
-
-export function boundedFeedbackData(value: unknown): unknown {
-  let candidate = value;
-  if (isRecord(value)) {
-    const record = value;
-    const output = record.output;
-    if (isRecord(output)) {
-      const processOutput = output;
-      if (typeof processOutput.stdout === "string" && typeof processOutput.stderr === "string") {
-        candidate = {
-          ...record,
-          output: {
-            ...processOutput,
-            stdout: boundedHeadTail(processOutput.stdout, 5 * 1024),
-            stderr: boundedHeadTail(processOutput.stderr, 5 * 1024),
-          },
-        };
-      }
-    }
-  }
-  const serialized = JSON.stringify(candidate);
-  const boundedValue = bounded(serialized);
-  if (boundedValue === serialized) return candidate;
-  return { untrusted: true, truncated: true, jsonPrefix: boundedValue };
 }
 
 export function validationFeedback(
@@ -109,7 +83,7 @@ export function turnContext(
 ): unknown {
   return {
     controllerLoop: {
-      protocolVersion: 1,
+      protocolVersion: 2,
       turn,
       taskContextAnchor: anchor,
       // Newest repair evidence is serialized first so prompt truncation keeps it.

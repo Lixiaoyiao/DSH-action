@@ -13,7 +13,7 @@ import {
   MAX_SESSION_MANIFEST_BYTES,
   SESSION_MANIFEST_FILE,
   SESSION_PAYLOAD_FILE,
-  parseSessionManifest,
+  admitSessionCheckpointEnvelope,
   sessionArtifactName,
   sessionArtifactPrefix,
   sessionClaimName,
@@ -717,7 +717,8 @@ export async function saveSessionArtifact(options: {
   readonly deadlineMs: number;
   readonly signal: AbortSignal;
 }): Promise<{ id: number; name: string; generation: number; size?: number; sha256?: string }> {
-  const { prepared, checkpoint } = options;
+  const { prepared } = options;
+  const checkpoint = admitSessionCheckpointEnvelope(options.checkpoint);
   const attachmentFiles = sessionAttachmentFiles(checkpoint);
   const signal = budget(options);
   const current = await verifyRun(
@@ -727,16 +728,8 @@ export async function saveSessionArtifact(options: {
     false,
     signal,
   );
-  validateSessionManifestBinding(
-    parseSessionManifest(checkpoint.manifest),
-    prepared.binding,
-    current,
-  );
-  if (
-    checkpoint.manifest.session.generation !== prepared.generation ||
-    checkpoint.payload.length !== checkpoint.manifest.payload.bytes ||
-    digest(checkpoint.payload) !== checkpoint.manifest.payload.sha256
-  )
+  validateSessionManifestBinding(checkpoint.manifest, prepared.binding, current);
+  if (checkpoint.manifest.session.generation !== prepared.generation)
     denied("Session checkpoint generation or payload changed before save");
   if (
     prepared.options.mode === "auto" &&
