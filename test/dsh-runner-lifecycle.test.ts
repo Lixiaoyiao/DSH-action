@@ -691,7 +691,13 @@ describe("runDsh lifecycle", () => {
     expect(networkInspect?.limits.timeoutMs).toBe(PHASE_TIMEOUTS.setupMs);
     expect(worker?.limits.timeoutMs).toBe(PHASE_TIMEOUTS.agentTurnMs);
     for (const phase of [runtimeInstall, networkCreate, networkInspect, worker]) {
-      expect(phase?.limits.signal).toBe(controller.signal);
+      expect(phase?.limits.signal?.aborted).toBe(false);
+    }
+    const cancellation = new DshAbortedError();
+    controller.abort(cancellation);
+    for (const phase of [runtimeInstall, networkCreate, networkInspect, worker]) {
+      expect(phase?.limits.signal?.aborted).toBe(true);
+      expect(phase?.limits.signal?.reason).toBe(cancellation);
     }
     expect(networkCleanup?.limits).toMatchObject({ timeoutMs: PHASE_TIMEOUTS.cleanupMs });
     expect(networkCleanup?.limits.signal).toBeUndefined();

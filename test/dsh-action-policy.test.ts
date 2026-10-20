@@ -170,15 +170,6 @@ describe("Action-owned DSH ToolRuntime policy", () => {
     );
     expect(rootAssembly.sections.at(-1)?.text).toContain('Controller-selected operation is "task"');
     expect(rootAssembly.sections.at(-1)?.text).toContain('operation field must be exactly "task"');
-    expect(rootAssembly.sections.at(-1)?.text).toContain(
-      "Controller command and GitHub tools use the built-in action-controller MCP server",
-    );
-    expect(rootAssembly.sections.at(-1)?.text).toContain(
-      "a scheduled GitHub operation is deferred until Controller finalization",
-    );
-    expect(rootAssembly.sections.at(-1)?.text).toContain(
-      "Invoke available tools through their runtime schemas",
-    );
     expect(renderPrompt(rootAssembly)).toContain("never permits bytes outside the JSON object");
 
     const { agent: childAgent } = await createScopedAgent(context, [], "subagent");

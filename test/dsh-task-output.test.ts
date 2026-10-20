@@ -183,8 +183,8 @@ describe("taskOutput protocol rules", () => {
     ).toThrow(/trusted schema validation/u);
   });
 
-  it("allows intermediate needs_tool and blocked task states to omit taskOutput", () => {
-    expect(
+  it("allows a blocked task to omit taskOutput and rejects the former tool-request state", () => {
+    expect(() =>
       parseDshOutput(
         JSON.stringify(
           taskEnvelope({
@@ -194,8 +194,8 @@ describe("taskOutput protocol rules", () => {
         ),
         "task",
         schema,
-      ).taskOutput,
-    ).toBeUndefined();
+      ),
+    ).toThrow(/schema validation/u);
     expect(
       parseDshOutput(JSON.stringify(taskEnvelope({ state: "blocked" })), "task", schema).taskOutput,
     ).toBeUndefined();
@@ -222,8 +222,7 @@ describe("taskOutput protocol rules", () => {
       parseDshOutput(
         JSON.stringify(
           taskEnvelope({
-            state: "needs_tool",
-            toolRequest: { id: "command.test", input: {} },
+            state: "blocked",
             taskOutput: { releaseReady: true, risk: "low" },
           }),
         ),
