@@ -54,8 +54,9 @@ Typical signal: `status: denied` or `error-code: POLICY_DENIED`.
 
 Check these in order:
 
-1. Confirm the event is supported and an interactive `@dsh` command starts on
-   the first line of the comment or review. See [Usage](usage.md).
+1. Confirm the event is supported and the triggering comment or review contains
+   exactly one direct `@dsh` request at the start of a visible line, outside
+   quotes and code examples. See [Usage](usage.md).
 2. Confirm every originating actor has write, maintain, or admin permission.
    Permission lookup failures deny authority. For `workflow_run` writes, the
    receiving actor, upstream run actor, and rerun/triggering actor must all pass.
@@ -63,7 +64,9 @@ Check these in order:
    `pull_request_target` are always review-only.
 4. For a write, confirm `allow-write: "true"`, `run-tests: "true"`, and a
    non-empty JSON `test-commands` list. `run-tests: "false"` denies the write;
-   it never waives validation.
+   it never waives validation. Natural-language requests also need the separate
+   `natural-language-write: "true"` opt-in and clear change intent; otherwise
+   they remain read-only.
 5. Confirm the bound issue, pull request, branch, origin, and full SHA have not
    changed during the run, and that no protected path is being modified.
 6. Confirm `workspace.edit` survives the permission profile and exact deny
@@ -84,8 +87,8 @@ rather than broadening permissions.
 - Keep the job-level event types and `if` expression aligned with
   `trigger-phrase`, `label-trigger`, or `assignee-trigger`. The Action cannot run
   when the workflow filters the event out first.
-- The literal command phrase and operation must be on the first line. A phrase
-  found only in quoted or later text is intentionally ignored.
+- Put the literal trigger phrase and request at the start of a visible line.
+  Context may precede it, but quotes and code examples cannot trigger a request.
 - Check `allowed-actors`; this is a routing filter, not a replacement for the
   repository permission and bot gates.
 - Comment include/exclude settings affect historical prompt context only. They

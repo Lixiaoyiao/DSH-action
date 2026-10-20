@@ -122,8 +122,11 @@ describe("parseCommand", () => {
     "please fix this bug",
     "Could you fix this bug and open a PR?",
     "Please update README without changing runtime code",
+    "Please update README without modifying runtime code",
     "Please fix the cache if needed and do not open a PR",
+    "Please fix this bug but do not change any other files",
     "请修复 Bug，不要改其他文件，并提交 PR",
+    "请修复 Bug，不要修改其他文件，并提交 PR",
     "Can you please change the timeout to 30 seconds?",
     "Please update `README.md` to explain installation",
     "commit these changes",
@@ -165,6 +168,67 @@ describe("parseCommand", () => {
       requestedAccess: "read",
     });
   });
+
+  it.each([
+    "Please fix this bug but do not change anything.",
+    "Please fix this bug but do not modify the repository.",
+    "Please fix this bug but do not edit the codebase.",
+    "Please fix this bug without changing the project.",
+    "Please fix this bug but do not change the `files`.",
+    "请修复这个 Bug，但不要修改任何东西。",
+    "请修复这个 Bug，但不要改动这个仓库。",
+    "请修复这个 Bug，但不要改这个项目。",
+    "Please fix this bug; I only want an explanation.",
+    "Please fix this bug; tell me how to do it.",
+  ])("keeps general mutation prohibitions and explanation requests read-only: %s", (request) => {
+    expect(parseCommand(`@dsh ${request}`, "@dsh", { naturalLanguageWrite: true })).toMatchObject({
+      requestedAccess: "read",
+    });
+  });
+
+  it.each([
+    "Change log analysis: why does it fail?",
+    "Add this to the review?",
+    "Update instructions for fixing the bug",
+    "Change request analysis",
+  ])("keeps questions and noun phrases read-only: %s", (request) => {
+    expect(parseCommand(`@dsh ${request}`, "@dsh", { naturalLanguageWrite: true })).toMatchObject({
+      requestedAccess: "read",
+    });
+  });
+
+  it.each([
+    "Do not change any files.\n\n@dsh Please fix this bug",
+    "Only want an explanation.\n\n@dsh Please fix this bug",
+    "不要修改这个仓库。\n\n@dsh 请修复这个 Bug",
+  ])("applies whole-comment visible readonly constraints to natural requests: %s", (content) => {
+    expect(parseCommand(content, "@dsh", { naturalLanguageWrite: true })).toMatchObject({
+      requestedAccess: "read",
+    });
+  });
+
+  it.each([
+    "> Do not change anything.\n\n@dsh Please fix this bug",
+    "```\n不要修改任何东西。\n```\n\n@dsh 请修复这个 Bug",
+    "Do not change any other files.\n\n@dsh Please update README",
+  ])("keeps quoted and scoped preceding context from denying a clear request: %s", (content) => {
+    expect(parseCommand(content, "@dsh", { naturalLanguageWrite: true })).toMatchObject({
+      requestedAccess: "write",
+    });
+  });
+
+  it.each(["fix this bug", "implement this change", "task --write repair it"])(
+    "preserves explicit legacy access despite surrounding readonly prose: %s",
+    (command) => {
+      for (const naturalLanguageWrite of [false, true]) {
+        expect(
+          parseCommand(`Do not change anything.\n\n@dsh ${command}\nOnly explain.`, "@dsh", {
+            naturalLanguageWrite,
+          }),
+        ).toMatchObject({ requestedAccess: "write" });
+      }
+    },
+  );
 
   it("never obtains natural write intent from earlier or later context", () => {
     expect(

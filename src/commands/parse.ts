@@ -107,7 +107,7 @@ function visibleLines(lines: readonly string[]): string[] {
 }
 
 /** A workflow opt-in admits direct requests, never intent quoted as context. */
-function naturalAccess(request: string, following: readonly string[]): RequestedAccess {
+function naturalAccess(request: string, prose: readonly string[]): RequestedAccess {
   const unquote = (text: string): string =>
     text
       .replace(
@@ -116,35 +116,53 @@ function naturalAccess(request: string, following: readonly string[]): Requested
       )
       .trim();
   const text = unquote(request);
-  const constraints = [text, ...following.map(unquote)].join("\n");
+  const constraints = prose.map(unquote).join("\n");
+  const englishProhibitions = constraints.matchAll(
+    /\b(?:without|do\s+not|don't|never)\s+(?:actually\s+)?(?:changing|modifying|editing|writing|change|modify|edit|write)\b([^\n,.!?;]*)/giu,
+  );
+  const chineseProhibitions = constraints.matchAll(
+    /(?:不要|不用|无需|不必|禁止|别)(?:实际)?(?:修改|改动|更改|编辑|写入|改)([^\n，。！？；]*)/gu,
+  );
   if (
-    /\b(?:without|(?:do\s+not|don't|never))\s+(?:actually\s+)?(?:changing|modifying|editing|writing|change|modify|edit|write)\s+(?:(?:any|the)\s+)?(?:files|code)\b|\b(?:only|just)\s+(?:analy[sz]e|explain|discuss|review|describe)\b/iu.test(
+    // Restrictions on other files or runtime code still permit the requested edit.
+    [...englishProhibitions].some(
+      (match) => !/^\s*(?:(?:any|the)\s+)?(?:other|runtime)\b/iu.test(match[1] ?? ""),
+    ) ||
+    [...chineseProhibitions].some((match) => !/^\s*(?:任何)?其他/u.test(match[1] ?? "")) ||
+    /\b(?:only|just)\s+(?:(?:want|need)\s+(?:an?\s+)?)?(?:analy[sz]e|explain|explanation|discuss|review|describe)\b|\btell\s+me\s+how\b/iu.test(
       constraints,
     ) ||
-    /(?:不要|不用|无需|不必|禁止|别)(?:实际)?(?:修改|改动|更改|编辑|写入)(?:任何)?(?:代码|文件)|只(?:需|要)?(?:分析|解释|讨论|审查|给出|提供方案)/u.test(
-      constraints,
-    ) ||
+    /只(?:需|要)?(?:分析|解释|讨论|审查|给出|提供方案)/u.test(constraints) ||
     /(?:方案|方法|思路|步骤|过程|能力|机制)(?:是|有|为|如何|怎么|什么|能否)|(?:是|有)什么(?:方案|方法)|(?:如何|怎么)修复/u.test(
       text,
     )
   )
     return "read";
-  const english = text.replace(
-    /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+(?:please\s+)?)/iu,
-    "",
-  );
-  if (
-    /^(?:fix|repair|implement|update|change|edit|add|remove|delete|refactor|replace|rename)\b\s+\S/iu.test(
+  const politeEnglish =
+    /^(?:(?:please|kindly)\s+|(?:can|could|would|will)\s+you\s+(?:please\s+)?)/iu;
+  const english = text.replace(politeEnglish, "");
+  const mutation =
+    /^(?:fix|repair|implement|update|change|edit|add|remove|delete|refactor|replace|rename)\b\s+(\S.*)$/iu.exec(
       english,
-    ) ||
-    /^(?:commit|push)\b(?:\s|$)/iu.test(english) ||
-    /^(?:create|open|submit|raise)\s+(?:(?:a|the)\s+)?(?:pr|pull\s+request)\b/iu.test(english)
+    );
+  const target = mutation?.[1] ?? "";
+  const explicitObject =
+    /^(?:the|this|that|these|those|a|an|my|our)\b/iu.test(target) ||
+    /^[^\s]*[./\\][^\s]*/u.test(target) ||
+    /^[A-Z][A-Z0-9_-]+(?:\s|$)/u.test(target);
+  const question = /[?？]\s*$/u.test(text) && !/^(?:can|could|would|will)\s+you\b/iu.test(text);
+  if (
+    !question &&
+    ((mutation !== null && (politeEnglish.test(text) || explicitObject)) ||
+      /^(?:commit|push)\b\s+\S/iu.test(english) ||
+      /^(?:create|open|submit|raise)\s+(?:(?:a|the)\s+)?(?:pr|pull\s+request)\b/iu.test(english))
   )
     return "write";
   const chinese = text.replace(
     /^(?:(?:请|麻烦)(?:你)?(?:帮我)?|(?:能不能|能否|能|可不可以|可以)(?:请)?(?:你)?(?:帮我)?|帮我)\s*/u,
     "",
   );
+  if (/[?？]\s*$/u.test(text) && chinese === text) return "read";
   return /^(?:(?:修复|实现|修改|更新|添加|新增|删除|移除|重构|调整|替换|更改)\s*\S|(?:将|把).+(?:改为|改成|修改为|设为|设置为)\s*\S|(?:提交|推送)(?:代码|更改|修改|变更)|(?:提交|创建|发起)\s*(?:一个\s*)?(?:PR\b|pull\s+request\b|拉取请求))/iu.test(
     chinese,
   )
@@ -182,7 +200,7 @@ export function parseCommand(
   let requestedAccess: RequestedAccess =
     legacy === null
       ? options.naturalLanguageWrite === true
-        ? naturalAccess(candidate.visible, visible.slice(candidate.index + 1))
+        ? naturalAccess(candidate.visible, visible)
         : "read"
       : operation === "fix" || operation === "implement"
         ? "write"
