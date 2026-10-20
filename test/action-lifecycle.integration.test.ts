@@ -636,6 +636,52 @@ it("retains partial metadata effects and final receipts when a later postconditi
   for (const effect of Object.values(created)) expect(effect).not.toHaveBeenCalled();
 });
 
+it.each([false, true])(
+  "settles a blocked Issue answer without flushing metadata when authority revoked=%s",
+  async (revoked) => {
+    await selectEntity("task", "issue");
+    vi.stubEnv("INPUT_TASK-ACCESS", "read");
+    vi.stubEnv("INPUT_PROGRESS-COMMENT", "false");
+    vi.stubEnv("INPUT_ALLOWED-TOOLS", '["github.issue.labels.set"]');
+    vi.stubEnv("INPUT_RUN-TESTS", "false");
+    vi.stubEnv("INPUT_TEST-COMMANDS", "[]");
+    const metadata = issueMutationTransport();
+    const save = vi.fn(() => Promise.resolve());
+    ports.session.mockReturnValue(checkpointSession(save));
+    ports.runDsh.mockImplementationOnce(async ({ controllerTools, workspacePath }) => {
+      if (controllerTools === undefined || workspacePath === undefined)
+        throw new Error("Missing Controller tools");
+      await controllerTools.invoke(
+        { callId: "blocked-triage", id: "github.issue.labels.set", input: { labels: ["triaged"] } },
+        { workspacePath, timeoutMs: 30_000 },
+      );
+      if (revoked) permission = "none";
+      return readonlyWorkerResult("blocked");
+    });
+    const outcome = await runAction();
+    if (revoked) {
+      expect(outcome).toMatchObject({
+        termination: { conclusion: "failure", error: { category: "policy", phase: "publication" } },
+      });
+      expect(published.comment).not.toHaveBeenCalled();
+      expect(outcome.publication?.commentId).toBeUndefined();
+    } else {
+      expect(outcome).toMatchObject({
+        termination: { conclusion: "neutral" },
+        validation: { status: "not-applicable", commandCount: 0 },
+        publication: { commentId: 901 },
+        agent: { toolReceipts: [{ effect: "scheduled" }] },
+      });
+      expect(published.comment).toHaveBeenCalledOnce();
+    }
+    expect(metadata.labels()).toEqual([]);
+    expect(metadata.setLabels).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    expect(ports.process).not.toHaveBeenCalled();
+    for (const effect of Object.values(created)) expect(effect).not.toHaveBeenCalled();
+  },
+);
+
 it("returns a blocked task without validation, repository writes or saving a Session", async () => {
   const save = vi.fn(() => Promise.resolve());
   ports.session.mockReturnValue(checkpointSession(save));

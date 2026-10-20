@@ -141,11 +141,13 @@ export function createPublication(options: {
             ...(validation === undefined ? {} : { validation }),
             ...(githubAuthority === undefined ? {} : { githubAuthority }),
           });
+  let blockedCommentId: number | undefined;
   const snapshot = () => ({
     ...(githubAuthority?.hasExternalEffect === true
       ? { writeStatus: "partial-success" as const }
       : {}),
     ...operation.snapshot(),
+    ...(blockedCommentId === undefined ? {} : { commentId: blockedCommentId }),
     ...(validation === undefined ? {} : { validation: validation.snapshot() }),
   });
   return {
@@ -154,6 +156,29 @@ export function createPublication(options: {
       return snapshot();
     },
     attempt: async (result, remainingMs) => {
+      if (result.output.state === "blocked") {
+        lifecycle.enter("publication");
+        if (
+          authorized.command.operation === "task" &&
+          authorized.issueNumber !== undefined &&
+          lifecycle.reporter === undefined &&
+          !authorized.deferWriteProgress
+        ) {
+          await authorized.revalidateAuthority();
+          blockedCommentId = await publishTaskAnswer(
+            authorized.client,
+            {
+              owner: authorized.context.repository.owner,
+              repo: authorized.context.repository.repo,
+              issueNumber: authorized.issueNumber,
+            },
+            inputs.botUserId,
+            result,
+            authorized.currentRunUrl,
+          );
+        }
+        return { kind: "blocked" };
+      }
       const finalized = await operation.finalize(result, remainingMs);
       await githubAuthority?.flush(remainingMs);
       return finalized;

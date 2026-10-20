@@ -2,7 +2,6 @@ import * as core from "@actions/core";
 import { copyFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { runAgentLoop, type AgentLoopStats } from "../agent/loop.js";
-import { publishTaskAnswer } from "../commands/task.js";
 import { DshAgentEngine } from "../dsh/engine.js";
 import type { DshFailureTelemetry } from "../dsh/errors.js";
 import type { DshRunResult } from "../dsh/runner.js";
@@ -52,7 +51,6 @@ export class AgentPhase {
   private agent: AgentRunSummary | undefined;
   private completedOutput: DshRunResult["output"] | undefined;
   private toolPolicy: RunFacts["toolPolicy"];
-  private blockedCommentId: number | undefined;
 
   public constructor(private readonly options: AgentPhaseOptions) {
     const { authorized, inputs, execution, deadlineMs, signal } = options;
@@ -86,7 +84,6 @@ export class AgentPhase {
             findingsCount: publication.publication?.selected ?? output?.findings.length ?? 0,
           }),
       ...(output?.taskOutput === undefined ? {} : { taskOutput: output.taskOutput }),
-      ...(this.blockedCommentId === undefined ? {} : { commentId: this.blockedCommentId }),
       ...(agent === undefined
         ? {}
         : {
@@ -113,8 +110,7 @@ export class AgentPhase {
   public async run(): Promise<Omit<RunFacts, "durationMs">> {
     const { lifecycle, authorized, workspace, execution, inputs, signal, deadlineMs } =
       this.options;
-    const { context, client, command, currentRunUrl, policy, issueNumber, deferWriteProgress } =
-      authorized;
+    const { command, policy } = authorized;
     const { contextPacket, tools, toolProvider, extensions, selectedComposition, redact } =
       execution;
     const session = this.session;
@@ -191,25 +187,7 @@ export class AgentPhase {
           const message = error instanceof Error ? error.message : String(error);
           core.warning(`Agent ${component} cleanup failed: ${redact(message)}`);
         },
-        blocked: async (result) => {
-          lifecycle.enter("publication");
-          if (
-            command.operation === "task" &&
-            issueNumber !== undefined &&
-            lifecycle.reporter === undefined &&
-            !deferWriteProgress
-          ) {
-            await authorized.revalidateAuthority();
-            this.blockedCommentId = await publishTaskAnswer(
-              client,
-              { owner: context.repository.owner, repo: context.repository.repo, issueNumber },
-              inputs.botUserId,
-              result,
-              currentRunUrl,
-            );
-          }
-          return { kind: "blocked" };
-        },
+        blocked: (result, remainingMs) => this.publication.attempt(result, remainingMs),
         finalize: (result, remainingMs) => this.publication.attempt(result, remainingMs),
       },
       {
