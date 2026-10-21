@@ -131,7 +131,7 @@ It requires no source run ID. A previous failed or unknown run, or a missing,
 expired, corrupt or incompatible checkpoint must be reconciled before continuing.
 See the [Session contract](../../docs/session.md) for boundaries and explicit usage.
 
-Installer 0.7.1 accepts explicit maintainer-selected write validation:
+Installer 0.7.2 accepts explicit maintainer-selected write validation:
 
 ```bash
 npm create deepseek-harness-action@latest -- --mode commands \
@@ -152,10 +152,10 @@ For an offline static check from a reviewed Action source checkout, use
 `npm run check:config -- --config examples/config-check.json` as described in
 [Setup](../../docs/setup.md#check-configuration-before-the-first-model-run).
 
-Version `0.7.1` targets formal Action `v0.11.0`. Its Action SHA is not filled in
+Version `0.7.2` targets formal Action `v0.12.0`. Its Action SHA is not filled in
 until the immutable tag, GitHub Release and controlled/native release canary
 agree. The installer has a separate source identity and immutable
-`create-deepseek-harness-action-v0.7.1` source tag.
+`create-deepseek-harness-action-v0.7.2` source tag.
 Installer source review, exact-source CI/tag, the real guided first run,
 qualified tarball, npm publication and fresh anonymous public consumers are
 distinct gates.

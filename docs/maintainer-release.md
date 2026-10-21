@@ -32,8 +32,8 @@ The advisory stable/RC/alpha upstream canaries never replace these production ga
 Do not rerun task-bearing failures without first reconciling their diagnostics
 and confirmed effects; preserve a bounded continuation record for external blocks.
 
-The guided installer is prepared as an independently qualified `0.7.1` release
-after the v0.11.0 formal canary succeeds. Its first-repository qualification must
+The guided installer is prepared as an independently qualified `0.7.2` release
+after the v0.12.0 formal canary succeeds. Its first-repository qualification must
 exercise the real Git/gh path, Secret detection, readonly workflow generation,
 separate commit/push confirmations, configuration checks and first-run guidance.
 Keep cancelled confirmations and unrelated working-tree changes covered. Public
@@ -402,16 +402,17 @@ If the smoke fails after publication, keep the tag immutable. Diagnose the failu
 
 ## Publish the npm create package
 
-The independent installer is `0.7.1`, targeting formal Action `v0.11.0`
+The independent installer is `0.7.2`, targeting formal Action `v0.12.0`
 with exact DSH `0.2.1-rc.2`. Its source tag is
-`create-deepseek-harness-action-v0.7.1`. Keep the Action SHA and installer source
+`create-deepseek-harness-action-v0.7.2`. Keep the Action SHA and installer source
 SHA unresolved until their respective gates establish them. Do not copy a
 historical release SHA into the new binding.
 
 Qualify the guided public CLI in an existing fresh GitHub repository, from the
-actual archive: no flags must choose read-only PR Review without composition
-questions; Git root/origin and GitHub CLI/login detection, hidden Secret input
-through stdin, generated immutable-SHA workflow, static configuration check,
+actual archive: no flags must choose read-only `@dsh` conversation and automatic
+PR Review without composition questions; Git root/origin and GitHub CLI/login
+detection, hidden Secret input through stdin, generated immutable-SHA workflow,
+static configuration check,
 separate commit/push confirmations and the first real Action run must pass.
 Record only Secret names/status, never values or input. Test manual login/setup
 resume, unchanged workflow/commit reuse, default-No publication, preservation of
