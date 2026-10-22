@@ -39,7 +39,11 @@ function filePicker(state) {
   return el(
     "div",
     { className: "file-list" },
-    el("p", { className: "sidebar-caption" }, "工作流文件"),
+    el(
+      "p",
+      { className: "sidebar-caption", title: state.repositoryRoot },
+      state.repository || "工作流文件",
+    ),
     state.files.length === 0 && el("p", { className: "sidebar-empty" }, "尚未添加工作流"),
     state.files.map((file) =>
       el(

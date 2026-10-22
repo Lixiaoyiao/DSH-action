@@ -171,17 +171,17 @@ attempts every acquired resource's disposer, preserving the primary outcome.
 
 ## Installation design
 
-The installer defaults to a guided read-only PR review. Advanced modes are an
-explicit choice. Guided and manual entrypoints share template admission and
-atomic workflow installation, so onboarding cannot invent another configuration
-format. Prompts collect decisions; Git/`gh` adapters perform external operations;
-publication owns the local index/ref transaction and remote reconciliation.
+The installer defaults to read-only conversation and automatic PR Review in the
+local configuration GUI described above. Advanced modes are explicit choices.
+GUI and non-interactive entrypoints share release-bound templates and the local
+workflow save transaction. Existing files are read from the repository root;
+concurrent edits invalidate the preview before saving.
 
-Secrets are passed to `gh` on stdin and never persisted in local recovery state.
-Recovery observes the actual workflow, Secret names and Git refs. Each commit and
-push requires the human installer's explicit confirmation. A private Git index
-limits a commit to generated workflow files; the push checks its remote parent
-so it cannot silently publish unrelated local commits.
+The installer stores Secret references in YAML and never sets GitHub Secrets,
+commits, pushes, or runs repository scripts. Maintainers perform those steps
+through their normal GitHub and Git tools. Local plugin discovery reads package
+metadata only; cloud configuration names exact packages and explicit tools,
+without copying local credentials or private settings.
 
 ## Verification seams
 

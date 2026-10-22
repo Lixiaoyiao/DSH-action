@@ -5,7 +5,8 @@ import { GUI_INPUTS } from "./contract.generated.mjs";
 import { unwrapReviewGuard } from "./plugins.mjs";
 
 const ACTION = "Lixiaoyiao/deepseek-harness-action@";
-const SECRET_KEY = /(?:secret|password|api[-_]?key|token|authorization)/iu;
+const CREDENTIAL_NAME =
+  /(?:^|_)(?:secret|password|passwd|token|authorization|(?:api|access|secret|private)_?key)$/u;
 const credentialInputs = new Set(["deepseek-api-key", "github-token"]);
 const knownInputs = new Set(GUI_INPUTS.map(({ name }) => name));
 
@@ -20,27 +21,39 @@ function documentFor(source) {
   return doc;
 }
 
-function containsLiteralCredential(value, key = "") {
+function containsLiteralCredential(value, path = []) {
   if (typeof value === "string") {
-    if (
-      SECRET_KEY.test(key) &&
-      value !== "" &&
-      !/^\s*\$\{\{\s*(?:secrets|github|inputs|env|vars)\.[A-Za-z_][A-Za-z0-9_]*\s*\}\}\s*$/u.test(
-        value,
-      )
-    )
-      return true;
+    const key = (path.at(-1) ?? "")
+      .replace(/([a-z0-9])([A-Z])/gu, "$1_$2")
+      .replaceAll("-", "_")
+      .toLowerCase();
+    const permissionScope =
+      (path.length === 2 && path[0] === "permissions") ||
+      (path.length === 4 && path[0] === "jobs" && path[2] === "permissions");
+    if (!permissionScope && CREDENTIAL_NAME.test(key) && value !== "") {
+      const authorizationHeader =
+        path.at(-2)?.toLowerCase() === "headers" &&
+        (key === "authorization" || key === "proxy_authorization");
+      const reference = authorizationHeader
+        ? value.trim().replace(/^Bearer\s+/iu, "")
+        : value.trim();
+      // Keep one complete runner expression opaque, including bracket references.
+      // Literal prefixes and text between separate expressions are still exposed values.
+      if (!/^\$\{\{(?:(?!\$\{\{|\}\})[\s\S])+\}\}$/u.test(reference)) return true;
+    }
     if (value.trim().startsWith("{")) {
       try {
-        return containsLiteralCredential(JSON.parse(value));
+        return containsLiteralCredential(JSON.parse(value), path);
       } catch {
         return false;
       }
     }
   }
-  if (Array.isArray(value)) return value.some((item) => containsLiteralCredential(item, key));
+  if (Array.isArray(value)) return value.some((item) => containsLiteralCredential(item, path));
   if (value && typeof value === "object")
-    return Object.entries(value).some(([name, entry]) => containsLiteralCredential(entry, name));
+    return Object.entries(value).some(([name, entry]) =>
+      containsLiteralCredential(entry, [...path, name]),
+    );
   return false;
 }
 

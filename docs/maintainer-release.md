@@ -504,13 +504,13 @@ template, packed template, and generated workflow has exactly one
 `dsh-version: 0.2.1-rc.2` input; the old `0.1.7-rc.2` pin is rejected by
 the current Action:
 
-The exact allowlisted archive contains `package.json`, `README.md`, `LICENSE`,
-nine runtime modules (`action-inputs.generated.mjs`, `cli.mjs`, `installer.mjs`,
-`guided.mjs`, `process.mjs`, `prompts.mjs`, `publication.mjs`, `workflow-text.mjs`, `local-plugins.mjs`) and six bound
-templates under `dist/templates/`. Reject missing/extra files and symlinks.
-The private guided modules and shared workflow text policy are required runtime files, not optional source
-artifacts. Test `review`, `commands`, `both`, and `session` in both compositions;
-each Session workflow must keep `queue: max` and read-only permissions.
+The exact archive allowlist is exercised in `test/installer.test.ts`. It includes
+the package metadata/license, CLI runtime, GUI backend and static assets,
+generated input metadata, the bundled Action validator with third-party notices,
+and six bound templates. Reject missing/extra files and symlinks. Test `review`,
+`commands`, `both`, and `session` in both compositions, plus GUI preview/save/reopen
+from the actual archive. Each Session workflow must keep `queue: max` and read-only
+permissions.
 
 ```bash
 node --input-type=module - "$installer_stage/unpacked/package/package.json" "$installer_version" <<'NODE'

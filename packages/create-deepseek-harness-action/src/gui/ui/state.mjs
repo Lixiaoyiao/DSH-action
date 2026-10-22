@@ -95,3 +95,63 @@ export function selectedChanges(state) {
     expectedHash,
   }));
 }
+
+export function acceptInspection(file, result) {
+  file.steps = result.steps ?? [];
+  file.editable = result.editable;
+  file.reason = result.reason;
+  if (!file.steps.some((step) => step.id === file.selectedStepId))
+    file.selectedStepId = file.steps[0]?.id ?? "";
+  file.needsInspection = false;
+}
+export async function inspectDraft(file, transport) {
+  if (!file || !file.needsInspection) return;
+  const result = await transport.inspect(file.source);
+  acceptInspection(file, result);
+  if (!result.editable) {
+    file.needsInspection = true;
+    throw new Error(result.reason || "无法解析当前 YAML；草稿已保留。");
+  }
+}
+export async function applyDraft(file, transport) {
+  if (!file) return;
+  for (const [stepId, inputs] of Object.entries(file.pending)) {
+    const result = await transport.edit({
+      source: file.source,
+      stepId,
+      inputs,
+      upgradeAction: false,
+    });
+    file.source = result.source;
+    acceptInspection(file, result);
+    Reflect.deleteProperty(file.pending, stepId);
+  }
+}
+export function setSource(state, source) {
+  const file = activeFile(state);
+  if (!file) return;
+  file.source = source;
+  file.needsInspection = true;
+  invalidatePreview(state);
+}
+export async function transitionView(state, target, transport) {
+  const fileId = target.fileId ?? state.selectedFileId;
+  const section = target.section ?? state.section;
+  const tab = target.advancedTab ?? state.advancedTab;
+  const file = state.files.find((candidate) => candidate.localId === fileId);
+  if (section === "advanced" && tab === "yaml") await applyDraft(file, transport);
+  else if (["configuration", "plugins", "advanced"].includes(section)) {
+    try {
+      await inspectDraft(file, transport);
+    } catch (error) {
+      // Keep an unparseable draft visible for repair; stale fields must not replace it.
+      state.selectedFileId = fileId;
+      state.section = "advanced";
+      state.advancedTab = "yaml";
+      throw error;
+    }
+  }
+  state.selectedFileId = fileId;
+  state.section = section;
+  state.advancedTab = tab;
+}

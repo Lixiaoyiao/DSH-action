@@ -2,6 +2,11 @@
 import { request } from "./api.mjs";
 import { render } from "./views.mjs";
 import {
+  acceptInspection,
+  applyDraft,
+  inspectDraft,
+  setSource,
+  transitionView,
   activeFile,
   activeStep,
   createState,
@@ -41,42 +46,16 @@ async function work(label, task) {
     if (state.section !== previousSection) window.scrollTo(0, 0);
   }
 }
-function acceptInspection(file, result) {
-  file.steps = result.steps ?? [];
-  file.editable = result.editable;
-  file.reason = result.reason;
-  if (!file.steps.some((step) => step.id === file.selectedStepId))
-    file.selectedStepId = file.steps[0]?.id ?? "";
-  file.needsInspection = false;
-}
-async function inspect(file) {
-  if (!file || !file.needsInspection) return;
-  const result = await request("inspect", { source: file.source });
-  acceptInspection(file, result);
-  if (!result.editable) throw new Error(result.reason || "无法解析当前 YAML；草稿已保留。");
-}
-async function apply(file) {
-  if (!file) return;
-  for (const [stepId, inputs] of Object.entries(file.pending)) {
-    const result = await request("edit", {
-      source: file.source,
-      stepId,
-      inputs,
-      upgradeAction: false,
-    });
-    file.source = result.source;
-    acceptInspection(file, result);
-    Reflect.deleteProperty(file.pending, stepId);
-  }
-}
+const draftTransport = {
+  inspect: (source) => request("inspect", { source }),
+  edit: (options) => request("edit", options),
+};
+const inspect = (file) => inspectDraft(file, draftTransport);
+const apply = (file) => applyDraft(file, draftTransport);
 async function navigate(section, tab) {
-  const file = activeFile(state);
-  if (section === "advanced" && (tab ?? state.advancedTab) === "yaml") await apply(file);
-  else if (["configuration", "plugins", "advanced"].includes(section)) await inspect(file);
+  await transitionView(state, { section, advancedTab: tab ?? state.advancedTab }, draftTransport);
   if (state.pluginScanMode !== null && state.pluginScanMode !== effectiveMode(state))
     resetPluginSelection();
-  state.section = section;
-  if (tab) state.advancedTab = tab;
   window.scrollTo(0, 0);
 }
 function resetPluginSelection() {
@@ -91,7 +70,7 @@ const actions = {
   "open-yaml": async () => navigate("advanced", "yaml"),
   "advanced-tab": async (data) => navigate("advanced", data.tab),
   "select-file": async (data) => {
-    state.selectedFileId = data.id;
+    await transitionView(state, { fileId: data.id }, draftTransport);
     resetPluginSelection();
   },
   "dismiss-error": async () => {
@@ -252,10 +231,7 @@ function updateField(target) {
     activeFile(state).selectedStepId = value;
     resetPluginSelection();
   } else if (field === "yaml") {
-    const file = activeFile(state);
-    file.source = value;
-    file.needsInspection = true;
-    invalidatePreview(state);
+    setSource(state, value);
   } else if (field === "file-path") {
     activeFile(state).path = value;
     invalidatePreview(state);

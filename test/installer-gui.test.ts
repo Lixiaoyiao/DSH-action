@@ -337,21 +337,117 @@ it("rejects symlinked workflow parents before reading or writing outside the rep
   expect(await readdir(outside)).toEqual([".git"]);
 });
 
-it.each(["synthetic-literal-key", "synthetic-literal-key${{ secrets.SUFFIX }}"])(
-  "hides workflows containing a literal credential: %s",
-  async (credential) => {
-    const root = await project();
-    const source = simpleWorkflow().replace("${{ secrets.DEEPSEEK_API_KEY }}", credential);
-    await writeWorkflow(root, source);
-    const session = await start(root);
-    expect(inspectWorkflow(source)).toMatchObject({ editable: false, sensitive: true, steps: [] });
-    const state = await api(session, "state");
-    expect(JSON.stringify(state.body)).not.toContain("synthetic-literal-key");
-    expect((await preview(session, simpleWorkflow(), workflowHash(source))).response.status).toBe(
-      400,
-    );
+it.each([
+  "synthetic-literal-key",
+  "synthetic-literal-key${{ secrets.SUFFIX }}",
+  "${{ secrets.PREFIX }}synthetic-literal-key${{ secrets.SUFFIX }}",
+  "Bearer ${{ secrets.DEEPSEEK_API_KEY }}",
+])("hides workflows containing a literal credential: %s", async (credential) => {
+  const root = await project();
+  const source = simpleWorkflow().replace("${{ secrets.DEEPSEEK_API_KEY }}", credential);
+  await writeWorkflow(root, source);
+  const session = await start(root);
+  expect(inspectWorkflow(source)).toMatchObject({ editable: false, sensitive: true, steps: [] });
+  const state = await api(session, "state");
+  expect(JSON.stringify(state.body)).not.toContain("synthetic-literal-key");
+  expect((await preview(session, simpleWorkflow(), workflowHash(source))).response.status).toBe(
+    400,
+  );
+});
+
+it("preserves token counts, permission scopes and unevaluated bracket references through GUI edits", async () => {
+  const root = await project();
+  const keyReference = "${{ secrets['DEEPSEEK_API_KEY'] }}";
+  const authorization = "Bearer ${{ secrets['SERVICE_KEY'] }}";
+  const doc = parseDocument(
+    simpleWorkflow().replace("${{ secrets.DEEPSEEK_API_KEY }}", keyReference),
+  );
+  doc.set("permissions", doc.createNode({ contents: "read", "id-token": "write" }));
+  doc.set("env", doc.createNode({ MAX_TOKENS: "4096", TOKEN_LIMIT: "8192" }));
+  doc.setIn(
+    ["jobs", "custom"],
+    doc.createNode({
+      "runs-on": "ubuntu-latest",
+      permissions: { "id-token": "write" },
+      env: {
+        MAX_TOKENS: "1024",
+        SERVICE_CONFIG: JSON.stringify({ headers: { Authorization: authorization } }),
+      },
+      steps: [{ run: "echo custom-job" }],
+    }),
+  );
+  const source = doc.toString();
+  await writeWorkflow(root, source);
+  const inspection = inspectWorkflow(source);
+  expect(inspection, JSON.stringify(inspection)).toMatchObject({ editable: true });
+  expect(inspection.sensitive).not.toBe(true);
+  const session = await start(root);
+  const state = await api(session, "state");
+  expect(state.body.files).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ path: workflowName, source, editable: true }),
+    ]),
+  );
+  const selected = inspection.steps[0];
+  if (!selected) throw new Error("Missing editable Action");
+  expect(selected.inputs["deepseek-api-key"]).toBe(keyReference);
+  const edited = await api(session, "edit", {
+    source,
+    stepId: selected.id,
+    inputs: { ...selected.inputs, prompt: "Updated instructions" },
+  });
+  expect(edited.response.status).toBe(200);
+  const updated = z.string().parse(edited.body.source);
+  expect(inspectWorkflow(updated).steps[0]?.inputs["deepseek-api-key"]).toBe(keyReference);
+  const values = z.object({
+    env: z.record(z.string(), z.string()),
+    permissions: z.record(z.string(), z.string()),
+    jobs: z.object({ custom: z.unknown() }),
+  });
+  const before: unknown = doc.toJS();
+  const after: unknown = parseDocument(updated).toJS();
+  expect(values.parse(after)).toEqual(values.parse(before));
+  const planned = await preview(session, updated, workflowHash(source));
+  expect(planned.body.ok, JSON.stringify(planned.body.diagnostics)).toBe(true);
+  expect((await readWorkflow(root, workflowName)).source).toBe(source);
+});
+
+it.each(["${{ secrets['DEEPSEEK_API_KEY'] }}", "${{ inputs.key || secrets['DEEPSEEK_API_KEY'] }}"])(
+  "keeps whole GitHub credential expressions unevaluated: %s",
+  (reference) => {
+    const source = simpleWorkflow().replace("${{ secrets.DEEPSEEK_API_KEY }}", reference);
+    expect(inspectWorkflow(source)).toMatchObject({ editable: true });
+    expect(inspectWorkflow(source).steps[0]?.inputs["deepseek-api-key"]).toBe(reference);
   },
 );
+
+it.each([
+  { env: { API_KEY: "synthetic-private-value" } },
+  { env: { AUTH_TOKEN: "synthetic-private-value" } },
+  { env: { PASSWORD: "synthetic-private-value" } },
+  {
+    env: {
+      SERVICE_CONFIG: JSON.stringify({
+        headers: { Authorization: "Bearer synthetic-private-value" },
+      }),
+    },
+  },
+  {
+    env: {
+      SERVICE_CONFIG: JSON.stringify({
+        headers: { Authorization: "Bearer synthetic-private-value${{ secrets.SUFFIX }}" },
+      }),
+    },
+  },
+])("continues hiding literal credentials in credential-bearing fields: %j", (configuration) => {
+  const doc = parseDocument(simpleWorkflow());
+  doc.set("env", doc.createNode(configuration.env));
+  expect(inspectWorkflow(doc.toString())).toMatchObject({
+    editable: false,
+    sensitive: true,
+    steps: [],
+  });
+});
 
 it("preserves unrelated YAML comments, jobs, anchors and other Action steps", () => {
   const source = `# Custom workflow comment\nname: Custom\non: workflow_dispatch\nenv: &shared\n  FEATURE: enabled # Keep this comment\njobs:\n  other:\n    runs-on: ubuntu-latest\n    env: *shared\n    steps:\n      - run: echo custom\n  first:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: ${action}\n        with:\n          deepseek-api-key: \${{ secrets.DEEPSEEK_API_KEY }}\n          prompt: Original one # First prompt\n      - uses: ${action}\n        with:\n          deepseek-api-key: \${{ secrets.OTHER_KEY }}\n          prompt: Original two\n`;
