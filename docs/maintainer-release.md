@@ -4,28 +4,28 @@
 
 This guide is for repository maintainers qualifying and publishing an Action release. A successful run proves only the exact commit SHA it tested. After any candidate change, repeat every required check against the new latest SHA.
 
-For v0.12.1, retain the exact production DSH `0.2.1-rc.2` family. Qualify
-`session-mode: auto` with fresh keys in controlled and native compositions.
-Use the trusted [automatic Session E2E workflow](../.github/workflows/session-auto-e2e.yml)
-on live `main`: first creation and an
-independent follow-up run must prove the same Session, an incremented generation,
-raw-log prefix continuity, a fresh worker, current permissions and no replay.
-No source run ID is passed to the Action. Preserve evidence for overlapping
-different keys, serialized same-key runs and a failed-history rejection before
-worker startup. Expired, missing, corrupt, incompatible, incomplete and unknown
-history also require explicit failure evidence; unit fixtures alone do not prove
-the real Actions transport path.
+For v0.12.1, retain the exact production DSH `0.2.1-rc.2` family. The local GUI
+and optional model settings reuse the existing Session protocol, history selection,
+storage, concurrency and trusted harness. On the frozen release `main` SHA, qualify
+one explicit save/resume pair and one automatic pair in each composition
+(controlled/native), using fresh keys. Include `image_attachment=true` in the
+explicit pairs. Each independent follow-up must prove the same Session, an
+incremented generation, raw-log prefix continuity, a fresh worker, current
+permissions and no replay. The image pairs must execute official `read_image` on
+save and preserve its raw reference and exact attachment bytes on resume. The
+automatic Action receives no source run ID.
 
-For file support, run both compositions with `image_attachment=true` in the
-existing Session workflows. The first run must execute official `read_image`;
-the independent follow-up must preserve the raw image reference and exact
-attachment bytes without downloading or executing the earlier tool again.
-Record the real GitHub image download and binary Blob round-trip evidence too.
+Requalify the broader Session transport/history matrix when those mechanisms or
+their harness change: overlapping different keys, serialized same-key runs, failed,
+expired, missing, corrupt, incompatible, incomplete and unknown histories. Such
+qualification requires real Actions evidence; unit fixtures alone do not establish
+the transport path or actual TTL. Record unchanged mechanisms and historical
+evidence explicitly rather than labeling unexecuted checks as newly passed. New
+trusted harness changes must land through their own CI-qualified PR before they
+handle credentials in candidate qualification.
 
-The Session harness changes must land through their own CI-qualified PR before
-candidate qualification so that credentials use trusted default-branch harness
-code. Freeze the candidate before the complete local check, PR CI and Core E2E.
-After merge, repeat exact-main CI/Core and Session qualification before tagging.
+Freeze the candidate before the complete local check, PR CI and Core E2E.
+After merge, run exact-main CI/Core and the Session pairs above before tagging.
 Run the formal controlled/native canary against the immutable formal tag, then
 prepare the independently versioned installer with the actual formal Action SHA.
 The advisory stable/RC/alpha upstream canaries never replace these production gates.
@@ -48,7 +48,8 @@ formal Action SHA for `DSH_ACTION_RELEASE_SHA`.
 ## Explicit Session qualification
 
 Qualify a controlled save/resume pair and a native save/resume pair against the
-frozen candidate using the [Session E2E workflow](../.github/workflows/session-e2e.yml).
+frozen release main SHA using the [Session E2E workflow](../.github/workflows/session-e2e.yml).
+Pre-merge pairs can diagnose changes early; they do not replace release-main proof.
 Each pair uses two independent runs, a fresh `session_key`, the same candidate and
 trusted harness SHA, and the successful save run's ID as `source_run_id` for resume.
 Keep the default branch unchanged between the runs. The fixture checks a hidden
