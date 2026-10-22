@@ -296,10 +296,10 @@ export async function verifySessionWorkflowRun(
   if (
     options.successful
       ? run.status !== "completed" || run.conclusion !== "success"
-      : run.status !== "in_progress"
+      : run.status !== "in_progress" && run.status !== "queued"
   )
     throw new PolicyDeniedError(
-      "Session producer must finish successfully; current run must be in progress" +
+      "Session producer must finish successfully; current run must be in progress or queued with an active producer" +
         `; role=${options.successful ? "source" : "current"}` +
         `; observedStatus=${observedState(run.status)}` +
         `; observedConclusion=${observedState(run.conclusion)}` +

@@ -5,8 +5,10 @@ versioning for published action releases.
 
 ## Unreleased
 
-## [0.12.1]
+## [0.12.1] - 2026-10-23
 
+- Accepts a `queued` current Session run when its exact attempt has one verified
+  `in_progress` producer job.
 - Adds optional `model` and `reasoning-effort` inputs through the official DSH
   default-model selection in controlled and native modes. Empty values preserve
   existing defaults; `off`, `low`, `high`, and `max` use the pinned provider's
