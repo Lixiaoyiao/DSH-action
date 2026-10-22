@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { execFile, spawn } from "node:child_process";
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, parse as parsePath } from "node:path";
 import { promisify } from "node:util";
@@ -42,6 +42,8 @@ function npmCommand(): { executable: string; prefix: string[] } {
 
 let suiteDirectory = "";
 let builtPackage = "";
+let packDirectory = "";
+let packStdout = "";
 
 class OutputCapture extends Writable {
   public text = "";
@@ -107,11 +109,22 @@ async function install(mode: InstallerMode, dshMode?: InstallerDshMode, project?
 beforeAll(async () => {
   suiteDirectory = await mkdtemp(join(tmpdir(), "create-dsh-action-test-"));
   builtPackage = join(suiteDirectory, "dist");
-  await execFileAsync(process.execPath, [buildScript, "--output", builtPackage], {
-    env: { ...process.env, DSH_ACTION_RELEASE_SHA: RELEASE_SHA },
-    windowsHide: true,
-  });
-});
+  packDirectory = join(suiteDirectory, "pack");
+  await mkdir(packDirectory);
+  const npm = npmCommand();
+  const packed = await execFileAsync(
+    npm.executable,
+    [...npm.prefix, "pack", "--silent", "--json", "--pack-destination", packDirectory],
+    {
+      cwd: packageRoot,
+      env: { ...process.env, DSH_ACTION_RELEASE_SHA: RELEASE_SHA },
+      windowsHide: true,
+    },
+  );
+  packStdout = packed.stdout;
+  // Share the real prepack build with the CLI fixtures; compile the validator once.
+  await cp(new URL("dist/", packageRoot), builtPackage, { recursive: true });
+}, 60_000);
 
 afterAll(async () => {
   if (suiteDirectory !== "") await rm(suiteDirectory, { force: true, recursive: true });
@@ -223,18 +236,6 @@ describe("create-deepseek-harness-action release build", () => {
   });
 
   it("keeps the formal npm pack stdout machine-readable", async () => {
-    const packDirectory = join(suiteDirectory, "pack");
-    await mkdir(packDirectory);
-    const npm = npmCommand();
-    const { stdout } = await execFileAsync(
-      npm.executable,
-      [...npm.prefix, "pack", "--silent", "--json", "--pack-destination", packDirectory],
-      {
-        cwd: packageRoot,
-        env: { ...process.env, DSH_ACTION_RELEASE_SHA: RELEASE_SHA },
-        windowsHide: true,
-      },
-    );
     const packResult = z
       .array(
         z.looseObject({
@@ -244,7 +245,7 @@ describe("create-deepseek-harness-action release build", () => {
           version: z.string(),
         }),
       )
-      .parse(JSON.parse(stdout));
+      .parse(JSON.parse(packStdout));
 
     expect(packResult).toHaveLength(1);
     expect(packResult[0]).toMatchObject({
