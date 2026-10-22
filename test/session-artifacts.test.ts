@@ -591,6 +591,112 @@ describe("Session trusted workflow policy", () => {
       attempt_number: 1,
     });
   });
+  it.each([false, true])(
+    "diagnoses a refused %s source/current run state without retrying",
+    async (successful) => {
+      const f = fixture();
+      const getRun = f.api.actions.getWorkflowRun.getMockImplementation();
+      if (!getRun) throw new Error("Missing run fixture");
+      f.api.actions.getWorkflowRun.mockImplementation((request) => {
+        const response = getRun(request);
+        response.data.status = successful ? "completed" : "queued";
+        response.data.conclusion = successful ? "failure" : null;
+        return response;
+      });
+      await expect(
+        verifySessionWorkflowRun({
+          client: f.options.client,
+          repository: binding.repository,
+          workflowPath: binding.workflow.path,
+          jobId: "session",
+          runId: successful ? 100 : 200,
+          runAttempt: 1,
+          workflowSha: sha,
+          successful,
+          signal: f.options.signal,
+        }),
+      ).rejects.toThrow(
+        new RegExp(
+          `^Session producer must finish successfully; current run must be in progress; role=${successful ? "source" : "current"}; observedStatus=${successful ? "completed" : "queued"}; observedConclusion=${successful ? "failure" : "null"}; runIdMatches=true; attemptMatches=true; workflowShaMatches=true$`,
+          "u",
+        ),
+      );
+      expect(f.api.actions.getWorkflowRun).toHaveBeenCalledOnce();
+      expect(f.api.actions.listJobsForWorkflowRunAttempt).not.toHaveBeenCalled();
+      expect(f.uploader.uploadArtifact).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["missing", "duplicate", "run-id", "head-sha", "status", "unrecognized-status"] as const)(
+    "identifies the refused current producer job field: %s",
+    async (defect) => {
+      const f = fixture();
+      const getJobs = f.api.actions.listJobsForWorkflowRunAttempt.getMockImplementation();
+      if (!getJobs) throw new Error("Missing jobs fixture");
+      f.api.actions.listJobsForWorkflowRunAttempt.mockImplementation((request) => {
+        const response = getJobs(request);
+        const job = response.data.jobs[0];
+        if (!job) throw new Error("Missing job");
+        if (defect === "missing") response.data.jobs = [];
+        if (defect === "duplicate") response.data.jobs.push({ ...job, id: job.id + 1 });
+        if (defect === "run-id") job.run_id = 999;
+        if (defect === "head-sha") job.head_sha = "f".repeat(40);
+        if (defect === "status") job.status = "queued";
+        if (defect === "unrecognized-status") job.status = "synthetic-private-value".repeat(100);
+        return response;
+      });
+      const failure: unknown = await verifySessionWorkflowRun({
+        client: f.options.client,
+        repository: binding.repository,
+        workflowPath: binding.workflow.path,
+        jobId: "session",
+        runId: 200,
+        runAttempt: 1,
+        workflowSha: sha,
+        successful: false,
+        signal: f.options.signal,
+      }).catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(PolicyDeniedError);
+      if (!(failure instanceof Error)) throw new Error("Expected refusal");
+      expect(failure.message).toMatch(
+        /^Session producer job must have one verified state on the exact run attempt; role=current;/u,
+      );
+      expect(failure.message).toContain(
+        `matchCount=${defect === "missing" ? "0" : defect === "duplicate" ? "2" : "1"}`,
+      );
+      expect(failure.message).toContain(
+        `runIdMatches=${String(defect !== "missing" && defect !== "run-id")}`,
+      );
+      expect(failure.message).toContain(
+        `headShaMatches=${String(defect !== "missing" && defect !== "head-sha")}`,
+      );
+      expect(failure.message).toContain(
+        `observedStatus=${defect === "missing" ? "missing" : defect === "status" ? "queued" : defect === "unrecognized-status" ? "unrecognized" : "in_progress"}`,
+      );
+      expect(failure.message).not.toContain("synthetic-private-value");
+      expect(failure.message.length).toBeLessThan(400);
+      expect(f.api.actions.listJobsForWorkflowRunAttempt).toHaveBeenCalledOnce();
+      expect(f.uploader.uploadArtifact).not.toHaveBeenCalled();
+    },
+  );
+  it("diagnoses a source job conclusion while preserving its success requirement", async () => {
+    const f = fixture();
+    f.state.jobConclusion = "failure";
+    await expect(
+      verifySessionWorkflowRun({
+        client: f.options.client,
+        repository: binding.repository,
+        workflowPath: binding.workflow.path,
+        jobId: "session",
+        runId: 100,
+        successful: true,
+        signal: f.options.signal,
+      }),
+    ).rejects.toThrow(
+      /role=source; observedStatus=completed; observedConclusion=failure; matchCount=1; runIdMatches=true; headShaMatches=true/u,
+    );
+    expect(f.api.actions.listJobsForWorkflowRunAttempt).toHaveBeenCalledOnce();
+    expect(f.uploader.uploadArtifact).not.toHaveBeenCalled();
+  });
   it.each([5000, 5001])(
     "verifies a workflow in a repository with %s tree entries",
     async (count) => {
