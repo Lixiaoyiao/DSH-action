@@ -30,6 +30,7 @@ import type {
 } from "./composition.js";
 import type { DshRuntime } from "./runtime.js";
 import { assertDshFile, prepareCompositionLauncher } from "./composition-files.js";
+import { modelSettingsPatch } from "./model-settings.js";
 
 const CONTROLLED_PROFILE_SCHEMA_VERSION = 1;
 
@@ -187,6 +188,14 @@ export class ControlledComposition implements DshComposition {
     }
     const patchPath = await this.prepareBasePatch(options);
     const toolPolicyPath = await writeToolPolicy(options.runtime, options.nativeTools);
+    const modelPatch = modelSettingsPatch(options);
+    const modelPatchPath = join(options.runtime.root, `model-settings-${randomUUID()}.patch.yml`);
+    if (modelPatch.length > 0) {
+      await writeFile(modelPatchPath, `${JSON.stringify(modelPatch)}\n`, {
+        encoding: "utf8",
+        mode: 0o600,
+      });
+    }
     return {
       isolation: "none",
       launchPlan: {
@@ -200,6 +209,7 @@ export class ControlledComposition implements DshComposition {
           patchPath,
           "--patch",
           toolPolicyPath,
+          ...(modelPatch.length === 0 ? [] : ["--patch", modelPatchPath]),
           "--json",
           "--",
           options.task,
@@ -221,6 +231,10 @@ export class ControlledComposition implements DshComposition {
       workspaceWrite: options.workspaceWrite,
       expectedOperation: options.expectedOperation,
       task: options.task,
+      ...(options.model === undefined ? {} : { model: options.model }),
+      ...(options.reasoningEffort === undefined
+        ? {}
+        : { reasoningEffort: options.reasoningEffort }),
       workerWorkspacePath: CONTAINER_WORKSPACE,
       workerAttachmentHome: CONTAINER_ATTACHMENTS,
       policyPluginPath: CONTAINER_POLICY_PLUGIN,

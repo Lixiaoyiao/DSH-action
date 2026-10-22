@@ -22,7 +22,7 @@ import { sessionKeyHash } from "../src/session/contracts.js";
 import { assertSessionWorkflowPolicy } from "../src/session/workflow-policy.js";
 
 const execFileAsync = promisify(execFile);
-const INSTALLER_VERSION = "0.7.1";
+const INSTALLER_VERSION = "0.7.2";
 // Test-only binding. Production packing must resolve the qualified formal tag.
 const RELEASE_SHA = "0123456789abcdef0123456789abcdef01234567";
 const RELEASE_TOKEN = "__DSH_ACTION_RELEASE_SHA__";
@@ -118,7 +118,7 @@ afterAll(async () => {
 });
 
 describe("create-deepseek-harness-action release build", () => {
-  it("declares the independent 0.7.1 npm create package", async () => {
+  it("declares the independent 0.7.2 npm create package", async () => {
     const manifest: unknown = JSON.parse(
       await readFile(new URL("package.json", packageRoot), "utf8"),
     );
@@ -190,7 +190,7 @@ describe("create-deepseek-harness-action release build", () => {
       expect(runtime).not.toContain(DSH_MODE_TOKEN);
     }
     await expect(readFile(join(builtPackage, "installer.mjs"), "utf8")).resolves.toContain(
-      "/blob/create-deepseek-harness-action-v0.7.1/docs/setup.md",
+      "/blob/create-deepseek-harness-action-v0.7.2/docs/setup.md",
     );
 
     for (const [index, invalidReleaseSha] of [
@@ -262,13 +262,25 @@ describe("create-deepseek-harness-action release build", () => {
         "package.json",
         "dist/action-inputs.generated.mjs",
         "dist/cli.mjs",
-        "dist/guided.mjs",
         "dist/installer.mjs",
         "dist/local-plugins.mjs",
         "dist/process.mjs",
-        "dist/prompts.mjs",
-        "dist/publication.mjs",
         "dist/workflow-text.mjs",
+        "dist/gui/contract.generated.mjs",
+        "dist/gui/files.mjs",
+        "dist/gui/workflows.mjs",
+        "dist/gui/plugins.mjs",
+        "dist/gui/server.mjs",
+        "dist/gui/config-validation.mjs",
+        "dist/gui/THIRD_PARTY_NOTICES.txt",
+        "dist/gui/ui/index.html",
+        "dist/gui/ui/app.mjs",
+        "dist/gui/ui/api.mjs",
+        "dist/gui/ui/state.mjs",
+        "dist/gui/ui/components.mjs",
+        "dist/gui/ui/views.mjs",
+        "dist/gui/ui/tokens.css",
+        "dist/gui/ui/styles.css",
         "dist/templates/dsh-commands-native.yml",
         "dist/templates/dsh-commands.yml",
         "dist/templates/dsh-review-native.yml",
@@ -556,78 +568,50 @@ describe("installer modes", () => {
   );
 
   it.each([
-    ["1\n1\n", "review", "controlled", [".github/workflows/dsh-review.yml"]],
-    ["2\n2\n", "commands", "native", [".github/workflows/dsh-commands.yml"]],
-    [
-      "3\n1\n",
-      "both",
-      "controlled",
-      [".github/workflows/dsh-review.yml", ".github/workflows/dsh-commands.yml"],
-    ],
-  ] as const)("supports interactive choices %s", async (answer, mode, dshMode, createdFiles) => {
-    const project = await createProject();
-    const output = new OutputCapture();
-    const result = await runInstaller({
-      argv: ["--advanced"],
-      cwd: project,
-      input: Readable.from([answer]),
-      output,
-      isTTY: true,
-      env: {},
-      templateDirectory: join(builtPackage, "templates"),
-    });
-
-    expect(result).toEqual({ mode, dshMode, createdFiles: [...createdFiles] });
-    expect(output.text).toContain("PR Review");
-    expect(output.text).toContain("@dsh Coding Commands");
-    expect(output.text).toContain("Both");
-    expect(output.text).toContain("Controlled");
-    expect(output.text).toContain("Native");
-  });
-
-  it("prompts only for DSH mode when the workflow mode is explicit", async () => {
-    const project = await createProject();
-    const output = new OutputCapture();
-    const result = await runInstaller({
-      argv: ["--advanced", "--mode", "review"],
-      cwd: project,
-      input: Readable.from(["2\n"]),
-      output,
-      isTTY: true,
-      env: {},
-      templateDirectory: join(builtPackage, "templates"),
-    });
-
-    expect(result).toEqual({
-      mode: "review",
-      dshMode: "native",
-      createdFiles: [".github/workflows/dsh-review.yml"],
-    });
-    expect(output.text).not.toContain("Choose what to install");
-    expect(output.text).toContain("Choose the DSH mode");
-  });
-
-  it("prompts only for workflow mode when DSH mode is explicit", async () => {
-    const project = await createProject();
-    const output = new OutputCapture();
-    const result = await runInstaller({
-      argv: ["--dsh-mode", "native"],
-      cwd: project,
-      input: Readable.from(["3\n"]),
-      output,
-      isTTY: true,
-      env: {},
-      templateDirectory: join(builtPackage, "templates"),
-    });
-
-    expect(result).toEqual({
-      mode: "both",
-      dshMode: "native",
-      createdFiles: [".github/workflows/dsh-review.yml", ".github/workflows/dsh-commands.yml"],
-    });
-    expect(output.text).toContain("Choose what to install");
-    expect(output.text).not.toContain("Choose the DSH mode");
-  });
+    [[], "controlled"],
+    [["--advanced"], "controlled"],
+    [["--advanced", "--mode", "review"], "controlled"],
+    [["--dsh-mode", "native"], "native"],
+    [["--gui", "--mode", "both", "--dsh-mode", "native"], "native"],
+  ] as const)(
+    "opens the same GUI for %j without reading terminal choices",
+    async (argv, dshMode) => {
+      const project = await createProject();
+      const output = new OutputCapture();
+      let read = false;
+      const input = new Readable({
+        read() {
+          read = true;
+          this.destroy(new Error("stdin must not be read"));
+        },
+      });
+      const session = {
+        origin: "http://127.0.0.1:1",
+        token: "fixture",
+        url: "http://127.0.0.1:1/#token=fixture",
+        close: () => Promise.resolve(),
+      };
+      const result = await runInstaller({
+        argv,
+        cwd: project,
+        input,
+        output,
+        isTTY: true,
+        env: {},
+        templateDirectory: join(builtPackage, "templates"),
+        guiLauncher: (options) => {
+          expect(options).toMatchObject({ cwd: project, dshMode, openBrowser: true });
+          return Promise.resolve(session);
+        },
+      });
+      expect(result).toEqual({ dshMode, createdFiles: [], gui: session });
+      expect(read).toBe(false);
+      expect(output.text).not.toContain("Selection");
+      await expect(
+        readFile(join(project, ".github/workflows/dsh-review.yml")),
+      ).rejects.toMatchObject({ code: "ENOENT" });
+    },
+  );
 });
 
 describe("safe filesystem and non-interactive behavior", () => {

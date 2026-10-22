@@ -27,6 +27,8 @@ export function inputs(
     command: "auto",
     taskAccess: "read",
     prompt: "",
+    model: undefined,
+    reasoningEffort: undefined,
     promptFile: "",
     sessionMode: "off",
     sessionKey: "",

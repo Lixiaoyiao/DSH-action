@@ -12,41 +12,34 @@
 npm create deepseek-harness-action@latest
 ```
 
-终端中不传选项时，引导默认建立只读 `@dsh` 对话和 PR Review。安装器找到 Git 根目录与
-`github.com` origin，检查 `gh` 可用性和登录，再经确认创建
-`.github/workflows/dsh-review.yml`。它不创建远端仓库或更改 remote。
-引导要求已有 Git 仓库；还在准备仓库时可使用下方的手工文件生成方式。
+在交互式终端中不传选项时，安装器打开本地浏览器 GUI，默认配置只读对话与
+PR Review，也可以读取现有 DSH 工作流继续编辑。GUI 随安装器 `0.7.3` 在正式
+Action `v0.12.1` 验证后发布；此前已发布的 `0.7.2` 仍使用原终端引导。
 
-`gh` 已登录时会核验仓库访问权限，只列出 Secret 名称。缺少
-`DEEPSEEK_API_KEY` 时可确认通过隐藏输入设置，密钥仅经 `gh secret set` stdin
-发送，不进入参数或日志。缺少登录时给出 `gh auth login --hostname github.com`；
-手工完成登录后再次运行，或在 **Settings → Secrets and variables → Actions** 添加 Secret。
+选择预设或已有工作流，再选择 controlled/native、模型、思考强度和其它 Action
+选项。预览显示 YAML 差异，并调用 Action 自身的静态配置检查器。确认保存后只写入
+本地 `.github/workflows/*.yml` 或 `*.yaml`。安装器不提交、不推送、不创建远端仓库，
+也不上传密钥。
 
-Commit 和 push 分别确认，均默认否。安装器用独立 index 只提交生成的 workflow，
-保留其它改动和未跟踪文件；已有暂存改动时拒绝提交。它不执行仓库 hooks、filters、
-验证脚本或签名程序，生成的是未签名 commit。仓库要求签名或 hooks 时请手工提交。
-Push 要求唯一且经过核验的目的地址与远端父 commit，仅非 force 推送该确切 commit；
-其它未发布或并发历史须手工协调。自动附带 Tag 只在该 push 命令中禁用，不修改
-本地设置。Workflow 必须到达默认分支。
-
-再次运行相同的无选项命令可恢复：内容完全相同的 workflow 会被保留，已修改文件
-须手工审查。登录与 Secret 名称会重新检查；仅包含 workflow 的 commit 被复用，
-已经发布的 commit 不会重复推送。Secret 请求失败或状态不确定时会给出恢复说明，
-不会打印进程输出；再次尝试前应检查 Secret 名称和权限。
-
-已有安装可更新 Action pin，并按下方模板补上评论事件和只读输入。安装器会保留旧
-workflow，不覆盖已有配置。旧命令语义保持不变；自然语言写入仍需明确开启。
-
-内置 starter 检查覆盖不可变 Action 引用、只读 worker 和受信 base checkout。
-凭据、Actions 权限/配额、Docker/镜像与实际审查仍须通过首个 Action 运行验证。
-
-通过 `--advanced` 显式进入 workflow 与 controlled/native 交互选择：
+在 GitHub **Settings → Secrets and variables → Actions** 添加 `DEEPSEEK_API_KEY`。
+工作流使用 `${{ secrets.DEEPSEEK_API_KEY }}` 等引用，不在编辑器或 YAML 中填写真实
+密钥。通过日常 Git 流程审查、提交并推送文件，让它们到达默认分支。
 
 ```bash
-npm create deepseek-harness-action@latest -- --advanced
+npm create deepseek-harness-action@latest -- --gui
+npm create deepseek-harness-action@latest -- --no-open
 ```
 
-高级/手工流程提供：
+`--gui` 显式打开浏览器；`--no-open` 只打印本次会话的私有地址，供你自行打开。
+编辑期间保持终端运行。服务只监听 `127.0.0.1` 的随机端口，使用每次新生成的会话
+Token 和同源校验。停止服务后旧地址失效；再次运行即可建立新会话。不要转发端口或
+分享含 Token 的完整地址。
+
+YAML 是配置源，没有额外配置数据库或浏览器持久化副本。重新打开时从文件读取；
+如果外部编辑器在预览后改动文件，先重新加载再保存。不支持的 YAML 结构或包含明文
+密钥的工作流需要手工处理。
+
+GUI 提供以下预设；`--advanced` 保留为 GUI 别名：
 
 | 选择                     | 创建的文件                           |
 | ------------------------ | ------------------------------------ |
@@ -55,19 +48,17 @@ npm create deepseek-harness-action@latest -- --advanced
 | **Both**                 | 以上两个 workflow 文件               |
 | **Automatic Session**    | `.github/workflows/dsh-session.yml`  |
 
-高级流程和显式选项仅生成文件，不设置 Secret、commit、push 或创建 PR。
-在 CI 或其它非交互环境中必须显式传入 mode；缺少 `--mode` 会直接失败，不读取 stdin：
+CI 或其它非交互环境必须明确选择 mode。这一路径直接生成文件，保留已有文件，
+不需要浏览器或读取 stdin：
 
 ```bash
 npm create deepseek-harness-action@latest -- --mode both
-```
-
-显式 `--mode` 在终端中也保持手工生成；省略 `--dsh-mode` 默认 `controlled`，
-不会询问 composition。需要 native 时明确指定：
-
-```bash
 npm create deepseek-harness-action@latest -- --mode both --dsh-mode native
 ```
+
+省略 `--dsh-mode` 时默认 controlled；CI 或非交互环境缺少 `--mode` 时直接显示
+用法错误。静态检查只确认配置结构；凭据有效性、在线权限/配额、Docker 与项目
+验证仍需首个真实 Action 运行来确认。
 
 Automatic Session 生成只读 starter，绑定相同的 key/run-name/concurrency，并以
 `queue: max` 保留排队请求。提交到默认分支后，从默认分支 dispatch；为逻辑任务
@@ -78,17 +69,17 @@ Automatic Session 生成只读 starter，绑定相同的 key/run-name/concurrenc
 npm create deepseek-harness-action@latest -- --mode session
 ```
 
-安装器 `0.7.1` 面向正式 Action `v0.11.0`，两种 composition 都保持精确
+安装器 `0.7.2` 面向正式 Action `v0.12.0`，两种 composition 都保持精确
 DSH `0.2.1-rc.2`。只有 Action Tag、
 GitHub Release 和 canary 身份一致后，打包才通过 `DSH_ACTION_RELEASE_SHA`
 接收核验出的完整 commit。独立审查的安装器源码使用
-`create-deepseek-harness-action-v0.7.1` Tag。源码模板保留受控 build token，
+`create-deepseek-harness-action-v0.7.2` Tag。源码模板保留受控 build token，
 生成的 workflow 不包含该 token、candidate SHA、浮动 Tag 或分支。
 源码 commit 不能提供自身尚未确定的未来身份。
 
 安装成功后：
 
-1. 引导未配置时，在 **Settings → Secrets and variables → Actions** 中添加 `DEEPSEEK_API_KEY`。
+1. 在 **Settings → Secrets and variables → Actions** 中添加 `DEEPSEEK_API_KEY`。
 2. 把 workflow commit/push 到默认分支；使用 Review 时，打开或更新非 draft PR。
 3. 具有仓库 write 权限的协作者可以在 Issue 或 PR 中评论 `@dsh 帮我分析这个问题`。让提及从引用和代码之外的一行开始，无需固定子命令。Review 模式也支持 PR review 正文和行内评论；安装两个模板时，仅由 Commands 处理评论，避免重复回答。
 4. 需要自然语言写入时，在高级 Commands 工作流中明确启用 `natural-language-write: "true"`，保留 `allow-write: "true"` 并配置项目验证命令，再使用 `@dsh 修复这个 Bug 并提交 PR` 这样的明确请求。默认 starter 仍只读，请求里写“修复”也不会改变权限。`task-access` 不会启用这个独立开关。
@@ -121,7 +112,7 @@ Action 的公开输入和扩展 schema，检查缺少凭据、DSH 精确版本�
 有时间上限、无 Controller 凭据的 `docker info` 预检会在安装 runtime 前
 报告 CLI/daemon 不可用。这些检查不授予权限，也不替代 Controller 的真实验证。
 
-安装器 0.7.1 为 `commands` / `both` 提供显式 `--test-commands` JSON argv
+安装器 0.7.2 为 `commands` / `both` 提供显式 `--test-commands` JSON argv
 和 `--container-image name@sha256:<64 位小写十六进制>`。维护者必须自行选择来源可信、经过审核、无凭据的验证命令。
 安装器不会自动发现或执行脚本；省略选项仍保留安全失败的验证占位符。
 
@@ -155,11 +146,11 @@ DEEPSEEK_API_KEY
 为了便于阅读，示例使用当前发布 Tag：
 
 ```yaml
-uses: Lixiaoyiao/deepseek-harness-action@v0.11.0
+uses: Lixiaoyiao/deepseek-harness-action@v0.12.0
 ```
 
-生产环境应把 Tag 替换为从正式 `v0.11.0` 解析出的完整、不可变 commit SHA。
-安装器 `0.7.1` 对应该 Action 身份，独立审查的 installer 源码 commit 是另一个身份。
+生产环境应把 Tag 替换为从正式 `v0.12.0` 解析出的完整、不可变 commit SHA。
+安装器 `0.7.2` 对应该 Action 身份，独立审查的 installer 源码 commit 是另一个身份。
 生成的 workflow 使用核验后的正式 commit，源码模板通过发布构建接收该值。
 
 必须分别核验 installer 源码 Tag 与 `DSH_ACTION_RELEASE_SHA` 打包输入；源码中的
@@ -216,7 +207,7 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
           persist-credentials: false
           fetch-depth: 1
-      - uses: Lixiaoyiao/deepseek-harness-action@v0.12.0
+      - uses: Lixiaoyiao/deepseek-harness-action@v0.12.1
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           dsh-version: 0.2.1-rc.2

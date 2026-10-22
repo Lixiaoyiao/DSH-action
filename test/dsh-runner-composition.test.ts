@@ -61,7 +61,12 @@ describe("runDsh composition", () => {
 
     try {
       await runDsh(
-        request({ workspacePath: fixture.workspace, dshExecutable: fixture.executable }),
+        request({
+          workspacePath: fixture.workspace,
+          dshExecutable: fixture.executable,
+          model: "deepseek-v4-pro",
+          reasoningEffort: "low",
+        }),
         {
           assetsDirectory: fixture.assets,
           environment: { PATH: process.env.PATH },
@@ -92,6 +97,8 @@ describe("runDsh composition", () => {
           assetsDirectory: fixture.assets,
           runtime,
           nativeTools: [],
+          model: "deepseek-v4-pro",
+          reasoningEffort: "low",
         }),
       );
       expect(captured?.args).toContain(customPatchPath);

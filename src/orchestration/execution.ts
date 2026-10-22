@@ -47,7 +47,6 @@ export interface PreparedExecution {
   readonly operationIdentity: string;
   readonly githubAuthority?: GitHubAuthoritySession;
   readonly validation?: WorkspaceValidation;
-  readonly hasGitHubMutationTools: boolean;
   readonly selectedComposition: DshComposition;
   readonly redact: (value: string) => string;
 }
@@ -270,9 +269,6 @@ export class ExecutionPreparation {
       contextPacket.textFiles,
     );
 
-    // Validate the immutable baseline before any model-controlled path can queue
-    // a mutation; the Gateway repeats the gate immediately before its flush.
-    if (githubMutationTools.length > 0) await validation?.validate();
     state.authority = buildAuthorityAudit(extensions);
     const selectedComposition = composition;
 
@@ -287,7 +283,6 @@ export class ExecutionPreparation {
       operationIdentity,
       ...(githubAuthority === undefined ? {} : { githubAuthority }),
       ...(validation === undefined ? {} : { validation }),
-      hasGitHubMutationTools: githubMutationTools.length > 0,
       selectedComposition,
       redact,
     };

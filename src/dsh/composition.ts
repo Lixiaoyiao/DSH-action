@@ -2,6 +2,7 @@ import type { ExtensionPlan } from "../extensions/plan.js";
 import type { NativeToolId, ToolPolicyOwner } from "../tools/schema.js";
 import type { DshRuntime } from "./runtime.js";
 import type { DshOperation } from "./schema.js";
+import type { DshModelSettings } from "./model-settings.js";
 
 export type DshMode = "controlled" | "native";
 
@@ -36,7 +37,7 @@ export interface DshCompositionIsolationMetadata {
   readonly limitations: readonly string[];
 }
 
-export interface PrepareDshCompositionOptions {
+export interface PrepareDshCompositionOptions extends DshModelSettings {
   readonly isolation: "docker" | "none";
   readonly assetsDirectory: string;
   readonly runtime: DshRuntime;

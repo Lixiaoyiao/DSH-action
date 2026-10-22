@@ -48,6 +48,28 @@ authorization or tamper-proof security evidence. Keep their strings in data
 channels such as environment variables; do not interpolate them into shell
 source.
 
+## The local configuration GUI does not open
+
+The GUI ships with installer 0.7.3 after Action v0.12.1 qualification; published
+0.7.2 uses the previous terminal guide. With the GUI-capable installer, run
+`npm create deepseek-harness-action@latest -- --no-open` and open the full private
+URL printed by the terminal. Keep that terminal running. A stopped or restarted
+server invalidates the previous session URL.
+
+The server is local to `127.0.0.1`. Do not replace it with a public hostname,
+forward the port, or share its token-bearing URL. A 401 means the browser lacks
+the current session token; reopen the latest private URL. A 403 means the request
+does not match the local host/origin; use the printed address directly.
+
+If Save reports a changed file, reload the workflow and preview again before
+saving. Unsupported YAML structures and plaintext credentials require a manual
+edit. Keep secret values in GitHub Actions Secrets and use their expressions in
+the YAML. Successful GUI validation proves configuration shape; it does not run
+a model, repository tests, or online credential checks.
+
+CI and non-interactive shells must use `--mode review|commands|both|session`.
+The GUI saves local YAML only; commit and push it to the default branch yourself.
+
 ## The request is denied
 
 Typical signal: `status: denied` or `error-code: POLICY_DENIED`.

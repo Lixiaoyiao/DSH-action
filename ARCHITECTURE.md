@@ -23,6 +23,26 @@ after an eligible change and before a commit, ref update, pull request, or typed
 GitHub mutation is flushed. A model response cannot waive it
 ([INV-004](docs/invariants.md#inv-004-githubmutationrequiresvalidation)).
 
+## Local configuration GUI
+
+The standalone installer has a local browser UI over a small loopback HTTP
+backend. Browser code owns presentation and editing state; backend modules own
+YAML inspection/editing, plugin metadata discovery, static validation, diff
+preview and local file saves. The server binds to `127.0.0.1`, uses a fresh
+session token and checks the request host/origin.
+
+`src/action-contract.ts` generates the GUI's input metadata. The packaged
+validator bundles the same `checkConfiguration` implementation used by the
+Action, so browser forms do not become a second schema. YAML workflow files are
+the persistent source; there is no sidecar configuration store. Saving requires
+a current diff preview, checks the source hash again, and affects only workflow
+files. Git publication and runtime GitHub authority remain outside this UI.
+
+The UI files live under
+`packages/create-deepseek-harness-action/src/gui/ui/`; the sibling backend files
+can evolve independently while keeping the HTTP contract. These modules are
+installer tooling and are not loaded by the Action worker.
+
 ## Controlled and native composition
 
 `controlled` is the compatibility default. The Controller builds the

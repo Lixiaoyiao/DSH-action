@@ -234,6 +234,10 @@ export async function prepareWorkerRuntime(
       workspaceWrite: context.workspaceWrite,
       expectedOperation: request.operation,
       task: context.prompt,
+      ...(request.model === undefined ? {} : { model: request.model }),
+      ...(request.reasoningEffort === undefined
+        ? {}
+        : { reasoningEffort: request.reasoningEffort }),
       workspacePath: workspace,
       ...(manifestBase === undefined ? {} : { manifestBase }),
       ...(context.dshExecutableIdentity === undefined

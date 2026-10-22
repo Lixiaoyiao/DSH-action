@@ -4,7 +4,7 @@
 
 This guide is for repository maintainers qualifying and publishing an Action release. A successful run proves only the exact commit SHA it tested. After any candidate change, repeat every required check against the new latest SHA.
 
-For v0.11.0, retain the exact production DSH `0.2.1-rc.2` family. Qualify
+For v0.12.1, retain the exact production DSH `0.2.1-rc.2` family. Qualify
 `session-mode: auto` with fresh keys in controlled and native compositions.
 Use the trusted [automatic Session E2E workflow](../.github/workflows/session-auto-e2e.yml)
 on live `main`: first creation and an
@@ -32,13 +32,14 @@ The advisory stable/RC/alpha upstream canaries never replace these production ga
 Do not rerun task-bearing failures without first reconciling their diagnostics
 and confirmed effects; preserve a bounded continuation record for external blocks.
 
-The guided installer is prepared as an independently qualified `0.7.1` release
-after the v0.11.0 formal canary succeeds. Its first-repository qualification must
-exercise the real Git/gh path, Secret detection, readonly workflow generation,
-separate commit/push confirmations, configuration checks and first-run guidance.
-Keep cancelled confirmations and unrelated working-tree changes covered. Public
-npm consumers must install the same qualified archive through anonymous fresh
-caches; local packing alone does not satisfy this gate.
+The Action source retains published installer `0.7.2`, targeting formal Action
+`v0.12.0` through `DSH_ACTION_RELEASE_SHA`. Prepare the independently versioned
+installer `0.7.3` source identity only after the v0.12.1 formal canary succeeds.
+Its archive qualification exercises default GUI startup, existing-workflow edits,
+model/effort and plugin selection, diff/validation, local save, reopened YAML and
+the explicit non-interactive modes. Verify that the GUI performs no commit or
+push. A real first Action run still establishes online setup. Public consumers
+must install the same qualified archive through anonymous fresh caches.
 
 Earlier release identities and qualification notes are preserved in
 [historical release evidence](release-history.md). Use only the newly qualified
@@ -125,8 +126,9 @@ For an Action version bump, update every release surface together:
 6. Any release-specific verification fixture or documentation.
 
 The standalone `create-deepseek-harness-action` package has its own semantic
-version; prepare its source only
-after the formal Action canary succeeds. Keep its standalone manifest/lock,
+version; prepare its new release version and binding only
+after the formal Action canary succeeds. Installer feature source may land with
+the Action while retaining the published installer's release identity. Keep its standalone manifest/lock,
 CLI tests, documentation, controlled/native templates and release-SHA
 contract aligned. `DSH_ACTION_RELEASE_SHA` must be the full commit resolved
 from the newly qualified formal Action tag.
@@ -402,22 +404,22 @@ If the smoke fails after publication, keep the tag immutable. Diagnose the failu
 
 ## Publish the npm create package
 
-The independent installer is `0.7.1`, targeting formal Action `v0.11.0`
-with exact DSH `0.2.1-rc.2`. Its source tag is
-`create-deepseek-harness-action-v0.7.1`. Keep the Action SHA and installer source
-SHA unresolved until their respective gates establish them. Do not copy a
-historical release SHA into the new binding.
+The published baseline is installer `0.7.2`, Action `v0.12.0` and source tag
+`create-deepseek-harness-action-v0.7.2`. The next independent installer is `0.7.3`,
+targeting formal Action `v0.12.1` with exact DSH `0.2.1-rc.2`; its source tag will
+be `create-deepseek-harness-action-v0.7.3`. Keep the new Action SHA and installer
+source SHA unresolved until their respective gates establish them. Do not copy
+a historical release SHA into the new binding.
 
-Qualify the guided public CLI in an existing fresh GitHub repository, from the
-actual archive: no flags must choose read-only PR Review without composition
-questions; Git root/origin and GitHub CLI/login detection, hidden Secret input
-through stdin, generated immutable-SHA workflow, static configuration check,
-separate commit/push confirmations and the first real Action run must pass.
-Record only Secret names/status, never values or input. Test manual login/setup
-resume, unchanged workflow/commit reuse, default-No publication, preservation of
-staged/untracked edits, and the rejection of conflicting workflow/remote state.
-Local Git regressions and mocked remote transport are necessary but do not
-replace this real public first-run gate.
+Qualify the public CLI from the actual archive in a fresh existing repository.
+No flags in an interactive terminal must open the GUI; `--gui` and `--no-open`
+must work explicitly, while `--mode` retains browser-free generation. Exercise
+editing, preview, validation and save, restart the GUI and read the persisted
+YAML. Preserve unrelated files and refuse stale previews; verify loopback/token/
+origin restrictions without exposing tokens in evidence. Review the immutable
+Action SHA and exact DSH pin in generated YAML, then publish the workflow through
+the maintainer's normal Git path and record its first real Action run. The GUI
+must never commit, push, set Secrets or execute repository scripts.
 
 Publish `create-deepseek-harness-action` only after the formal Action tag,
 GitHub Release, and release canary all resolve to `release_sha`. A Git commit

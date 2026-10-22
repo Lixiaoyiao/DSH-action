@@ -12,51 +12,39 @@ From anywhere inside the existing GitHub repository you want to configure, run:
 npm create deepseek-harness-action@latest
 ```
 
-With no flags in a terminal, the installer guides read-only `@dsh` conversation and PR Review. It finds
-the Git root and the `github.com` origin, checks `gh` availability/login and asks
-before creating `.github/workflows/dsh-review.yml`. It creates no remote
-repository or remote configuration. Guided setup requires an existing Git
-repository; use manual file generation below if you are still preparing one.
+With no flags in an interactive terminal, the installer opens a local browser GUI.
+It starts with read-only conversation and PR Review, and can load existing DSH
+workflows for later edits. The GUI is prepared for installer `0.7.3` after formal
+Action `v0.12.1` qualification; published `0.7.2` retains the previous terminal guide.
 
-When `gh` is logged in, the installer verifies repository access and lists only
-Secret names. If `DEEPSEEK_API_KEY` is absent, you may confirm setting it with
-hidden terminal input. Its value is sent only through `gh secret set` stdin;
-neither arguments nor logs contain the key. Missing login prints
-`gh auth login --hostname github.com`; finish the login manually and rerun, or
-add the Secret in **Settings → Secrets and variables → Actions**.
+Choose a preset or an existing workflow, select controlled/native mode, model and
+thinking effort, then edit the supported Action inputs. The preview shows the
+YAML diff and runs the Action's real static configuration checker. Saving requires
+your confirmation and writes only local `.github/workflows/*.yml` or `*.yaml` files.
+The installer does not commit, push, create a remote repository or upload secrets.
 
-Commit and push are separately confirmed and default to No. The installer
-commits only the generated workflow using an isolated index. Other edits and
-untracked files remain untouched; existing staged changes prevent its commit.
-It executes no repository hooks, filters, validation scripts or signing program.
-The commit is unsigned. Use a manual commit if your repository requires signing
-or hooks. Push requires a single verified destination and remote parent, then performs a normal
-non-force push of that exact commit; other unpublished or concurrent history
-requires manual reconciliation. Automatic tag following is disabled only for
-that push, preserving local settings. The workflow must reach the default branch.
-
-Rerun the same no-flag command to resume. An identical workflow is preserved;
-modified existing files require manual review. Login and Secret names are
-rechecked, a workflow-only commit is reused, and an already published commit is
-recognized. A failed or uncertain Secret request prints recovery guidance and
-does not expose transport output. Check Secret names/permissions before retrying.
-
-For an existing installation, update the Action pin and add the comment events
-and read-only inputs shown below. The installer preserves older workflows
-instead of overwriting their configuration. Existing commands keep their semantics;
-natural-language writes remain off until explicitly enabled.
-
-The built-in starter check validates the immutable Action reference, read-only
-worker and trusted base checkout. Credentials, Actions permissions/quota,
-Docker/image availability and the actual review still require a first Action run.
-
-Use `--advanced` to select workflow and controlled/native composition interactively:
+Add `DEEPSEEK_API_KEY` in GitHub **Settings → Secrets and variables → Actions**.
+Use secret expressions in workflow inputs, for example `${{ secrets.DEEPSEEK_API_KEY }}`;
+keep secret values out of the editor and YAML. Commit and push the reviewed files
+with your normal Git workflow so they reach the default branch.
 
 ```bash
-npm create deepseek-harness-action@latest -- --advanced
+npm create deepseek-harness-action@latest -- --gui
+npm create deepseek-harness-action@latest -- --no-open
 ```
 
-The advanced/manual flow offers:
+`--gui` opens the browser explicitly. `--no-open` prints the private session URL
+for you to open yourself. Keep the terminal running while editing. The server
+listens only on `127.0.0.1` at a random port and uses a fresh session token plus
+same-origin checks. Closing the server invalidates that URL; rerun to start a new
+session. Do not forward the port or share the token-bearing URL.
+
+YAML is the configuration source. The GUI stores no sidecar database or saved
+browser configuration; reopening reads the files again. If an external editor
+changes a file after preview, reload it before saving. Unsupported YAML or
+workflows containing plaintext credentials require manual editing.
+
+The GUI offers these presets; `--advanced` remains an alias for the GUI:
 
 | Choice                         | Files created                        |
 | ------------------------------ | ------------------------------------ |
@@ -65,21 +53,18 @@ The advanced/manual flow offers:
 | **Both**                       | Both workflow files above            |
 | **Automatic Session**          | `.github/workflows/dsh-session.yml`  |
 
-Advanced setup and explicit flags only generate workflow files; they never set
-Secrets, commit, push or open PRs. In CI or another non-interactive environment,
-pass the mode explicitly; missing `--mode` fails without reading stdin:
+For CI or non-interactive use, choose the mode explicitly. This path generates
+files directly, preserves existing files, and requires no browser or stdin:
 
 ```bash
 npm create deepseek-harness-action@latest -- --mode both
-```
-
-Explicit `--mode` also keeps manual file generation in a terminal. Omitting
-`--dsh-mode` defaults to `controlled` without a composition prompt; select
-native explicitly if intended:
-
-```bash
 npm create deepseek-harness-action@latest -- --mode both --dsh-mode native
 ```
+
+Omitting `--dsh-mode` selects `controlled`. Missing `--mode` in CI or a
+non-interactive session fails with usage guidance. Static validation proves
+configuration shape only; credentials, online permissions/quota, Docker and
+repository validation require the first real Action run.
 
 Automatic Session creates a read-only starter with matching key/run-name/
 concurrency and `queue: max` to retain pending follow-ups. Commit it to the
@@ -91,17 +76,17 @@ corrupt or unknown history requires reconciliation before continuing.
 npm create deepseek-harness-action@latest -- --mode session
 ```
 
-Installer `0.7.1` targets formal Action `v0.11.0` and exact DSH `0.2.1-rc.2`
+Installer `0.7.2` targets formal Action `v0.12.0` and exact DSH `0.2.1-rc.2`
 in both compositions. Only after the Action tag, GitHub Release and canary agree
 does packing receive the verified full commit through `DSH_ACTION_RELEASE_SHA`.
 The separately reviewed installer source is tagged
-`create-deepseek-harness-action-v0.7.1`. Source templates retain the controlled
+`create-deepseek-harness-action-v0.7.2`. Source templates retain the controlled
 build token; generated workflows contain neither that token nor a candidate SHA,
 floating tag or branch. A source commit cannot supply its own future identity.
 
 After the installer succeeds:
 
-1. If guided setup did not configure it, add `DEEPSEEK_API_KEY` under **Settings → Secrets and variables → Actions**.
+1. Add `DEEPSEEK_API_KEY` under **Settings → Secrets and variables → Actions**.
 2. Commit/push the workflow to the default branch; for Review, open or update a non-draft pull request.
 3. As a repository collaborator with write access, comment `@dsh Help me understand this issue` in an Issue or PR. Start the mention on a line outside quotes/code; no fixed subcommand is needed. Review mode also handles PR review bodies and inline review comments. When installing both starters, only Commands handles comments, preventing duplicate responses.
 4. For natural-language writes, explicitly enable `natural-language-write: "true"` in the advanced Commands workflow, retain `allow-write: "true"` and configure validation commands. Then use a clear request such as `@dsh Please fix this bug and open a PR`. The default starter remains read-only, even when a request says “fix”. `task-access` does not enable this independent switch.
@@ -139,7 +124,7 @@ tests and untouched placeholders before model startup. A bounded, credential-fre
 `docker info` probe reports an unavailable CLI/daemon before runtime installation.
 These checks never grant authority or replace executed Controller validation.
 
-Installer 0.7.1 accepts optional `--test-commands` JSON argv arrays and
+Installer 0.7.2 accepts optional `--test-commands` JSON argv arrays and
 `--container-image name@sha256:<64 lowercase hex>` for `commands` or `both`. Maintainers must explicitly choose reviewed,
 credential-free commands. The installer never discovers or executes scripts,
 and omitting the flags preserves the fail-closed placeholder.
@@ -174,11 +159,11 @@ The default `github-token` is `${{ github.token }}` and is also Controller-only.
 The examples use the current release tag for readability:
 
 ```yaml
-uses: Lixiaoyiao/deepseek-harness-action@v0.11.0
+uses: Lixiaoyiao/deepseek-harness-action@v0.12.0
 ```
 
 For production, replace the tag with the full immutable commit SHA resolved
-from formal `v0.11.0`. Installer `0.7.1` targets that Action identity, with a
+from formal `v0.12.0`. Installer `0.7.2` targets that Action identity, with a
 separately reviewed source commit. Generated workflows use the verified release
 commit; source templates receive it through the release build.
 
@@ -237,7 +222,7 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
           persist-credentials: false
           fetch-depth: 1
-      - uses: Lixiaoyiao/deepseek-harness-action@v0.12.0
+      - uses: Lixiaoyiao/deepseek-harness-action@v0.12.1
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           dsh-version: 0.2.1-rc.2

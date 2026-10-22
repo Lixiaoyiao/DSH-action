@@ -27,6 +27,8 @@ export interface PublicationResult {
   readonly inlineUpdated: number;
   readonly duplicatesSkipped: number;
   readonly summaryOnly: number;
+  /** Selected findings whose title/location could not fit the summary. */
+  readonly summaryOmitted?: number;
   readonly failures: readonly string[];
 }
 
@@ -193,16 +195,18 @@ function formatSummary(
   findings: readonly PublicationFinding[],
   outcome: PublicationResult,
   target: PublicationTarget,
+  maximum = GITHUB_BODY_LIMIT,
 ): string {
   const lines = [
     createTrackingMarker({ kind: "summary" }),
     "## DeepSeek Harness review",
     "",
-    safeBody(result.summary),
-    "",
     `**High-confidence findings:** ${String(findings.length)}`,
     `**Inline:** ${String(outcome.inlinePublished + outcome.inlineUpdated)} · **Summary-only:** ${String(outcome.summaryOnly)}`,
   ];
+  if (outcome.summaryOmitted !== undefined)
+    lines.push(`**Omitted from summary:** ${String(outcome.summaryOmitted)}`);
+  lines.push("", safeBody(result.summary));
   if (outcome.failures.length > 0) {
     lines.push(
       "",
@@ -211,7 +215,9 @@ function formatSummary(
     );
   }
   lines.push("", `<sub>[Workflow run](${target.runUrl}) · dsh-action</sub>`);
-  return lines.join("\n").slice(0, GITHUB_BODY_LIMIT);
+  const body = lines.join("\n");
+  const notice = "\n\n[Summary truncated to fit GitHub's comment limit.]";
+  return body.length <= maximum ? body : body.slice(0, maximum - notice.length) + notice;
 }
 
 function formatSummaryWithFindings(
@@ -220,20 +226,49 @@ function formatSummaryWithFindings(
   outcome: PublicationResult,
   target: PublicationTarget,
   fallbackFindings: ReadonlySet<ReviewFinding>,
-): string {
-  const base = formatSummary(result, findings, outcome, target);
+): { readonly body: string; readonly publication: PublicationResult } {
   const summaryFindings = findings.filter(
     ({ finding, location }) => location === null || fallbackFindings.has(finding),
   );
-  if (summaryFindings.length === 0) return base;
-  const rendered = summaryFindings.map(
+  if (summaryFindings.length === 0)
+    return { body: formatSummary(result, findings, outcome, target), publication: outcome };
+  const heading = "\n\n### Findings carried in the summary\n\n";
+  const notice = "\n\n[Finding details truncated to fit GitHub's comment limit.]";
+  const headers = summaryFindings.map(
     ({ finding }) =>
-      `- ${severityIcon(finding.severity)} **${safeBody(finding.title)}** — \`${sanitizeMarkdownPath(finding.path)}:${String(finding.line)}\`\n  ${safeBody(finding.body)}`,
+      `- ${severityIcon(finding.severity)} **${safeBody(finding.title)}** — \`${sanitizeMarkdownPath(finding.path)}:${String(finding.line)}\``,
   );
-  return `${base}\n\n### Findings carried in the summary\n\n${rendered.join("\n")}`.slice(
-    0,
-    GITHUB_BODY_LIMIT,
+  // Reserve titles and locations before prose. Exceptionally long paths may
+  // exceed even that budget; report those omissions instead of cutting a row.
+  const preambleLimit = 16_000;
+  const headerBudget = GITHUB_BODY_LIMIT - preambleLimit - heading.length - notice.length;
+  let headerLength = 0;
+  let included = 0;
+  for (const header of headers) {
+    if (headerLength + header.length + 4 > headerBudget) break;
+    headerLength += header.length + 4;
+    included += 1;
+  }
+  const omitted = summaryFindings.length - included;
+  const publication = {
+    ...outcome,
+    summaryOnly: outcome.summaryOnly - omitted,
+    ...(omitted === 0 ? {} : { summaryOmitted: omitted }),
+  };
+  const base = formatSummary(result, findings, publication, target, preambleLimit);
+  const perFinding = Math.floor(
+    (GITHUB_BODY_LIMIT - base.length - heading.length - headerLength - notice.length) /
+      Math.max(1, included),
   );
+  const bodies = summaryFindings.slice(0, included).map(({ finding }) => safeBody(finding.body));
+  const truncated = bodies.some((body) => body.length > perFinding);
+  const rendered = bodies.map(
+    (body, index) => `${headers[index] ?? ""}\n  ${body.slice(0, perFinding)}`,
+  );
+  return {
+    body: `${base}${heading}${rendered.join("\n")}${truncated ? notice : ""}`,
+    publication,
+  };
 }
 
 export async function publishPullRequestReview(
@@ -251,6 +286,7 @@ export async function publishPullRequestReview(
   let inlineUpdated = 0;
   let duplicatesSkipped = 0;
   let summaryOnly = 0;
+  let summaryOmitted = 0;
   const failures: string[] = [];
   const fallbackFindings = new Set<ReviewFinding>();
   const publicationResult = (): PublicationResult => ({
@@ -259,6 +295,7 @@ export async function publishPullRequestReview(
     inlineUpdated,
     duplicatesSkipped,
     summaryOnly,
+    ...(summaryOmitted === 0 ? {} : { summaryOmitted }),
     failures: [...failures],
   });
 
@@ -336,16 +373,24 @@ export async function publishPullRequestReview(
       onPublication?.(publicationResult());
     }
 
-    const publication = publicationResult();
+    const summary = formatSummaryWithFindings(
+      result,
+      findings,
+      publicationResult(),
+      target,
+      fallbackFindings,
+    );
+    summaryOnly = summary.publication.summaryOnly;
+    summaryOmitted = summary.publication.summaryOmitted ?? 0;
     await assertPullRequestSnapshotCurrent(client, target.owner, target.repo, snapshot);
     await upsertTrackingComment(
       client,
       { owner: target.owner, repo: target.repo, issueNumber: target.pullNumber },
       target.expectedAuthorId,
       "summary",
-      formatSummaryWithFindings(result, findings, publication, target, fallbackFindings),
+      summary.body,
     );
-    return publication;
+    return publicationResult();
   } catch (error) {
     if (!(error instanceof GitHubQuotaError)) throw error;
     const message = safeBody(error.message);

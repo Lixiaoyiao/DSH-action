@@ -49,9 +49,11 @@ Choose GitHub.com and browser sign-in. The `origin` remote should point to the r
 npm.cmd create deepseek-harness-action@latest
 ```
 
-The guide installs **read-only `@dsh` conversation and automatic PR Review**. It shows the target repository and asks before creating files, setting the key, committing and pushing. Paste your DeepSeek API key at the hidden prompt. It is saved as the repository Actions secret `DEEPSEEK_API_KEY`.
+The local browser GUI configures **read-only `@dsh` conversation and automatic PR Review** by default. Select a workflow, edit its model, thinking effort and permissions, review the YAML diff, then save locally. Reopen the same command to edit existing workflows. You commit and push the saved files yourself.
 
-To add it manually, open **Settings → Secrets and variables → Actions → New repository secret** on GitHub. Set the name to `DEEPSEEK_API_KEY` and paste the key as its value. A key stored in local DSH does not configure this secret.
+The GUI is prepared for installer `0.7.3`, after Action `v0.12.1` qualification. Published installer `0.7.2` uses the previous terminal guide until that separate release is available.
+
+Add the key in **Settings → Secrets and variables → Actions → New repository secret** on GitHub. Set the name to `DEEPSEEK_API_KEY` and paste the key as its value. A key stored in local DSH does not configure this secret.
 
 ### 4. Ask `@dsh` a question
 
@@ -69,13 +71,13 @@ For automatic review, open a **non-draft pull request** or push a new commit to 
 
 ### Optional: local plugins and other workflows
 
-Choose read-only conversation + Review, advanced Coding Commands, both, or automatic Session with `--advanced`. If you already have local DSH plugins, add `--import-plugins` to list their installed versions and compatibility, select packages, and confirm:
+Choose read-only conversation + Review, Coding Commands, both, or automatic Session in the GUI. `--gui` opens it explicitly; `--no-open` prints its private local URL without opening a browser. If you already have local DSH plugins, `--import-plugins` opens their selection page:
 
 ```powershell
-npm.cmd create deepseek-harness-action@latest -- --advanced --import-plugins
+npm.cmd create deepseek-harness-action@latest -- --gui --import-plugins
 ```
 
-Native mode supports DSH Bundles directly. Controlled mode also asks for their exact read-only tool names (`plugin__owner__tool`). Plugins without that contract need manual configuration. The cloud installs selected packages at exact versions; local settings and keys stay on your computer. Local-only, disabled and incompatible packages show a short explanation. Use `--dsh-home "C:\path\to\.dsh"` with the import option for another DSH home.
+Native mode supports DSH Bundles directly. Controlled mode also needs their exact read-only tool names (`plugin__owner__tool`). The cloud installs selected packages at exact versions; local settings and keys stay on your computer. Local-only, disabled and incompatible packages show their status. Use `--dsh-home "C:\path\to\.dsh"` with the import option for another DSH home. `--advanced` remains a GUI alias.
 
 File-only and non-interactive setup remains available:
 
@@ -83,7 +85,7 @@ File-only and non-interactive setup remains available:
 npm.cmd create deepseek-harness-action@latest -- --mode both --dsh-mode native
 ```
 
-Controlled remains the default. Natural-language writes require both `natural-language-write: "true"` and `allow-write: "true"` in a write-capable workflow, repository-specific validation commands, and a clear request such as `@dsh Please fix this bug and open a PR`. The advanced Commands starter keeps the independent natural-language switch off; legacy `fix`, `implement` and `task --write` retain their existing write requests. Installer `0.7.1` targets Action `v0.11.0` and DSH `0.2.1-rc.2`. Its build binds the qualified Action commit through `DSH_ACTION_RELEASE_SHA`; its source tag is `create-deepseek-harness-action-v0.7.1`. See the [setup guide](docs/setup.md) for manual setup and recovery.
+Controlled remains the default. Natural-language writes require both `natural-language-write: "true"` and `allow-write: "true"` in a write-capable workflow, repository-specific validation commands, and a clear request such as `@dsh Please fix this bug and open a PR`. The advanced Commands starter keeps the independent natural-language switch off; legacy `fix`, `implement` and `task --write` retain their existing write requests. Installer `0.7.2` targets Action `v0.12.0` and DSH `0.2.1-rc.2`. Its build binds the qualified Action commit through `DSH_ACTION_RELEASE_SHA`; its source tag is `create-deepseek-harness-action-v0.7.2`. See the [setup guide](docs/setup.md) for manual setup and recovery.
 
 ### Manual installation
 
@@ -126,7 +128,7 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
           persist-credentials: false
           fetch-depth: 1
-      - uses: Lixiaoyiao/deepseek-harness-action@v0.12.0
+      - uses: Lixiaoyiao/deepseek-harness-action@v0.12.1
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           dsh-version: 0.2.1-rc.2

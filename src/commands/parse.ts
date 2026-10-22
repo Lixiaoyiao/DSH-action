@@ -20,7 +20,7 @@ function escapeRegExp(value: string): string {
 }
 
 /** Mask examples only for routing; the original comment remains task context. */
-function visibleLines(lines: readonly string[]): string[] {
+function visibleLines(lines: readonly string[], inlineObjects = false): string[] {
   const closingTicks = new Map<number, Set<number>>();
   const laterTickLengths = new Set<number>();
   for (let index = lines.length - 1; index >= 0; index -= 1) {
@@ -94,7 +94,8 @@ function visibleLines(lines: readonly string[]): string[] {
         const escaped = slashes % 2 !== 0;
         if (!escaped && closingTicks.get(lineIndex)?.has(cursor)) {
           inlineTicks = ticks;
-          visible += " ".repeat(ticks.length);
+          // Inline code may name an edit target, but its contents cannot supply a verb.
+          visible += inlineObjects ? "CODE" : " ".repeat(ticks.length);
           cursor += ticks.length;
           continue;
         }
@@ -118,7 +119,7 @@ function naturalAccess(request: string, prose: readonly string[]): RequestedAcce
   const text = unquote(request);
   const constraints = prose.map(unquote).join("\n");
   const englishProhibitions = constraints.matchAll(
-    /\b(?:without|do\s+not|don't|never)\s+(?:actually\s+)?(?:changing|modifying|editing|writing|change|modify|edit|write)\b([^\n,.!?;]*)/giu,
+    /\b(?:without|do\s+not|don['‘’]t|never)\s+(?:actually\s+)?(?:changing|modifying|editing|writing|change|modify|edit|write)\b([^\n,.!?;]*)/giu,
   );
   const chineseProhibitions = constraints.matchAll(
     /(?:不要|不用|无需|不必|禁止|别)(?:实际)?(?:修改|改动|更改|编辑|写入|改)([^\n，。！？；]*)/gu,
@@ -182,9 +183,7 @@ export function parseCommand(
   const candidates = visible.flatMap((line, index) => {
     const visible = mention.exec(line);
     const original = mention.exec(lines[index] ?? "");
-    return visible && original
-      ? [{ index, request: original[1]?.trim() ?? "", visible: visible[1]?.trim() ?? "" }]
-      : [];
+    return visible && original ? [{ index, request: original[1]?.trim() ?? "" }] : [];
   });
   if (candidates.length !== 1) return null;
   const candidate = candidates[0];
@@ -200,7 +199,11 @@ export function parseCommand(
   let requestedAccess: RequestedAccess =
     legacy === null
       ? options.naturalLanguageWrite === true
-        ? naturalAccess(candidate.visible, visible)
+        ? naturalAccess(
+            mention.exec(visibleLines(lines, true)[candidate.index] ?? "")?.[1] ?? "",
+            // Lists cannot trigger a command, but direct list constraints still narrow it.
+            visibleLines(lines.map((line) => line.replace(/^ {0,3}(?:[-+*]|\d+[.)])[\t ]+/u, ""))),
+          )
         : "read"
       : operation === "fix" || operation === "implement"
         ? "write"

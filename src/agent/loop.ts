@@ -1,6 +1,6 @@
 import { LoopTelemetry } from "./loop-telemetry.js";
 import { invokeControllerTool } from "./tool-invocation.js";
-import { AGENT_PROTOCOL_VERSION, type AgentEngine } from "./contracts.js";
+import type { AgentEngine } from "./contracts.js";
 import { createDshRuntime, disposeDshRuntime, withDshRuntimeActivity } from "../dsh/runtime.js";
 import type { DshRunResult } from "../dsh/runner-types.js";
 import { DshError, DshMalformedOutputError } from "../dsh/errors.js";
@@ -109,9 +109,7 @@ export async function runAgentLoop<TFinal>(
         response = await runEngineTurnWithinDeadline(
           engine,
           {
-            schemaVersion: AGENT_PROTOCOL_VERSION,
             operation: task.operation,
-            requestedAccess: task.requestedAccess,
             instructions: task.instructions,
             context: turnContext(task.contextPacket, taskContextAnchor, turn, feedback),
             tools: task.tools.manifests,

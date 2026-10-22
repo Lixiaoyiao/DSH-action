@@ -226,11 +226,7 @@ it.each(["passed", "failed"] as const)(
     ports.process.mockImplementation(({ args }) => {
       if (args[0] === "rm") return Promise.resolve(passed);
       candidateInvocations += 1;
-      return Promise.resolve(
-        candidateInvocations === 2 && currentValidation === "failed"
-          ? { ...passed, exitCode: 1 }
-          : passed,
-      );
+      return Promise.resolve(currentValidation === "failed" ? { ...passed, exitCode: 1 } : passed);
     });
     ports.worker.mockImplementationOnce(() => Promise.resolve(workerResult(true)));
     ports.worker.mockImplementationOnce(async ({ workspacePath }) => {
@@ -247,8 +243,8 @@ it.each(["passed", "failed"] as const)(
     ).toHaveBeenCalledTimes(currentValidation === "passed" ? 1 : 0);
     expect(
       candidateInvocations,
-      "baseline validation cannot authorize the different retry candidate",
-    ).toBe(2);
+      "a completed historical write cannot authorize the different retry candidate",
+    ).toBe(1);
     expect(retry).toMatchObject({
       conclusion: currentValidation === "passed" ? "success" : "failure",
       validation: { status: currentValidation, commandCount: 1 },
@@ -329,8 +325,8 @@ it.each([30, 10])(
         : { conclusion: "failure", error: { code: "AGENT_TIMEOUT" } },
     );
     expect(comment).toHaveBeenCalledTimes(hasTime ? 1 : 0);
-    expect(ports.process).toHaveBeenCalledTimes(hasTime ? 2 : 1);
-    if (hasTime) expect(ports.process.mock.calls[1]?.[0].timeoutMs).toBe(600_000);
+    expect(ports.process).toHaveBeenCalledTimes(hasTime ? 1 : 0);
+    if (hasTime) expect(ports.process.mock.calls[0]?.[0].timeoutMs).toBe(600_000);
     for (const effect of Object.values(github.created)) expect(effect).not.toHaveBeenCalled();
     expect(pulls).toHaveLength(1);
   },

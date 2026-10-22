@@ -508,21 +508,21 @@ are rejected. DSH output is validated at the process boundary and again by the
 outer Agent loop. The fixed `result-json` schema-v1 audit envelope remains the
 Controller record; `taskOutput` is data only.
 
-GitHub attachment images remain deferred. The exact audited
-`@deepseek-ai/dsh-headless@0.2.1-rc.2` configuration accepts one `task` string
-and constructs one text block, with no supported multimodal input contract.
-The Action therefore removes Markdown image references from untrusted text and
-does not download, mount, or forward attachment bytes through an unofficial
-runtime path.
+The pinned Headless runtime receives a text task and reads images through DSH's
+official `read_image` tool. In eligible trusted Docker runs, the Controller
+downloads supported GitHub-uploaded images into the read-only worker home and
+supplies their local paths as untrusted context. Repository images use the same
+tool and existing `workspace.read` authority. Official Session attachments retain
+their referenced bytes across checkpoints. See [file support and limits](file-support.md).
 
 ## Agent execution and Controller Sessions
 
-`AgentEngine<TOutput, TMetadata>` remains the provider-neutral outer-turn
-boundary. `DshAgentEngine` is the only current implementation. It receives the
-Controller-selected operation, requested access, trusted instructions, bounded
-untrusted context, effective manifests, bound workspace, and remaining timeout.
-The Controller validates the returned protocol, operation, paths, and terminal
-state before any validation, publication, or GitHub write.
+`DshAgentEngine` implements the `AgentEngine<DshRunResult>` execution interface.
+It receives the Controller-selected operation, trusted instructions, bounded
+untrusted context, effective manifests, bound workspace, and remaining timeout,
+then returns the complete DSH result and execution evidence. The Controller
+validates the returned operation, paths, and terminal state before publication
+or GitHub writes. The execution interface also owns shutdown of active turns.
 
 `DshAgentEngine` lives with DSH execution and composition. Its turn contract
 contains only the current task, capabilities, workspace, deadline, and result;

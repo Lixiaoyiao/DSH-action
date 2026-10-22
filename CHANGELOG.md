@@ -5,6 +5,38 @@ versioning for published action releases.
 
 ## Unreleased
 
+## [0.12.1]
+
+- Adds optional `model` and `reasoning-effort` inputs through the official DSH
+  default-model selection in controlled and native modes. Empty values preserve
+  existing defaults; `off`, `low`, `high`, and `max` use the pinned provider's
+  thinking controls.
+- Respects natural-language no-change constraints inside Markdown lists and
+  contractions. A direct edit request ending in an inline-code filename now
+  correctly requests write access when the existing independent opt-in is enabled.
+- Loads direct plugins with a conventional relative `main`, such as
+  `lib/index.mjs`. Long review summaries retain selected finding locations or
+  explicitly report omissions when the GitHub body limit prevents listing them.
+- Avoids running initial validation solely because an unused GitHub metadata
+  tool is granted. Actual repository writes and queued GitHub mutations still
+  require successful current validation.
+- Removes unused in-process engine metadata and shares identical extension
+  validation without changing the external worker protocol or authority checks.
+- Prepares a local browser configuration UI for the separately released
+  installer 0.7.3: YAML editing, presets, model controls, plugin selection,
+  diff preview, static validation and explicit local saves. It does not commit
+  or push. The Action release retains published installer 0.7.2 metadata until
+  v0.12.1 and its formal canary qualify the next installer binding.
+
+## Installer 0.7.2
+
+- Binds the installer to formal Action `v0.12.0` through
+  `DSH_ACTION_RELEASE_SHA`, with exact DSH `0.2.1-rc.2` and source tag
+  `create-deepseek-harness-action-v0.7.2`.
+- Carries read-only natural-language conversation and PR Review into fresh
+  installations while retaining separate write opt-ins, immutable workflow
+  pins and independently qualified archive/public-consumer evidence.
+
 ## [0.12.0]
 
 - Accepts natural-language requests such as `@dsh explain this issue` on a

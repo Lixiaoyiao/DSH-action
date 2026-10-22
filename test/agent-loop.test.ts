@@ -157,8 +157,6 @@ function engine(
 ): AgentEngine<DshRunResult> {
   let index = 0;
   return {
-    id: "fake",
-    version: "1",
     runTurn: (request) => {
       requests.push(request);
       const next = responses[index];
@@ -179,8 +177,6 @@ function repairTurnFailureEngine(
 ): AgentEngine<DshRunResult> {
   let turn = 0;
   return {
-    id: "fake-repair-failure",
-    version: "1",
     runTurn: (request) => {
       requests.push(request);
       turn += 1;
@@ -297,8 +293,6 @@ describe("Controller Session lifecycle hooks", () => {
         createRuntime: () => Promise.resolve(runtime),
         disposeRuntime: () => Promise.resolve(),
         createEngine: () => ({
-          id: "unknown-then-measured",
-          version: "1",
           runTurn: () => {
             turn += 1;
             return Promise.resolve({
@@ -351,8 +345,6 @@ describe("Controller Session lifecycle hooks", () => {
         createRuntime: () => Promise.resolve(runtime),
         disposeRuntime: () => Promise.resolve(),
         createEngine: () => ({
-          id: "fixture",
-          version: "1",
           runTurn: () => {
             turn += 1;
             return Promise.resolve({
@@ -401,8 +393,6 @@ describe("Controller Session lifecycle hooks", () => {
           createRuntime: () => Promise.resolve(runtime),
           disposeRuntime: () => Promise.resolve(),
           createEngine: () => ({
-            id: "cold-start",
-            version: "1",
             runTurn: async (request) => {
               requests.push(request);
               await new Promise<void>((resolve) => setTimeout(resolve, 4 * 60_000));
@@ -448,8 +438,6 @@ describe("Controller Session lifecycle hooks", () => {
           createRuntime: () => Promise.resolve(runtime),
           disposeRuntime,
           createEngine: () => ({
-            id: "stalled",
-            version: "1",
             dispose,
             runTurn: (request) => {
               turnSignal = request.signal;
@@ -655,8 +643,6 @@ describe("controller-owned agent loop", () => {
         createRuntime: () => Promise.resolve(runtime),
         disposeRuntime: () => Promise.resolve(),
         createEngine: () => ({
-          id: "evidence-fixture",
-          version: "1",
           runTurn: () =>
             Promise.resolve({
               ...workerEvidence,
@@ -762,7 +748,7 @@ describe("controller-owned agent loop", () => {
         {
           createRuntime,
           disposeRuntime: () => Promise.resolve(),
-          createEngine: () => ({ id: "cancelled", version: "1", runTurn }),
+          createEngine: () => ({ runTurn }),
         },
       ),
     ).rejects.toThrow("cancelled");
@@ -943,8 +929,6 @@ describe("controller-owned agent loop", () => {
         createRuntime: () => Promise.resolve(runtime),
         disposeRuntime: () => Promise.resolve(),
         createEngine: () => ({
-          id: "fake-mcp",
-          version: "1",
           runTurn: () => {
             turn += 1;
             return Promise.resolve({
@@ -1015,8 +999,6 @@ describe("controller-owned agent loop", () => {
         createRuntime: () => Promise.resolve(runtime),
         disposeRuntime: () => Promise.resolve(),
         createEngine: () => ({
-          id: "fake-native",
-          version: "1",
           runTurn: () => {
             turn += 1;
             return Promise.resolve({
@@ -1471,9 +1453,7 @@ describe("controller-owned agent loop", () => {
     const controller = new AbortController();
     let workerPid: number | undefined;
     const turnRequest: AgentTurnRequest = {
-      schemaVersion: 1,
       operation: "task",
-      requestedAccess: "read",
       instructions: "test",
       context: {},
       tools: [],
@@ -1602,8 +1582,6 @@ describe("controller-owned agent loop", () => {
             createRuntime: () => Promise.resolve(runtime),
             disposeRuntime: () => Promise.resolve(),
             createEngine: () => ({
-              id: "failing-dsh",
-              version: "1",
               runTurn: () => {
                 turn += 1;
                 return turn === 1

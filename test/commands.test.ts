@@ -129,6 +129,9 @@ describe("parseCommand", () => {
     "请修复 Bug，不要修改其他文件，并提交 PR",
     "Can you please change the timeout to 30 seconds?",
     "Please update `README.md` to explain installation",
+    "Please update `README.md`",
+    "Update `README.md`",
+    "请更新 `README.md`",
     "commit these changes",
     "open a pull request for this change",
   ])("recognizes direct natural write requests only with the opt-in: %s", (request) => {
@@ -156,6 +159,8 @@ describe("parseCommand", () => {
     "Please fix this bug without changing any files",
     "Please fix this bug but only explain the changes",
     "Please fix this bug, don't change files, it's analysis only.",
+    "Please fix this bug, don’t change any files.",
+    "Please fix this bug, don‘t change any files.",
     "请修复这个 Bug，但不要实际修改代码",
     "请修复这个 Bug，只分析问题",
     "If needed, update README.md",
@@ -201,6 +206,10 @@ describe("parseCommand", () => {
     "Do not change any files.\n\n@dsh Please fix this bug",
     "Only want an explanation.\n\n@dsh Please fix this bug",
     "不要修改这个仓库。\n\n@dsh 请修复这个 Bug",
+    "@dsh Please fix this bug\n\n- Do not change any files.",
+    "@dsh Please fix this bug\n\n1. Don’t change any files.",
+    "@dsh 请修复这个 Bug\n\n- 不要修改任何文件。",
+    "- Do not change any files.\n\n@dsh Please fix this bug",
   ])("applies whole-comment visible readonly constraints to natural requests: %s", (content) => {
     expect(parseCommand(content, "@dsh", { naturalLanguageWrite: true })).toMatchObject({
       requestedAccess: "read",
@@ -211,6 +220,9 @@ describe("parseCommand", () => {
     "> Do not change anything.\n\n@dsh Please fix this bug",
     "```\n不要修改任何东西。\n```\n\n@dsh 请修复这个 Bug",
     "Do not change any other files.\n\n@dsh Please update README",
+    "- > Do not change any files.\n\n@dsh Please update `README.md`",
+    "- ```\nDo not change any files.\n```\n\n@dsh Please update `README.md`",
+    "- Do not change any other files.\n\n@dsh Please update `README.md`",
   ])("keeps quoted and scoped preceding context from denying a clear request: %s", (content) => {
     expect(parseCommand(content, "@dsh", { naturalLanguageWrite: true })).toMatchObject({
       requestedAccess: "write",

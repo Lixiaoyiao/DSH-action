@@ -143,9 +143,7 @@ describe("operation finalizers", () => {
       inputs({ dshExecutable: "C:/dsh/lib/bin.js", timeoutMinutes: 2 }),
       policy,
     ).runTurn({
-      schemaVersion: 1,
       operation: "review",
-      requestedAccess: "read",
       context: { repository: "o/r", data: "untrusted" },
       instructions: "focus on security",
       workspacePath: "workspace",
