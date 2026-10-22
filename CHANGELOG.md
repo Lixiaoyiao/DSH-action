@@ -55,6 +55,17 @@ versioning for published action releases.
 - Reduces repeated release/source-spelling assertions and adds a Windows full
   check alongside Linux checks and Docker integration coverage.
 
+## Installer 0.7.2
+
+- Prepares installer `0.7.2` targeting formal Action `v0.12.0` through
+  `DSH_ACTION_RELEASE_SHA`, with exact DSH `0.2.1-rc.2` and source tag
+  `create-deepseek-harness-action-v0.7.2`.
+- Delivers the read-only natural-language `@dsh` conversation and automatic
+  PR Review starter. Advanced natural-language writes retain their independent
+  default-off switch and existing validation and authorization requirements.
+- Keeps installer source CI/tag, qualified archive, real guided first run,
+  npm publication and fresh anonymous public consumers as separate gates.
+
 ## Installer 0.7.1
 
 - Prepares installer `0.7.1` targeting formal Action `v0.11.0` through
