@@ -3,7 +3,14 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["dist/**", "node_modules/**", "coverage/**", "eslint.config.js", "scripts/**"],
+    ignores: [
+      "dist/**",
+      "packages/create-deepseek-harness-action/dist/**",
+      "node_modules/**",
+      "coverage/**",
+      "eslint.config.js",
+      "scripts/**",
+    ],
   },
   eslint.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
@@ -42,6 +49,7 @@ export default tseslint.config(
       globals: {
         process: "readonly",
         URL: "readonly",
+        Buffer: "readonly",
       },
     },
     rules: tseslint.configs.disableTypeChecked.rules,

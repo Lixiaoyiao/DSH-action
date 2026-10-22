@@ -62,6 +62,38 @@ describe("loadInputs", () => {
       ["node", "script with spaces.js"],
     ]);
     expect(result.taskOutputSchema).toBeUndefined();
+    expect(result.model).toBeUndefined();
+    expect(result.reasoningEffort).toBeUndefined();
+  });
+
+  it.each(["off", "low", "high", "max"])("accepts the pinned DeepSeek effort %s", (effort) => {
+    const result = loadInputs(
+      reader({
+        "deepseek-api-key": "deepseek-key",
+        "github-token": "github-token",
+        model: "deepseek-v4-pro",
+        "reasoning-effort": effort,
+      }),
+    );
+    expect(result).toMatchObject({ model: "deepseek-v4-pro", reasoningEffort: effort });
+  });
+
+  it.each([
+    { "reasoning-effort": "medium" },
+    { "reasoning-effort": "enabled" },
+    { model: "deepseek pro" },
+    { model: "deepseek\n- id: other" },
+    { model: "a".repeat(129) },
+  ])("rejects an unsupported model selection %j", (selection) => {
+    expect(() =>
+      loadInputs(
+        reader({
+          "deepseek-api-key": "deepseek-key",
+          "github-token": "github-token",
+          ...selection,
+        }),
+      ),
+    ).toThrow(/Invalid action inputs/u);
   });
 
   it("keeps natural-language writes a separate explicit opt-in", () => {

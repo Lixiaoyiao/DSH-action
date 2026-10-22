@@ -235,6 +235,41 @@ const credentialHeaderSchema = z.record(
   }),
 );
 
+const mcpArgumentsSchema = z
+  .array(
+    z
+      .string()
+      .min(1)
+      .max(4_096)
+      .refine((value) => !value.includes("\0"), { message: "must not contain NUL" }),
+  )
+  .max(64)
+  .default([]);
+
+const mcpUrlSchema = z
+  .url()
+  .max(2_048)
+  .superRefine((value, context) => {
+    let url: URL;
+    try {
+      url = new URL(value);
+    } catch {
+      return;
+    }
+    if (url.protocol !== "https:" && url.protocol !== "http:") {
+      context.addIssue({ code: "custom", message: "must use http or https" });
+    }
+    if (url.username !== "" || url.password !== "") {
+      context.addIssue({
+        code: "custom",
+        message: "must not embed credentials; use explicit headers",
+      });
+    }
+    if (url.hash !== "") {
+      context.addIssue({ code: "custom", message: "must not contain a URL fragment" });
+    }
+  });
+
 const mcpServerBaseSchema = z.strictObject({
   id: extensionIdSchema,
   tools: z.array(mcpToolSchema).min(1).max(64),
@@ -251,18 +286,7 @@ const stdioMcpServerSchema = mcpServerBaseSchema
   .extend({
     transport: z.literal("stdio"),
     command: commandSchema,
-    args: z
-      .array(
-        z
-          .string()
-          .min(1)
-          .max(4_096)
-          .refine((value) => !value.includes("\0"), {
-            message: "must not contain NUL",
-          }),
-      )
-      .max(64)
-      .default([]),
+    args: mcpArgumentsSchema,
     env: environmentSchema.default({}),
     cwd: relativeCwdSchema.optional(),
     network: z.boolean().default(false),
@@ -286,35 +310,12 @@ const stdioMcpServerSchema = mcpServerBaseSchema
 const streamableHttpMcpServerSchema = mcpServerBaseSchema
   .extend({
     transport: z.literal("streamable-http"),
-    url: z.url().max(2_048),
+    url: mcpUrlSchema,
     headers: z.record(headerNameSchema, headerValueSchema).default({}),
     network: z.literal(true).default(true),
   })
   .superRefine((server, context) => {
     validateConsistentWorkspacePermission(server.tools, context);
-    let url: URL;
-    try {
-      url = new URL(server.url);
-    } catch {
-      return;
-    }
-    if (url.protocol !== "https:" && url.protocol !== "http:") {
-      context.addIssue({ code: "custom", path: ["url"], message: "must use http or https" });
-    }
-    if (url.username !== "" || url.password !== "") {
-      context.addIssue({
-        code: "custom",
-        path: ["url"],
-        message: "must not embed credentials; use explicit headers",
-      });
-    }
-    if (url.hash !== "") {
-      context.addIssue({
-        code: "custom",
-        path: ["url"],
-        message: "must not contain a URL fragment",
-      });
-    }
     for (const [index, tool] of server.tools.entries()) {
       if (!tool.permissions.includes("network")) {
         context.addIssue({
@@ -365,16 +366,7 @@ const nativeStdioMcpServerSchema = nativeMcpServerBaseSchema
   .extend({
     transport: z.literal("stdio"),
     command: commandSchema,
-    args: z
-      .array(
-        z
-          .string()
-          .min(1)
-          .max(4_096)
-          .refine((value) => !value.includes("\0"), { message: "must not contain NUL" }),
-      )
-      .max(64)
-      .default([]),
+    args: mcpArgumentsSchema,
     env: environmentSchema.default({}),
     credentialEnv: credentialEnvironmentSchema.default({}),
     cwd: relativeCwdSchema.optional(),
@@ -394,35 +386,12 @@ const nativeStdioMcpServerSchema = nativeMcpServerBaseSchema
 const nativeStreamableHttpMcpServerSchema = nativeMcpServerBaseSchema
   .extend({
     transport: z.literal("streamable-http"),
-    url: z.url().max(2_048),
+    url: mcpUrlSchema,
     headers: z.record(headerNameSchema, headerValueSchema).default({}),
     credentialHeaders: credentialHeaderSchema.default({}),
     network: z.literal(true).default(true),
   })
   .superRefine((server, context) => {
-    let url: URL;
-    try {
-      url = new URL(server.url);
-    } catch {
-      return;
-    }
-    if (url.protocol !== "https:" && url.protocol !== "http:") {
-      context.addIssue({ code: "custom", path: ["url"], message: "must use http or https" });
-    }
-    if (url.username !== "" || url.password !== "") {
-      context.addIssue({
-        code: "custom",
-        path: ["url"],
-        message: "must not embed credentials; use explicit headers",
-      });
-    }
-    if (url.hash !== "") {
-      context.addIssue({
-        code: "custom",
-        path: ["url"],
-        message: "must not contain a URL fragment",
-      });
-    }
     const ordinaryNames = new Set(Object.keys(server.headers).map((name) => name.toLowerCase()));
     const duplicate = Object.keys(server.credentialHeaders).find((name) =>
       ordinaryNames.has(name.toLowerCase()),

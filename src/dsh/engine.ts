@@ -37,8 +37,6 @@ export function partitionDshToolPlanes(tools: readonly AgentToolManifest[]): {
 
 /** Own DSH turn execution and shutdown while retaining the complete worker result. */
 export class DshAgentEngine implements AgentEngine<DshRunResult> {
-  public readonly id = "dsh";
-  public readonly version: string;
   private readonly composition: DshComposition;
   private activeRun:
     { readonly controller: AbortController; readonly settled: Promise<void> } | undefined;
@@ -52,7 +50,6 @@ export class DshAgentEngine implements AgentEngine<DshRunResult> {
     private readonly extensions?: ExtensionPlan,
     composition?: DshComposition,
   ) {
-    this.version = inputs.dshVersion;
     this.composition = composition ?? selectDshComposition(inputs.dshMode).create();
   }
 
@@ -128,6 +125,10 @@ export class DshAgentEngine implements AgentEngine<DshRunResult> {
         baseUrl: this.inputs.baseUrl,
         webSearchBaseUrl: this.inputs.webSearchBaseUrl,
         dshVersion: this.inputs.dshVersion,
+        ...(this.inputs.model === undefined ? {} : { model: this.inputs.model }),
+        ...(this.inputs.reasoningEffort === undefined
+          ? {}
+          : { reasoningEffort: this.inputs.reasoningEffort }),
         ...(this.inputs.dshExecutable === "" ? {} : { dshExecutable: this.inputs.dshExecutable }),
         containerImage: this.inputs.containerImage,
       },

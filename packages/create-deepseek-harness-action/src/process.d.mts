@@ -1,3 +1,5 @@
+export function resolveRepositoryRoot(cwd?: string): Promise<string>;
+
 export interface ProcessOptions {
   readonly cwd?: string;
   readonly env?: NodeJS.ProcessEnv;

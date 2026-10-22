@@ -12,6 +12,30 @@ import {
 
 const MAX_WORKFLOW_BYTES = 256 * 1024;
 const OBJECT_SHA = /^[a-f0-9]{40}$/u;
+const GITHUB_STATES = new Set([
+  "queued",
+  "requested",
+  "waiting",
+  "pending",
+  "in_progress",
+  "completed",
+  "action_required",
+  "cancelled",
+  "failure",
+  "neutral",
+  "skipped",
+  "stale",
+  "success",
+  "timed_out",
+  "startup_failure",
+]);
+
+/** Report only public state labels, never unexpected response payloads. */
+function observedState(value: unknown): string {
+  if (value === undefined) return "missing";
+  if (value === null) return "null";
+  return typeof value === "string" && GITHUB_STATES.has(value) ? value : "unrecognized";
+}
 
 function object(value: unknown): Record<string, unknown> {
   if (!isRecord(value)) {
@@ -272,10 +296,16 @@ export async function verifySessionWorkflowRun(
   if (
     options.successful
       ? run.status !== "completed" || run.conclusion !== "success"
-      : run.status !== "in_progress"
+      : run.status !== "in_progress" && run.status !== "queued"
   )
     throw new PolicyDeniedError(
-      "Session producer must finish successfully; current run must be in progress",
+      "Session producer must finish successfully; current run must be in progress or queued with an active producer" +
+        `; role=${options.successful ? "source" : "current"}` +
+        `; observedStatus=${observedState(run.status)}` +
+        `; observedConclusion=${observedState(run.conclusion)}` +
+        `; runIdMatches=${String(run.id === options.runId)}` +
+        `; attemptMatches=${String(options.runAttempt === undefined || run.run_attempt === options.runAttempt)}` +
+        `; workflowShaMatches=${String(options.workflowSha === undefined || run.head_sha === options.workflowSha)}`,
     );
   const actor = run.triggering_actor ?? run.actor;
   if (actor?.id === undefined)
@@ -318,7 +348,13 @@ export async function verifySessionWorkflowRun(
       : job.status !== "in_progress")
   )
     throw new PolicyDeniedError(
-      "Session producer job must have one verified state on the exact run attempt",
+      "Session producer job must have one verified state on the exact run attempt" +
+        `; role=${options.successful ? "source" : "current"}` +
+        `; observedStatus=${observedState(job?.status)}` +
+        `; observedConclusion=${observedState(job?.conclusion)}` +
+        `; matchCount=${String(matching.length)}` +
+        `; runIdMatches=${String(job?.run_id === run.id)}` +
+        `; headShaMatches=${String(job?.head_sha === run.head_sha)}`,
     );
   return {
     runId: run.id,

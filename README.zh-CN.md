@@ -49,9 +49,11 @@ gh auth login
 npm.cmd create deepseek-harness-action@latest
 ```
 
-默认引导安装**只读 `@dsh` 对话和自动 PR Review**。安装器会显示目标仓库，在创建文件、设置密钥、提交和推送之前分别询问。在隐藏输入提示中粘贴 DeepSeek API Key，它会保存为该仓库的 `DEEPSEEK_API_KEY` Actions Secret。
+默认打开本地浏览器配置界面，配置**只读 `@dsh` 对话和自动 PR Review**。选择工作流，调整模型、思考强度和权限，审查 YAML 差异后保存到本地。再次运行同一命令即可编辑现有工作流；保存后的文件由你自行提交和推送。
 
-也可以手工添加：在 GitHub 仓库打开 **Settings → Secrets and variables → Actions → New repository secret**，名称填 `DEEPSEEK_API_KEY`，值填你的密钥。只在本地 DSH 中配置密钥，云端 Action 仍然无法使用它。
+本地 GUI 随独立安装器 `0.7.3` 发布，在 Action `v0.12.1` 完成验证后打包。此前已发布的安装器 `0.7.2` 仍使用原终端引导。
+
+在 GitHub 仓库打开 **Settings → Secrets and variables → Actions → New repository secret**，名称填 `DEEPSEEK_API_KEY`，值填你的密钥。只在本地 DSH 中配置密钥，云端 Action 仍然无法使用它。
 
 ### 4. 直接向 `@dsh` 提问
 
@@ -69,13 +71,13 @@ npm.cmd create deepseek-harness-action@latest
 
 ### 可选：导入本地插件或安装其他功能
 
-需要选择只读对话与 Review、高级 Coding Commands、两者一起安装或自动 Session 时，使用 `--advanced`。已经有本地 DSH 插件时，再加 `--import-plugins`，安装器会列出已安装版本和兼容情况，让你选择并确认：
+在 GUI 中选择只读对话与 Review、Coding Commands、两者一起安装或自动 Session。`--gui` 显式打开界面；`--no-open` 只打印本地私有地址，不自动打开浏览器。已有本地 DSH 插件时，可用 `--import-plugins` 直接进入插件选择页：
 
 ```powershell
-npm.cmd create deepseek-harness-action@latest -- --advanced --import-plugins
+npm.cmd create deepseek-harness-action@latest -- --gui --import-plugins
 ```
 
-Native 模式可直接使用 DSH Bundle。Controlled 模式还会询问插件实际提供的只读工具名（`plugin__owner__tool`）；没有符合要求的工具名时，需要手工配置。GitHub 会重新安装选中的精确版本，本地密钥和设置不会被复制。仅存在本地、已停用或不兼容的包会显示简单原因。DSH 使用其他目录时，可加 `--dsh-home "C:\你的路径\.dsh"`。
+Native 模式可直接使用 DSH Bundle。Controlled 模式还需要插件实际提供的只读工具名（`plugin__owner__tool`）。GitHub 会重新安装选中的精确版本，本地密钥和设置不会被复制。仅存在本地、已停用或不兼容的包会显示状态。DSH 使用其他目录时，可加 `--dsh-home "C:\你的路径\.dsh"`。`--advanced` 保留为 GUI 别名。
 
 只生成文件或在 CI 中运行，可以明确指定选项：
 
@@ -126,7 +128,7 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
           persist-credentials: false
           fetch-depth: 1
-      - uses: Lixiaoyiao/deepseek-harness-action@v0.12.0
+      - uses: Lixiaoyiao/deepseek-harness-action@v0.12.1
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           dsh-version: 0.2.1-rc.2

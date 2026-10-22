@@ -114,6 +114,8 @@ an actual `needs_tool` result is ineligible for terminal formatting repair.
 
 | Input                    | Required/default                                                                                                  | Description                                                                                                                                                                                                                                               |
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model`                  | Empty                                                                                                             | Optional DeepSeek Agent model identifier for controlled and native modes. Empty preserves the pinned DSH default (deepseek-flash); accepts up to 128 ASCII letters, digits, dots, underscores, or hyphens.                                                |
+| `reasoning-effort`       | Empty                                                                                                             | Optional DeepSeek Agent thinking effort: off, low, high, or max. Empty preserves the pinned DSH provider default (high); off disables thinking. Applies to controlled and native modes.                                                                   |
 | `session-mode`           | `off`                                                                                                             | Session opt-in: off, auto, save, or resume. Auto creates or continues the latest successful compatible checkpoint by key, with verified key-scoped concurrency and run-name history. Requires Docker; explicit save/resume remain supported.              |
 | `session-key`            | Empty                                                                                                             | Maintainer-selected logical Session key, 1-64 ASCII letters, digits, dot, underscore or hyphen. Auto keys are case-insensitive, matching GitHub concurrency. Bound to repository, workflow job, task and runtime; never grants authority.                 |
 | `session-source-run-id`  | Empty                                                                                                             | For session-mode=resume, the explicit successful producer Actions run ID. Only its verified current attempt and latest compatible checkpoint may be restored.                                                                                             |
@@ -127,6 +129,12 @@ an actual `needs_tool` result is ineligible for terminal formatting repair.
 | `max-turns`              | `3`                                                                                                               | Maximum fresh DSH turns across tool requests and validation repair attempts.                                                                                                                                                                              |
 
 <!-- END GENERATED ACTION INPUTS: runtime -->
+
+`model` and `reasoning-effort` configure the Headless Agent through DSH's official
+default-model selection. Custom model identifiers must be supported by the configured
+DeepSeek endpoint. Native session-title generation keeps DSH's auxiliary-request policy;
+the Action's one-shot output-formatting repair uses `deepseek-flash`. `max-turns` limits
+Controller turns and is independent of thinking effort.
 
 Set the job-level `timeout-minutes` a few minutes above the Action input. This
 lets the Action stop its worker, publish terminal outputs, attempt an eligible
@@ -415,6 +423,11 @@ the queue. Immediately before mutation the Controller revalidates entity and
 repository identity, then performs bounded API attempts, postcondition checks,
 ambiguous-failure reconciliation, and bounded receipts. Model output never
 becomes GitHub authority.
+
+Granting a mutation tool does not run the test suite before the Agent starts.
+This lets a task repair an initially failing repository. The Controller validates
+the resulting workspace before a repository write or a nonempty mutation flush;
+an unused metadata capability does not add a validation run.
 
 If one queued mutation is confirmed or may have taken effect before a later
 mutation fails, the failure envelope reports `write.status: partial-success`
@@ -869,6 +882,11 @@ changing the fixed envelope or schema version. `status` is one of `success`, `ne
 `error.category`, and `error.retryable` identity. `error.phase` separately
 records the Controller lifecycle location where the error surfaced; it does not
 reclassify a known error.
+
+Review summaries reserve space for selected finding titles and locations before
+shortening their details. If exceptionally long locations cannot all fit one
+GitHub comment, `publication.summaryOmitted` records that count, the comment
+displays it, and `summaryOnly` counts only the findings actually included.
 
 When the official headless worker reports step usage, the additive `modelUsage`
 field records `source: headless-worker`, `completeness`, `reportedSteps`,

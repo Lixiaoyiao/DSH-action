@@ -50,7 +50,8 @@ async function installedPluginEntry(
         ? manifest.main
         : "./index.js"
       : importExportTarget(manifest.exports);
-  if (!target?.startsWith("./")) {
+  // Unlike exports targets, legacy main paths do not require a "./" prefix.
+  if (!target || (manifest.exports !== undefined && !target.startsWith("./"))) {
     throw new Error(`Direct plugin ${packageName} has no importable root export`);
   }
   let entry = resolve(packageReal, target);

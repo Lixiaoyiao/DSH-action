@@ -42,6 +42,14 @@ inputs:
     description: "JSON array of at most 8 explicit repository-relative text paths from the bound task revision. Attached as untrusted context, never authority; no globs, symlinks, runner paths, images, or Office files."
     required: false
     default: "[]"
+  model:
+    description: "Optional DeepSeek Agent model identifier for controlled and native modes. Empty preserves the pinned DSH default (deepseek-flash); accepts up to 128 ASCII letters, digits, dots, underscores, or hyphens."
+    required: false
+    default: ""
+  reasoning-effort:
+    description: "Optional DeepSeek Agent thinking effort: off, low, high, or max. Empty preserves the pinned DSH provider default (high); off disables thinking. Applies to controlled and native modes."
+    required: false
+    default: ""
   session-mode:
     description: "Session opt-in: off, auto, save, or resume. Auto creates or continues the latest successful compatible checkpoint by key, with verified key-scoped concurrency and run-name history. Requires Docker; explicit save/resume remain supported."
     required: false

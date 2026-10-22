@@ -110,6 +110,24 @@ export const ACTION_INPUT_CONTRACT = [
     docsGroup: "operation",
   },
   {
+    name: "model",
+    runtimeKey: "model",
+    required: false,
+    default: "",
+    description:
+      "Optional DeepSeek Agent model identifier for controlled and native modes. Empty preserves the pinned DSH default (deepseek-flash); accepts up to 128 ASCII letters, digits, dots, underscores, or hyphens.",
+    docsGroup: "runtime",
+  },
+  {
+    name: "reasoning-effort",
+    runtimeKey: "reasoningEffort",
+    required: false,
+    default: "",
+    description:
+      "Optional DeepSeek Agent thinking effort: off, low, high, or max. Empty preserves the pinned DSH provider default (high); off disables thinking. Applies to controlled and native modes.",
+    docsGroup: "runtime",
+  },
+  {
     name: "session-mode",
     runtimeKey: "sessionMode",
     required: false,

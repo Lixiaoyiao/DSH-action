@@ -19,7 +19,8 @@ function inside(root, candidate) {
   );
 }
 
-async function repositoryBoundary(cwd) {
+/** Find the nearest Git checkout/worktree without executing repository programs. */
+export async function resolveRepositoryRoot(cwd) {
   const selected = await realpath(cwd ?? process.cwd());
   let directory = selected;
   while (true) {
@@ -37,7 +38,7 @@ async function repositoryBoundary(cwd) {
 }
 
 async function trustedExecutable(command, cwd, environment = process.env) {
-  const boundary = await repositoryBoundary(cwd);
+  const boundary = await resolveRepositoryRoot(cwd);
   const usable = async (candidate) => {
     if (inside(boundary, candidate)) return undefined;
     try {

@@ -4,41 +4,42 @@
 
 This guide is for repository maintainers qualifying and publishing an Action release. A successful run proves only the exact commit SHA it tested. After any candidate change, repeat every required check against the new latest SHA.
 
-For v0.11.0, retain the exact production DSH `0.2.1-rc.2` family. Qualify
-`session-mode: auto` with fresh keys in controlled and native compositions.
-Use the trusted [automatic Session E2E workflow](../.github/workflows/session-auto-e2e.yml)
-on live `main`: first creation and an
-independent follow-up run must prove the same Session, an incremented generation,
-raw-log prefix continuity, a fresh worker, current permissions and no replay.
-No source run ID is passed to the Action. Preserve evidence for overlapping
-different keys, serialized same-key runs and a failed-history rejection before
-worker startup. Expired, missing, corrupt, incompatible, incomplete and unknown
-history also require explicit failure evidence; unit fixtures alone do not prove
-the real Actions transport path.
+For v0.12.1, retain the exact production DSH `0.2.1-rc.2` family. The local GUI
+and optional model settings reuse the existing Session protocol, history selection,
+storage, concurrency and trusted harness. On the frozen release `main` SHA, qualify
+one explicit save/resume pair and one automatic pair in each composition
+(controlled/native), using fresh keys. Include `image_attachment=true` in the
+explicit pairs. Each independent follow-up must prove the same Session, an
+incremented generation, raw-log prefix continuity, a fresh worker, current
+permissions and no replay. The image pairs must execute official `read_image` on
+save and preserve its raw reference and exact attachment bytes on resume. The
+automatic Action receives no source run ID.
 
-For file support, run both compositions with `image_attachment=true` in the
-existing Session workflows. The first run must execute official `read_image`;
-the independent follow-up must preserve the raw image reference and exact
-attachment bytes without downloading or executing the earlier tool again.
-Record the real GitHub image download and binary Blob round-trip evidence too.
+Requalify the broader Session transport/history matrix when those mechanisms or
+their harness change: overlapping different keys, serialized same-key runs, failed,
+expired, missing, corrupt, incompatible, incomplete and unknown histories. Such
+qualification requires real Actions evidence; unit fixtures alone do not establish
+the transport path or actual TTL. Record unchanged mechanisms and historical
+evidence explicitly rather than labeling unexecuted checks as newly passed. New
+trusted harness changes must land through their own CI-qualified PR before they
+handle credentials in candidate qualification.
 
-The Session harness changes must land through their own CI-qualified PR before
-candidate qualification so that credentials use trusted default-branch harness
-code. Freeze the candidate before the complete local check, PR CI and Core E2E.
-After merge, repeat exact-main CI/Core and Session qualification before tagging.
+Freeze the candidate before the complete local check, PR CI and Core E2E.
+After merge, run exact-main CI/Core and the Session pairs above before tagging.
 Run the formal controlled/native canary against the immutable formal tag, then
 prepare the independently versioned installer with the actual formal Action SHA.
 The advisory stable/RC/alpha upstream canaries never replace these production gates.
 Do not rerun task-bearing failures without first reconciling their diagnostics
 and confirmed effects; preserve a bounded continuation record for external blocks.
 
-The guided installer is prepared as an independently qualified `0.7.2` release
-after the v0.12.0 formal canary succeeds. Its first-repository qualification must
-exercise the real Git/gh path, Secret detection, readonly workflow generation,
-separate commit/push confirmations, configuration checks and first-run guidance.
-Keep cancelled confirmations and unrelated working-tree changes covered. Public
-npm consumers must install the same qualified archive through anonymous fresh
-caches; local packing alone does not satisfy this gate.
+The Action source retains published installer `0.7.2`, targeting formal Action
+`v0.12.0` through `DSH_ACTION_RELEASE_SHA`. Prepare the independently versioned
+installer `0.7.3` source identity only after the v0.12.1 formal canary succeeds.
+Its archive qualification exercises default GUI startup, existing-workflow edits,
+model/effort and plugin selection, diff/validation, local save, reopened YAML and
+the explicit non-interactive modes. Verify that the GUI performs no commit or
+push. A real first Action run still establishes online setup. Public consumers
+must install the same qualified archive through anonymous fresh caches.
 
 Earlier release identities and qualification notes are preserved in
 [historical release evidence](release-history.md). Use only the newly qualified
@@ -47,7 +48,8 @@ formal Action SHA for `DSH_ACTION_RELEASE_SHA`.
 ## Explicit Session qualification
 
 Qualify a controlled save/resume pair and a native save/resume pair against the
-frozen candidate using the [Session E2E workflow](../.github/workflows/session-e2e.yml).
+frozen release main SHA using the [Session E2E workflow](../.github/workflows/session-e2e.yml).
+Pre-merge pairs can diagnose changes early; they do not replace release-main proof.
 Each pair uses two independent runs, a fresh `session_key`, the same candidate and
 trusted harness SHA, and the successful save run's ID as `source_run_id` for resume.
 Keep the default branch unchanged between the runs. The fixture checks a hidden
@@ -125,8 +127,9 @@ For an Action version bump, update every release surface together:
 6. Any release-specific verification fixture or documentation.
 
 The standalone `create-deepseek-harness-action` package has its own semantic
-version; prepare its source only
-after the formal Action canary succeeds. Keep its standalone manifest/lock,
+version; prepare its new release version and binding only
+after the formal Action canary succeeds. Installer feature source may land with
+the Action while retaining the published installer's release identity. Keep its standalone manifest/lock,
 CLI tests, documentation, controlled/native templates and release-SHA
 contract aligned. `DSH_ACTION_RELEASE_SHA` must be the full commit resolved
 from the newly qualified formal Action tag.
@@ -402,23 +405,22 @@ If the smoke fails after publication, keep the tag immutable. Diagnose the failu
 
 ## Publish the npm create package
 
-The independent installer is `0.7.2`, targeting formal Action `v0.12.0`
-with exact DSH `0.2.1-rc.2`. Its source tag is
-`create-deepseek-harness-action-v0.7.2`. Keep the Action SHA and installer source
-SHA unresolved until their respective gates establish them. Do not copy a
-historical release SHA into the new binding.
+The published baseline is installer `0.7.2`, Action `v0.12.0` and source tag
+`create-deepseek-harness-action-v0.7.2`. The next independent installer is `0.7.3`,
+targeting formal Action `v0.12.1` with exact DSH `0.2.1-rc.2`; its source tag will
+be `create-deepseek-harness-action-v0.7.3`. Keep the new Action SHA and installer
+source SHA unresolved until their respective gates establish them. Do not copy
+a historical release SHA into the new binding.
 
-Qualify the guided public CLI in an existing fresh GitHub repository, from the
-actual archive: no flags must choose read-only `@dsh` conversation and automatic
-PR Review without composition questions; Git root/origin and GitHub CLI/login
-detection, hidden Secret input through stdin, generated immutable-SHA workflow,
-static configuration check,
-separate commit/push confirmations and the first real Action run must pass.
-Record only Secret names/status, never values or input. Test manual login/setup
-resume, unchanged workflow/commit reuse, default-No publication, preservation of
-staged/untracked edits, and the rejection of conflicting workflow/remote state.
-Local Git regressions and mocked remote transport are necessary but do not
-replace this real public first-run gate.
+Qualify the public CLI from the actual archive in a fresh existing repository.
+No flags in an interactive terminal must open the GUI; `--gui` and `--no-open`
+must work explicitly, while `--mode` retains browser-free generation. Exercise
+editing, preview, validation and save, restart the GUI and read the persisted
+YAML. Preserve unrelated files and refuse stale previews; verify loopback/token/
+origin restrictions without exposing tokens in evidence. Review the immutable
+Action SHA and exact DSH pin in generated YAML, then publish the workflow through
+the maintainer's normal Git path and record its first real Action run. The GUI
+must never commit, push, set Secrets or execute repository scripts.
 
 Publish `create-deepseek-harness-action` only after the formal Action tag,
 GitHub Release, and release canary all resolve to `release_sha`. A Git commit
@@ -503,13 +505,13 @@ template, packed template, and generated workflow has exactly one
 `dsh-version: 0.2.1-rc.2` input; the old `0.1.7-rc.2` pin is rejected by
 the current Action:
 
-The exact allowlisted archive contains `package.json`, `README.md`, `LICENSE`,
-nine runtime modules (`action-inputs.generated.mjs`, `cli.mjs`, `installer.mjs`,
-`guided.mjs`, `process.mjs`, `prompts.mjs`, `publication.mjs`, `workflow-text.mjs`, `local-plugins.mjs`) and six bound
-templates under `dist/templates/`. Reject missing/extra files and symlinks.
-The private guided modules and shared workflow text policy are required runtime files, not optional source
-artifacts. Test `review`, `commands`, `both`, and `session` in both compositions;
-each Session workflow must keep `queue: max` and read-only permissions.
+The exact archive allowlist is exercised in `test/installer.test.ts`. It includes
+the package metadata/license, CLI runtime, GUI backend and static assets,
+generated input metadata, the bundled Action validator with third-party notices,
+and six bound templates. Reject missing/extra files and symlinks. Test `review`,
+`commands`, `both`, and `session` in both compositions, plus GUI preview/save/reopen
+from the actual archive. Each Session workflow must keep `queue: max` and read-only
+permissions.
 
 ```bash
 node --input-type=module - "$installer_stage/unpacked/package/package.json" "$installer_version" <<'NODE'

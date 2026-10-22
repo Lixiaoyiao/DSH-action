@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { execFile, spawn } from "node:child_process";
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, parse as parsePath } from "node:path";
 import { promisify } from "node:util";
@@ -42,6 +42,8 @@ function npmCommand(): { executable: string; prefix: string[] } {
 
 let suiteDirectory = "";
 let builtPackage = "";
+let packDirectory = "";
+let packStdout = "";
 
 class OutputCapture extends Writable {
   public text = "";
@@ -107,11 +109,22 @@ async function install(mode: InstallerMode, dshMode?: InstallerDshMode, project?
 beforeAll(async () => {
   suiteDirectory = await mkdtemp(join(tmpdir(), "create-dsh-action-test-"));
   builtPackage = join(suiteDirectory, "dist");
-  await execFileAsync(process.execPath, [buildScript, "--output", builtPackage], {
-    env: { ...process.env, DSH_ACTION_RELEASE_SHA: RELEASE_SHA },
-    windowsHide: true,
-  });
-});
+  packDirectory = join(suiteDirectory, "pack");
+  await mkdir(packDirectory);
+  const npm = npmCommand();
+  const packed = await execFileAsync(
+    npm.executable,
+    [...npm.prefix, "pack", "--silent", "--json", "--pack-destination", packDirectory],
+    {
+      cwd: packageRoot,
+      env: { ...process.env, DSH_ACTION_RELEASE_SHA: RELEASE_SHA },
+      windowsHide: true,
+    },
+  );
+  packStdout = packed.stdout;
+  // Share the real prepack build with the CLI fixtures; compile the validator once.
+  await cp(new URL("dist/", packageRoot), builtPackage, { recursive: true });
+}, 60_000);
 
 afterAll(async () => {
   if (suiteDirectory !== "") await rm(suiteDirectory, { force: true, recursive: true });
@@ -223,18 +236,6 @@ describe("create-deepseek-harness-action release build", () => {
   });
 
   it("keeps the formal npm pack stdout machine-readable", async () => {
-    const packDirectory = join(suiteDirectory, "pack");
-    await mkdir(packDirectory);
-    const npm = npmCommand();
-    const { stdout } = await execFileAsync(
-      npm.executable,
-      [...npm.prefix, "pack", "--silent", "--json", "--pack-destination", packDirectory],
-      {
-        cwd: packageRoot,
-        env: { ...process.env, DSH_ACTION_RELEASE_SHA: RELEASE_SHA },
-        windowsHide: true,
-      },
-    );
     const packResult = z
       .array(
         z.looseObject({
@@ -244,7 +245,7 @@ describe("create-deepseek-harness-action release build", () => {
           version: z.string(),
         }),
       )
-      .parse(JSON.parse(stdout));
+      .parse(JSON.parse(packStdout));
 
     expect(packResult).toHaveLength(1);
     expect(packResult[0]).toMatchObject({
@@ -262,13 +263,25 @@ describe("create-deepseek-harness-action release build", () => {
         "package.json",
         "dist/action-inputs.generated.mjs",
         "dist/cli.mjs",
-        "dist/guided.mjs",
         "dist/installer.mjs",
         "dist/local-plugins.mjs",
         "dist/process.mjs",
-        "dist/prompts.mjs",
-        "dist/publication.mjs",
         "dist/workflow-text.mjs",
+        "dist/gui/contract.generated.mjs",
+        "dist/gui/files.mjs",
+        "dist/gui/workflows.mjs",
+        "dist/gui/plugins.mjs",
+        "dist/gui/server.mjs",
+        "dist/gui/config-validation.mjs",
+        "dist/gui/THIRD_PARTY_NOTICES.txt",
+        "dist/gui/ui/index.html",
+        "dist/gui/ui/app.mjs",
+        "dist/gui/ui/api.mjs",
+        "dist/gui/ui/state.mjs",
+        "dist/gui/ui/components.mjs",
+        "dist/gui/ui/views.mjs",
+        "dist/gui/ui/tokens.css",
+        "dist/gui/ui/styles.css",
         "dist/templates/dsh-commands-native.yml",
         "dist/templates/dsh-commands.yml",
         "dist/templates/dsh-review-native.yml",
@@ -556,78 +569,50 @@ describe("installer modes", () => {
   );
 
   it.each([
-    ["1\n1\n", "review", "controlled", [".github/workflows/dsh-review.yml"]],
-    ["2\n2\n", "commands", "native", [".github/workflows/dsh-commands.yml"]],
-    [
-      "3\n1\n",
-      "both",
-      "controlled",
-      [".github/workflows/dsh-review.yml", ".github/workflows/dsh-commands.yml"],
-    ],
-  ] as const)("supports interactive choices %s", async (answer, mode, dshMode, createdFiles) => {
-    const project = await createProject();
-    const output = new OutputCapture();
-    const result = await runInstaller({
-      argv: ["--advanced"],
-      cwd: project,
-      input: Readable.from([answer]),
-      output,
-      isTTY: true,
-      env: {},
-      templateDirectory: join(builtPackage, "templates"),
-    });
-
-    expect(result).toEqual({ mode, dshMode, createdFiles: [...createdFiles] });
-    expect(output.text).toContain("PR Review");
-    expect(output.text).toContain("@dsh Coding Commands");
-    expect(output.text).toContain("Both");
-    expect(output.text).toContain("Controlled");
-    expect(output.text).toContain("Native");
-  });
-
-  it("prompts only for DSH mode when the workflow mode is explicit", async () => {
-    const project = await createProject();
-    const output = new OutputCapture();
-    const result = await runInstaller({
-      argv: ["--advanced", "--mode", "review"],
-      cwd: project,
-      input: Readable.from(["2\n"]),
-      output,
-      isTTY: true,
-      env: {},
-      templateDirectory: join(builtPackage, "templates"),
-    });
-
-    expect(result).toEqual({
-      mode: "review",
-      dshMode: "native",
-      createdFiles: [".github/workflows/dsh-review.yml"],
-    });
-    expect(output.text).not.toContain("Choose what to install");
-    expect(output.text).toContain("Choose the DSH mode");
-  });
-
-  it("prompts only for workflow mode when DSH mode is explicit", async () => {
-    const project = await createProject();
-    const output = new OutputCapture();
-    const result = await runInstaller({
-      argv: ["--dsh-mode", "native"],
-      cwd: project,
-      input: Readable.from(["3\n"]),
-      output,
-      isTTY: true,
-      env: {},
-      templateDirectory: join(builtPackage, "templates"),
-    });
-
-    expect(result).toEqual({
-      mode: "both",
-      dshMode: "native",
-      createdFiles: [".github/workflows/dsh-review.yml", ".github/workflows/dsh-commands.yml"],
-    });
-    expect(output.text).toContain("Choose what to install");
-    expect(output.text).not.toContain("Choose the DSH mode");
-  });
+    [[], "controlled"],
+    [["--advanced"], "controlled"],
+    [["--advanced", "--mode", "review"], "controlled"],
+    [["--dsh-mode", "native"], "native"],
+    [["--gui", "--mode", "both", "--dsh-mode", "native"], "native"],
+  ] as const)(
+    "opens the same GUI for %j without reading terminal choices",
+    async (argv, dshMode) => {
+      const project = await createProject();
+      const output = new OutputCapture();
+      let read = false;
+      const input = new Readable({
+        read() {
+          read = true;
+          this.destroy(new Error("stdin must not be read"));
+        },
+      });
+      const session = {
+        origin: "http://127.0.0.1:1",
+        token: "fixture",
+        url: "http://127.0.0.1:1/#token=fixture",
+        close: () => Promise.resolve(),
+      };
+      const result = await runInstaller({
+        argv,
+        cwd: project,
+        input,
+        output,
+        isTTY: true,
+        env: {},
+        templateDirectory: join(builtPackage, "templates"),
+        guiLauncher: (options) => {
+          expect(options).toMatchObject({ cwd: project, dshMode, openBrowser: true });
+          return Promise.resolve(session);
+        },
+      });
+      expect(result).toEqual({ dshMode, createdFiles: [], gui: session });
+      expect(read).toBe(false);
+      expect(output.text).not.toContain("Selection");
+      await expect(
+        readFile(join(project, ".github/workflows/dsh-review.yml")),
+      ).rejects.toMatchObject({ code: "ENOENT" });
+    },
+  );
 });
 
 describe("safe filesystem and non-interactive behavior", () => {

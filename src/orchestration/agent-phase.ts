@@ -169,15 +169,8 @@ export class AgentPhase {
       this.options;
     const { context, client, command, currentRunUrl, policy, issueNumber, deferWriteProgress } =
       authorized;
-    const {
-      contextPacket,
-      tools,
-      toolProvider,
-      extensions,
-      hasGitHubMutationTools,
-      selectedComposition,
-      redact,
-    } = execution;
+    const { contextPacket, tools, toolProvider, extensions, selectedComposition, redact } =
+      execution;
     const session = this.session;
     await session?.prepare();
     lifecycle.enter("agent");
@@ -316,8 +309,8 @@ export class AgentPhase {
       return {
         ...outcome,
         validation:
-          finalized.kind === "answer" && hasGitHubMutationTools
-            ? { ...validation, status: "passed" }
+          finalized.kind === "answer"
+            ? validation
             : {
                 status: "not-applicable",
                 commandCount: 0,

@@ -1,6 +1,4 @@
-import type { Operation, RequestedAccess } from "../commands/parse.js";
-
-export const AGENT_PROTOCOL_VERSION = 1 as const;
+import type { Operation } from "../commands/parse.js";
 
 export interface AgentToolManifest {
   readonly id: string;
@@ -27,9 +25,7 @@ export interface AgentToolResult {
 }
 
 export interface AgentTurnRequest {
-  readonly schemaVersion: 1;
   readonly operation: Operation;
-  readonly requestedAccess: RequestedAccess;
   readonly instructions: string;
   readonly context: unknown;
   readonly tools: readonly AgentToolManifest[];
@@ -43,8 +39,6 @@ export interface AgentTurnRequest {
 
 /** Turn execution and shutdown share one run-scoped engine owner. */
 export interface AgentEngine<TResult> {
-  readonly id: string;
-  readonly version: string;
   runTurn(request: AgentTurnRequest): Promise<TResult>;
   /** Shut down active turns, including on failure; borrowed resource owners may retain late activity leases. */
   dispose?(): Promise<void>;

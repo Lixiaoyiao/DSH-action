@@ -23,6 +23,7 @@ import type {
 } from "./composition.js";
 import type { NativeToolId } from "../tools/schema.js";
 import { isJsonObject, prepareCompositionLauncher } from "./composition-files.js";
+import { modelSettingsPatch, type DshModelSettings } from "./model-settings.js";
 
 const NATIVE_TEMPLATE_NAME = "headless";
 const NATIVE_PROFILE_ROOT_FILENAME = "action-native-root.yml";
@@ -103,6 +104,7 @@ function nativePluginEntry(
 function nativeProfilePatch(
   plan: NativeExtensionPlan,
   moduleSpecifiers?: Readonly<Record<string, string>>,
+  modelSettings: DshModelSettings = {},
 ): string {
   const entries = [
     ...plan.mcpServers.map((server) => nativeMcpEntry(server)),
@@ -110,6 +112,7 @@ function nativeProfilePatch(
   ];
   return `${JSON.stringify(
     [
+      ...modelSettingsPatch(modelSettings),
       {
         id: "attachment-local",
         name: "@deepseek-ai/dsh-attachment-local",
@@ -123,12 +126,14 @@ function nativeProfilePatch(
 }
 
 /** @internal Render the official native Profile; exported for frozen contract smoke coverage. */
-export async function writeNativeProfile(options: {
-  readonly profileRoot: string;
-  readonly manifestBase: Readonly<Record<string, unknown>>;
-  readonly plan: NativeExtensionPlan;
-  readonly moduleSpecifiers?: Readonly<Record<string, string>>;
-}): Promise<void> {
+export async function writeNativeProfile(
+  options: DshModelSettings & {
+    readonly profileRoot: string;
+    readonly manifestBase: Readonly<Record<string, unknown>>;
+    readonly plan: NativeExtensionPlan;
+    readonly moduleSpecifiers?: Readonly<Record<string, string>>;
+  },
+): Promise<void> {
   const officialBundles = assertNativeProfileTemplate();
   const bundles = [
     ...officialBundles,
@@ -154,7 +159,7 @@ export async function writeNativeProfile(options: {
   );
   await writeFile(
     join(options.profileRoot, "cordis.patch.yml"),
-    nativeProfilePatch(options.plan, options.moduleSpecifiers),
+    nativeProfilePatch(options.plan, options.moduleSpecifiers, options),
     { encoding: "utf8", mode: 0o600 },
   );
   await writeFile(join(options.profileRoot, NATIVE_PROFILE_ROOT_FILENAME), "[]\n", {
@@ -329,6 +334,10 @@ export class NativeComposition implements DshComposition {
       profileRoot,
       manifestBase,
       plan,
+      ...(options.model === undefined ? {} : { model: options.model }),
+      ...(options.reasoningEffort === undefined
+        ? {}
+        : { reasoningEffort: options.reasoningEffort }),
     });
 
     const anonymousIdPath = join(options.runtime.dshHome, ".anonymous-user-id");
@@ -387,6 +396,10 @@ export class NativeComposition implements DshComposition {
             manifestBase,
             plan,
             moduleSpecifiers,
+            ...(options.model === undefined ? {} : { model: options.model }),
+            ...(options.reasoningEffort === undefined
+              ? {}
+              : { reasoningEffort: options.reasoningEffort }),
           }),
         );
         return prepared;

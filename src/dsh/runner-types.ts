@@ -1,4 +1,5 @@
 import type { ModelUsage } from "./usage.js";
+import type { DshModelSettings } from "./model-settings.js";
 import type { AgentToolManifest } from "../agent/contracts.js";
 import type { AnyExtensionAudit, ExtensionPlan } from "../extensions/plan.js";
 import type { NativeToolId } from "../tools/schema.js";
@@ -13,7 +14,7 @@ import type { TaskOutputSchema } from "./task-output.js";
 export type DshTrust = "untrusted" | "trusted-read" | "trusted-write";
 export type DshIsolation = "docker" | "none";
 
-export interface DshRunRequest {
+export interface DshRunRequest extends DshModelSettings {
   readonly operation: DshOperation;
   readonly prompt: string;
   readonly trustedInstructions?: string;

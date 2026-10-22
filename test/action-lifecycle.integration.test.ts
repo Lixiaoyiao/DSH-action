@@ -344,6 +344,23 @@ it.each([
   },
 );
 
+it.each(["controlled", "native"] as const)(
+  "passes explicit model settings from Action inputs to the %s worker",
+  async (mode) => {
+    await naturalComment("@dsh explain this issue");
+    vi.stubEnv("INPUT_DSH-MODE", mode);
+    vi.stubEnv("INPUT_MODEL", "deepseek-v4-pro");
+    vi.stubEnv("INPUT_REASONING-EFFORT", "off");
+    ports.runDsh.mockResolvedValue(readonlyWorkerResult("final", mode));
+    const outcome = await runAction();
+    expect(outcome, JSON.stringify(outcome.error)).toMatchObject({ conclusion: "success" });
+    expect(ports.runDsh.mock.calls[0]?.[0]).toMatchObject({
+      model: "deepseek-v4-pro",
+      reasoningEffort: "off",
+    });
+  },
+);
+
 it("routes an explicitly opted-in natural change request through validated PR publication", async () => {
   await naturalComment("@dsh 修复这个 Bug 并提交 PR");
   vi.stubEnv("INPUT_NATURAL-LANGUAGE-WRITE", "true");
@@ -586,7 +603,7 @@ it("does not publish a no-change answer after the Controller deadline expires", 
 });
 
 it.each(["controlled", "native"] as const)(
-  "validates before the %s worker and defers metadata effects until finalization",
+  "validates queued %s metadata effects only during finalization",
   async (mode) => {
     await selectEntity("task", "issue");
     vi.stubEnv("INPUT_DSH-MODE", mode);
@@ -594,7 +611,7 @@ it.each(["controlled", "native"] as const)(
     const metadata = issueMutationTransport();
     const worker = readonlyWorkerResult("final", mode);
     ports.runDsh.mockImplementationOnce(() => {
-      expect(ports.process).toHaveBeenCalledOnce();
+      expect(ports.process).not.toHaveBeenCalled();
       expect(metadata.labels()).toEqual([]);
       return Promise.resolve({
         ...worker,
@@ -636,25 +653,87 @@ it.each(["controlled", "native"] as const)(
 );
 
 it.each(["controlled", "native"] as const)(
-  "prevents the %s worker and metadata effects when baseline validation fails",
+  "allows the %s worker to repair a failing baseline with an unused metadata capability",
   async (mode) => {
     await selectEntity("task", "issue");
     vi.stubEnv("INPUT_DSH-MODE", mode);
     vi.stubEnv("INPUT_ALLOWED-TOOLS", '["workspace.edit","github.issue.labels.set"]');
     const metadata = issueMutationTransport();
-    ports.process.mockResolvedValueOnce({ ...passedProcess, exitCode: 1, stderr: "suite failed" });
+    ports.process.mockImplementation(async (request) => {
+      const repaired = await readFile(join(request.cwd, "hello.txt"), "utf8").then(
+        (value) => value === "hello\n",
+        () => false,
+      );
+      return {
+        ...passedProcess,
+        exitCode: repaired ? 0 : 1,
+        stderr: repaired ? "" : "suite failed",
+      };
+    });
+    const outcome = await runAction();
+    expect(outcome).toMatchObject({
+      conclusion: "success",
+      validation: { status: "passed", commandCount: 1 },
+    });
+    expect(ports.process.mock.calls.filter(([{ args }]) => args[0] === "run")).toHaveLength(1);
+    expect(ports.runDsh).toHaveBeenCalledOnce();
+    expect(metadata.labels()).toEqual([]);
+    expect(metadata.setLabels).not.toHaveBeenCalled();
+    expect(published.comment).not.toHaveBeenCalled();
+    expect(created.commit).toHaveBeenCalledOnce();
+    expect(created.pull).toHaveBeenCalledOnce();
+  },
+);
+
+it.each(["controlled", "native"] as const)(
+  "blocks queued %s metadata effects when final workspace validation fails",
+  async (mode) => {
+    await selectEntity("task", "issue");
+    vi.stubEnv("INPUT_DSH-MODE", mode);
+    vi.stubEnv("INPUT_ALLOWED-TOOLS", '["workspace.edit","github.issue.labels.set"]');
+    const metadata = issueMutationTransport();
+    const worker = readonlyWorkerResult("final", mode);
+    ports.runDsh
+      .mockResolvedValueOnce({
+        ...worker,
+        output: {
+          ...worker.output,
+          state: "needs_tool",
+          toolRequest: { id: "github.issue.labels.set", input: { labels: ["triaged"] } },
+        },
+      })
+      .mockResolvedValueOnce(worker)
+      .mockResolvedValue(readonlyWorkerResult("blocked", mode));
+    ports.process.mockResolvedValue({ ...passedProcess, exitCode: 1, stderr: "suite failed" });
     const outcome = await runAction();
     expect(outcome).toMatchObject({
       conclusion: "failure",
       validation: { status: "failed", commandCount: 1 },
-      error: { code: "VALIDATION_FAILED", phase: "validation" },
+      error: { code: "VALIDATION_FAILED" },
     });
-    expect(ports.process.mock.calls.filter(([{ args }]) => args[0] === "run")).toHaveLength(1);
-    expect(ports.runDsh).not.toHaveBeenCalled();
-    expect(metadata.labels()).toEqual([]);
+    expect(ports.runDsh).toHaveBeenCalledTimes(3);
     expect(metadata.setLabels).not.toHaveBeenCalled();
     expect(published.comment).not.toHaveBeenCalled();
     for (const effect of Object.values(created)) expect(effect).not.toHaveBeenCalled();
+  },
+);
+
+it.each(["controlled", "native"] as const)(
+  "skips validation for an unused %s metadata capability with no workspace changes",
+  async (mode) => {
+    await selectEntity("task", "issue");
+    vi.stubEnv("INPUT_DSH-MODE", mode);
+    vi.stubEnv("INPUT_ALLOWED-TOOLS", '["workspace.edit","github.issue.labels.set"]');
+    const metadata = issueMutationTransport();
+    ports.runDsh.mockResolvedValue(readonlyWorkerResult("final", mode));
+    const outcome = await runAction();
+    expect(outcome).toMatchObject({
+      conclusion: "success",
+      writeStatus: "no-changes",
+      validation: { status: "not-applicable", commandCount: 0 },
+    });
+    expect(ports.process).not.toHaveBeenCalled();
+    expect(metadata.setLabels).not.toHaveBeenCalled();
   },
 );
 
@@ -753,7 +832,7 @@ it.each(["controlled", "native"] as const)(
   },
 );
 
-it("keeps a passed Gateway baseline when a no-change task loses publication authority", async () => {
+it("does not run validation for unused metadata tools when a no-change task loses authority", async () => {
   await selectEntity("task", "issue");
   vi.stubEnv("INPUT_ALLOWED-TOOLS", '["workspace.edit","github.comment.create"]');
   ports.runDsh.mockImplementation(() => {
@@ -763,10 +842,10 @@ it("keeps a passed Gateway baseline when a no-change task loses publication auth
   const outcome = await runAction();
   expect(outcome).toMatchObject({
     conclusion: "failure",
-    validation: { status: "passed", commandCount: 1, integrity: { status: "clean" } },
+    validation: { status: "not-applicable", commandCount: 0, integrity: { status: "clean" } },
     error: { code: "POLICY_DENIED", phase: "publication" },
   });
-  expect(ports.process).toHaveBeenCalledOnce();
+  expect(ports.process).not.toHaveBeenCalled();
   expect(published.comment).not.toHaveBeenCalled();
   for (const effect of Object.values(created)) expect(effect).not.toHaveBeenCalled();
 });

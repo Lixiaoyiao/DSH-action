@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { loaderModuleSpecifier } from "../extensions/profile.js";
 
 import type { DshPolicyRule } from "./composition.js";
+import { modelSettingsPatch, type DshModelSettings } from "./model-settings.js";
 import type { DshOperation } from "./schema.js";
 import type { NativeToolId } from "../tools/schema.js";
 import { mcpPublicToolName } from "../extensions/plan.js";
@@ -23,7 +24,7 @@ interface ControlledProfilePaths {
   readonly rules: readonly DshPolicyRule[];
 }
 
-interface PrepareControlledProfileOptions {
+interface PrepareControlledProfileOptions extends DshModelSettings {
   readonly dshHome: string;
   readonly plan: EffectiveExtensionPlan;
   readonly nativeTools: readonly NativeToolId[];
@@ -260,6 +261,7 @@ function controlledRows(
     ),
   ];
   return [
+    ...modelSettingsPatch(options),
     {
       id: "attachment-local",
       name: "@deepseek-ai/dsh-attachment-local",

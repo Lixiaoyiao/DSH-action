@@ -5,7 +5,7 @@ import type { PullRequestSnapshot } from "../src/github/fetch.js";
 import { publishPullRequestReview, ReviewPublicationQuotaError } from "../src/review/publisher.js";
 import { GitHubQuotaError } from "../src/github/request-policy.js";
 import { describeActionFailure } from "../src/result.js";
-import type { ReviewFinding, ReviewResult } from "../src/review/schema.js";
+import { reviewResultSchema, type ReviewFinding, type ReviewResult } from "../src/review/schema.js";
 import { createTrackingMarker } from "../src/review/tracking.js";
 
 const BOT_ID = 41_898_282;
@@ -197,6 +197,58 @@ const target = {
 } as const;
 
 describe("publishPullRequestReview", () => {
+  it.each([10, 100])(
+    "keeps all %s selected summary findings visible within the comment limit",
+    async (count) => {
+      const fake = fakeClient();
+      const findings = Array.from({ length: count }, (_, index) =>
+        finding({
+          title: `Finding ${String(index).padStart(3, "0")}`,
+          path: `src/missing-${String(index).padStart(3, "0")}.ts`,
+          body: "Details. ".repeat(666),
+        }),
+      );
+      const result = await publishPullRequestReview(
+        fake.value,
+        target,
+        snapshot(),
+        reviewResultSchema.parse(review(findings, "Summary. ".repeat(1_333))),
+        count,
+      );
+      expect(result).toMatchObject({ selected: count, summaryOnly: count, failures: [] });
+      const body = fake.issueComments[0]?.body ?? "";
+      expect(body.length).toBeLessThanOrEqual(65_000);
+      for (const item of findings) {
+        expect(body.includes(item.title), item.title).toBe(true);
+        expect(body.includes(`${item.path}:${String(item.line)}`), item.path).toBe(true);
+      }
+      expect(body).toContain("truncated");
+    },
+  );
+
+  it("counts explicit omissions when complete finding locations cannot all fit", async () => {
+    const fake = fakeClient();
+    const findings = Array.from({ length: 100 }, (_, index) =>
+      finding({
+        title: `Finding ${String(index).padStart(3, "0")}`,
+        path: `src/${"a".repeat(990)}/${String(index).padStart(3, "0")}.ts`,
+      }),
+    );
+    const result = await publishPullRequestReview(
+      fake.value,
+      target,
+      snapshot(),
+      reviewResultSchema.parse(review(findings, "@a ".repeat(4_000))),
+      100,
+    );
+    expect(result.selected).toBe(100);
+    expect(result.summaryOmitted).toBeGreaterThan(0);
+    expect(result.summaryOnly + (result.summaryOmitted ?? 0)).toBe(100);
+    const body = fake.issueComments[0]?.body ?? "";
+    expect(body.length).toBeLessThanOrEqual(65_000);
+    expect(body).toContain(`**Omitted from summary:** ${String(result.summaryOmitted)}`);
+    expect(findings.filter((item) => body.includes(item.path))).toHaveLength(result.summaryOnly);
+  });
   it.each([false, true])(
     "publishes distinct backslash paths with identical source anchors and reversed order=%s",
     async (reverse) => {

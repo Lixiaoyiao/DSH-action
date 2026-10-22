@@ -195,6 +195,38 @@ describe("composition selection", () => {
 });
 
 describe("ControlledComposition", () => {
+  it("adds an official model-selection patch to the host CLI only when requested", async () => {
+    const fixture = await controlledAssets();
+    const runtime = await createDshRuntime(fixture.root);
+    try {
+      const prepared = await new ControlledComposition().prepare(
+        prepareOptions(runtime, fixture.assets, {
+          isolation: "none",
+          dshExecutableIdentity: process.execPath,
+          model: "deepseek-v4-pro",
+          reasoningEffort: "off",
+        }),
+      );
+      const args = prepared.launchPlan.args;
+      const patchPaths = args.flatMap((value, index) =>
+        value === "--patch" ? [args[index + 1]] : [],
+      );
+      expect(patchPaths).toHaveLength(3);
+      expect(await readJsonFixture(patchPaths[2] ?? "")).toEqual([
+        {
+          id: "agent-default-model",
+          config: {
+            provider: "deepseek-official",
+            model: "deepseek-v4-pro",
+            reasoningEffort: "off",
+          },
+        },
+      ]);
+    } finally {
+      await disposeDshRuntime(runtime);
+    }
+  });
+
   it("preserves the host headless patches and ToolRuntime policy launch", async () => {
     const fixture = await controlledAssets();
     const runtime = await createDshRuntime(fixture.root);
@@ -231,6 +263,7 @@ describe("ControlledComposition", () => {
       );
       expect(prepared.launchPlan.args.at(-1)).toBe("review packet");
       expect(prepared.launchPlan.args.slice(-3)).toEqual(["--json", "--", "review packet"]);
+      expect(prepared.launchPlan.args.filter((arg) => arg === "--patch")).toHaveLength(2);
       expect(composition.id).toBe("github-action-controlled");
       expect(PRODUCTION_DSH_COMPOSITION.toolPolicyOwner).toBe(composition.toolPolicyOwner);
       expect(composition.toolPolicyOwner).toBe("controller");
@@ -313,79 +346,142 @@ describe("ControlledComposition", () => {
     }
   });
 
-  it("keeps direct plugins unbootable until their installed entry is containment-validated", async () => {
-    const fixture = await controlledAssets();
-    const runtime = await createDshRuntime(fixture.root);
-    const composition: DshComposition = new ControlledComposition();
-    const packageName = "@acme/dsh-fixture";
-    const plan = resolveExtensionPlan({
-      allowedTools: ["plugin.fixture.allowed"],
-      mcp: parseMcpConfiguration('{"schemaVersion":1,"servers":[]}'),
-      plugins: parsePluginConfiguration(
-        JSON.stringify({
-          schemaVersion: 1,
-          bundles: [],
-          plugins: [
-            {
-              id: "fixture",
-              package: packageName,
-              source: "1.2.3",
-              config: { fixture: "direct" },
-              tools: [
-                {
-                  id: "allowed",
-                  name: "plugin__fixture__allowed",
-                  description: "Return a controlled marker",
-                  permissions: ["read"],
-                  maxCalls: 1,
-                },
-              ],
-            },
-          ],
-        }),
-      ),
-      allowPluginInstall: true,
-      policy: trustedRead,
-    });
-    const options = prepareOptions(runtime, fixture.assets, {
-      plan,
-      nativeTools: [],
-      expectedOperation: "task",
-      task: "Call the controlled plugin.",
-    });
-
-    try {
-      const prepared = await composition.prepare(options);
-      expect(prepared.isolation).toBe("docker");
-      if (prepared.isolation !== "docker") throw new Error("expected a Docker launch plan");
-      await expect(
-        readFile(join(runtime.packageRoot, "cordis.patch.yml"), "utf8"),
-      ).resolves.toContain("file:///__dsh_action_unresolved_plugin__/fixture.mjs");
-
-      const installedPackage = join(runtime.packageRoot, "node_modules", ...packageName.split("/"));
-      await mkdir(installedPackage, { recursive: true });
-      await writeFile(
-        join(installedPackage, "package.json"),
-        `${JSON.stringify({ name: packageName, version: "1.2.3", main: "./index.mjs" })}\n`,
-      );
-      await writeFile(join(installedPackage, "index.mjs"), "export default class Fixture {}\n");
-
-      if (prepared.finalizeAfterInstall === undefined) {
-        throw new Error("expected controlled plugin finalization");
-      }
-      await prepared.finalizeAfterInstall(async (prepare) => await prepare());
-      expect(runtime.verifiedPluginModuleSpecifiers).toEqual({
-        fixture: "/dsh-home/profiles/github-action/node_modules/@acme/dsh-fixture/index.mjs",
+  it.each([
+    { manifest: { main: "./index.mjs" }, entry: "index.mjs", accepted: true },
+    { manifest: { main: "index.mjs" }, entry: "index.mjs", accepted: true },
+    { manifest: { main: "lib/index.mjs" }, entry: "lib/index.mjs", accepted: true },
+    { manifest: { main: "../outside.mjs" }, entry: "../outside.mjs", accepted: false },
+    { manifest: { exports: "index.mjs" }, entry: "index.mjs", accepted: false },
+  ])(
+    "validates the installed direct-plugin entry $manifest",
+    async ({ manifest, entry, accepted }) => {
+      const fixture = await controlledAssets();
+      const runtime = await createDshRuntime(fixture.root);
+      const composition: DshComposition = new ControlledComposition();
+      const packageName = "@acme/dsh-fixture";
+      const plan = resolveExtensionPlan({
+        allowedTools: ["plugin.fixture.allowed"],
+        mcp: parseMcpConfiguration('{"schemaVersion":1,"servers":[]}'),
+        plugins: parsePluginConfiguration(
+          JSON.stringify({
+            schemaVersion: 1,
+            bundles: [],
+            plugins: [
+              {
+                id: "fixture",
+                package: packageName,
+                source: "1.2.3",
+                config: { fixture: "direct" },
+                tools: [
+                  {
+                    id: "allowed",
+                    name: "plugin__fixture__allowed",
+                    description: "Return a controlled marker",
+                    permissions: ["read"],
+                    maxCalls: 1,
+                  },
+                ],
+              },
+            ],
+          }),
+        ),
+        allowPluginInstall: true,
+        policy: trustedRead,
       });
-      const finalPatch = await readFile(join(runtime.packageRoot, "cordis.patch.yml"), "utf8");
-      expect(finalPatch).toContain(
-        "/dsh-home/profiles/github-action/node_modules/@acme/dsh-fixture/index.mjs",
-      );
-      expect(finalPatch).not.toContain("__dsh_action_unresolved_plugin__");
-    } finally {
-      await disposeDshRuntime(runtime);
-    }
-  });
+      const options = prepareOptions(runtime, fixture.assets, {
+        plan,
+        nativeTools: [],
+        expectedOperation: "task",
+        task: "Call the controlled plugin.",
+      });
+
+      try {
+        const prepared = await composition.prepare(options);
+        expect(prepared.isolation).toBe("docker");
+        if (prepared.isolation !== "docker") throw new Error("expected a Docker launch plan");
+        await expect(
+          readFile(join(runtime.packageRoot, "cordis.patch.yml"), "utf8"),
+        ).resolves.toContain("file:///__dsh_action_unresolved_plugin__/fixture.mjs");
+
+        const installedPackage = join(
+          runtime.packageRoot,
+          "node_modules",
+          ...packageName.split("/"),
+        );
+        await mkdir(join(installedPackage, "lib"), { recursive: true });
+        await writeFile(
+          join(installedPackage, "package.json"),
+          `${JSON.stringify({ name: packageName, version: "1.2.3", ...manifest })}\n`,
+        );
+        await writeFile(join(installedPackage, entry), "export default class Fixture {}\n");
+
+        if (prepared.finalizeAfterInstall === undefined) {
+          throw new Error("expected controlled plugin finalization");
+        }
+        if (!accepted) {
+          await expect(
+            prepared.finalizeAfterInstall(async (prepare) => await prepare()),
+          ).rejects.toThrow(
+            "Installed direct Plugin entry failed Controller containment validation",
+          );
+          await expect(
+            readFile(join(runtime.packageRoot, "cordis.patch.yml"), "utf8"),
+          ).resolves.toContain("__dsh_action_unresolved_plugin__");
+          return;
+        }
+        await prepared.finalizeAfterInstall(async (prepare) => await prepare());
+        expect(runtime.verifiedPluginModuleSpecifiers).toEqual({
+          fixture: `/dsh-home/profiles/github-action/node_modules/@acme/dsh-fixture/${entry}`,
+        });
+        const finalPatch = await readFile(join(runtime.packageRoot, "cordis.patch.yml"), "utf8");
+        expect(finalPatch).toContain(
+          `/dsh-home/profiles/github-action/node_modules/@acme/dsh-fixture/${entry}`,
+        );
+        expect(finalPatch).not.toContain("__dsh_action_unresolved_plugin__");
+      } finally {
+        await disposeDshRuntime(runtime);
+      }
+    },
+  );
+});
+
+describe.each(["controlled", "native"] as const)("%s model selection", (mode) => {
+  it.each([undefined, "off", "low", "high", "max"] as const)(
+    "prepares the official selection row for effort %s",
+    async (effort) => {
+      const fixture = mode === "controlled" ? await controlledAssets() : await nativeAssets();
+      const runtime = await createDshRuntime(fixture.root);
+      try {
+        await selectDshComposition(mode)
+          .create()
+          .prepare(
+            prepareOptions(runtime, fixture.assets, {
+              plan: mode === "controlled" ? extensionPlan() : nativeExtensionPlan(),
+              ...(effort === undefined
+                ? {}
+                : { model: "deepseek-v4-pro", reasoningEffort: effort }),
+            }),
+          );
+        const rows = fixtureObjects(
+          await readJsonFixture(join(runtime.packageRoot, "cordis.patch.yml")),
+        );
+        const selection = rows.find(({ id }) => id === "agent-default-model");
+        if (effort === undefined) expect(selection).toBeUndefined();
+        else {
+          expect(selection).toEqual({
+            id: "agent-default-model",
+            config: {
+              provider: "deepseek-official",
+              model: "deepseek-v4-pro",
+              reasoningEffort: effort,
+            },
+          });
+        }
+      } finally {
+        await disposeDshRuntime(runtime);
+      }
+    },
+  );
 });
 
 describe("NativeComposition", () => {

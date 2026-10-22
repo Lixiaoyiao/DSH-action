@@ -68,6 +68,8 @@ export function loadInputs(reader: InputReader = core.getInput): ActionInputs {
     command: optionalInput(reader, "command"),
     taskAccess: optionalInput(reader, "taskAccess"),
     prompt: optionalInput(reader, "prompt"),
+    model: optionalInput(reader, "model"),
+    reasoningEffort: optionalInput(reader, "reasoningEffort"),
     sessionMode: optionalInput(reader, "sessionMode"),
     sessionKey: optionalInput(reader, "sessionKey"),
     sessionSourceRunId: optionalInput(reader, "sessionSourceRunId"),
