@@ -338,7 +338,35 @@ export async function verifySessionWorkflowRun(
   if (jobs.data.total_count > 100)
     throw new PolicyDeniedError("Session run jobs exceed the provenance verification bound");
   const matching = jobs.data.jobs.filter((job) => job.name === policy.jobName);
-  const job = matching[0];
+  let job = matching[0];
+  if (
+    !options.successful &&
+    matching.length === 1 &&
+    job?.run_id === run.id &&
+    job.head_sha === run.head_sha &&
+    job.status === "queued" &&
+    job.conclusion === null
+  ) {
+    // The attempt listing can lag the active job. Verify its exact identity;
+    // queued or unknown states never authorize a Session task.
+    const response = await client.rest.actions.getJobForWorkflowRun({
+      ...parameters,
+      job_id: job.id,
+    });
+    const current = response.data;
+    if (
+      current.id !== job.id ||
+      current.run_id !== run.id ||
+      current.run_attempt !== run.run_attempt ||
+      current.head_sha !== run.head_sha ||
+      current.name !== policy.jobName ||
+      current.conclusion !== null
+    )
+      throw new PolicyDeniedError(
+        "Session current producer job does not match its verified run and attempt",
+      );
+    job = current;
+  }
   if (
     matching.length !== 1 ||
     job?.run_id !== run.id ||

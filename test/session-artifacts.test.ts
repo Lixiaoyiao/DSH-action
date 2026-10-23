@@ -273,6 +273,17 @@ function fixture() {
           ],
         },
       })),
+      getJobForWorkflowRun: vi.fn(() => ({
+        data: {
+          id: 2000,
+          name: "Session worker",
+          run_id: 200,
+          run_attempt: 1,
+          head_sha: sha,
+          status: "queued",
+          conclusion: null as string | null,
+        },
+      })),
       listWorkflowRunArtifacts: vi.fn(({ run_id }: { run_id: number }) => ({
         data: {
           total_count: (run_id === 200
@@ -605,6 +616,95 @@ describe("Session trusted workflow policy", () => {
       expect.objectContaining({ run_id: 100, attempt_number: 1, per_page: 100 }),
     );
     expect(f.uploader.uploadArtifact).toHaveBeenCalledOnce();
+  });
+  it("verifies the exact active job when its attempt list still reports queued", async () => {
+    const f = fixture();
+    const getJob = f.api.actions.getJobForWorkflowRun.getMockImplementation();
+    if (!getJob) throw new Error("Missing exact job fixture");
+    f.api.actions.getJobForWorkflowRun.mockImplementation(() => {
+      const response = getJob();
+      response.data.status = "in_progress";
+      return response;
+    });
+    const listJobs = f.api.actions.listJobsForWorkflowRunAttempt.getMockImplementation();
+    if (!listJobs) throw new Error("Missing jobs fixture");
+    f.api.actions.listJobsForWorkflowRunAttempt.mockImplementation((request) => {
+      const response = listJobs(request);
+      const job = response.data.jobs[0];
+      if (!job) throw new Error("Missing producer fixture");
+      job.status = "queued";
+      return response;
+    });
+    const verified = await verifySessionWorkflowRun({
+      client: f.options.client,
+      repository: binding.repository,
+      workflowPath: binding.workflow.path,
+      jobId: "session",
+      runId: 200,
+      runAttempt: 1,
+      workflowSha: sha,
+      successful: false,
+      signal: f.options.signal,
+    });
+    expect(verified.jobRunId).toBe(2000);
+    expect(f.api.actions.getJobForWorkflowRun).toHaveBeenCalledExactlyOnceWith({
+      owner: "octo",
+      repo: "repo",
+      job_id: 2000,
+      request: { signal: f.options.signal },
+    });
+    expect(f.uploader.uploadArtifact).not.toHaveBeenCalled();
+  });
+  it.each([
+    "id",
+    "run-id",
+    "attempt",
+    "head-sha",
+    "name",
+    "completed",
+    "unrecognized",
+    "conclusion",
+  ] as const)("rejects an unverified exact current job: %s", async (defect) => {
+    const f = fixture();
+    const listJobs = f.api.actions.listJobsForWorkflowRunAttempt.getMockImplementation();
+    const getJob = f.api.actions.getJobForWorkflowRun.getMockImplementation();
+    if (!listJobs || !getJob) throw new Error("Missing producer job fixture");
+    f.api.actions.listJobsForWorkflowRunAttempt.mockImplementation((request) => {
+      const response = listJobs(request);
+      const job = response.data.jobs[0];
+      if (!job) throw new Error("Missing producer fixture");
+      job.status = "queued";
+      return response;
+    });
+    f.api.actions.getJobForWorkflowRun.mockImplementation(() => {
+      const response = getJob();
+      const job = response.data;
+      job.status = "in_progress";
+      if (defect === "id") job.id += 1;
+      if (defect === "run-id") job.run_id += 1;
+      if (defect === "attempt") job.run_attempt += 1;
+      if (defect === "head-sha") job.head_sha = "f".repeat(40);
+      if (defect === "name") job.name = "Another worker";
+      if (defect === "completed") job.status = "completed";
+      if (defect === "unrecognized") job.status = "unexpected";
+      if (defect === "conclusion") job.conclusion = "success";
+      return response;
+    });
+    await expect(
+      verifySessionWorkflowRun({
+        client: f.options.client,
+        repository: binding.repository,
+        workflowPath: binding.workflow.path,
+        jobId: "session",
+        runId: 200,
+        runAttempt: 1,
+        workflowSha: sha,
+        successful: false,
+        signal: f.options.signal,
+      }),
+    ).rejects.toBeInstanceOf(PolicyDeniedError);
+    expect(f.api.actions.getJobForWorkflowRun).toHaveBeenCalledOnce();
+    expect(f.uploader.uploadArtifact).not.toHaveBeenCalled();
   });
   it("binds exact attempt jobs and never uses a current default-branch workflow file", async () => {
     const f = fixture();
