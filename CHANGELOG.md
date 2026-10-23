@@ -5,6 +5,15 @@ versioning for published action releases.
 
 ## Unreleased
 
+## [0.12.2] - 2026-10-23
+
+- Resolves the official DSH MCP bridge to patched
+  `@modelcontextprotocol/client` `2.3.0` through an exact parent-scoped security
+  override while retaining the audited DSH `0.2.1-rc.2` family.
+- Prevents Streamable HTTP MCP redirects from forwarding custom headers,
+  MCP session headers and request bodies to another origin. Configure the final MCP
+  endpoint URL when a deployment previously redirected across origins.
+
 ## Installer 0.7.3
 
 - Binds installer `0.7.3` to formal Action `v0.12.1` through

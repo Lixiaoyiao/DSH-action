@@ -146,11 +146,12 @@ DEEPSEEK_API_KEY
 为了便于阅读，示例使用当前发布 Tag：
 
 ```yaml
-uses: Lixiaoyiao/deepseek-harness-action@v0.12.1
+uses: Lixiaoyiao/deepseek-harness-action@v0.12.2
 ```
 
-生产环境应把 Tag 替换为从正式 `v0.12.1` 解析出的完整、不可变 commit SHA。
-安装器 `0.7.3` 对应该 Action 身份，独立审查的 installer 源码 commit 是另一个身份。
+生产环境应把 Tag 替换为从正式 `v0.12.2` 解析出的完整、不可变 commit SHA。
+安装器绑定独立核验；安装器 `0.7.3` 的当前源码身份仍指向 Action `v0.12.1`，
+须等新正式 canary 通过后才能重新绑定。
 生成的 workflow 使用核验后的正式 commit，源码模板通过发布构建接收该值。
 
 必须分别核验 installer 源码 Tag 与 `DSH_ACTION_RELEASE_SHA` 打包输入；源码中的
@@ -207,7 +208,7 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
           persist-credentials: false
           fetch-depth: 1
-      - uses: Lixiaoyiao/deepseek-harness-action@v0.12.1
+      - uses: Lixiaoyiao/deepseek-harness-action@v0.12.2
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           dsh-version: 0.2.1-rc.2
