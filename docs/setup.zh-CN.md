@@ -14,7 +14,7 @@ npm create deepseek-harness-action@latest
 
 在交互式终端中不传选项时，安装器打开本地浏览器 GUI，默认配置只读对话与
 PR Review，也可以读取现有 DSH 工作流继续编辑。安装器 `0.7.3` 提供此 GUI，
-生成的工作流绑定正式 Action `v0.12.1`。
+生成的工作流绑定正式 Action `v0.12.2`。
 
 选择预设或已有工作流，再选择 controlled/native、模型、思考强度和其它 Action
 选项。预览显示 YAML 差异，并调用 Action 自身的静态配置检查器。确认保存后只写入
@@ -38,6 +38,12 @@ Token 和同源校验。停止服务后旧地址失效；再次运行即可建�
 YAML 是配置源，没有额外配置数据库或浏览器持久化副本。重新打开时从文件读取；
 如果外部编辑器在预览后改动文件，先重新加载再保存。不支持的 YAML 结构或包含明文
 密钥的工作流需要手工处理。
+
+在现有 `allowed-actors` 输入中填写逗号分隔的用户名，GUI 会生成 job 级条件，
+让名单外的触发者在 Runner 启动前被跳过，并保留自定义条件和 Action 的运行时授权。
+默认 `*` 不添加限制。动态表达式名单需要在 YAML 编辑器中配置前置条件；GUI 不猜测
+动态值。手工修改过的生成条件也由你在 YAML 中维护。若组合后的表达式超过 GitHub
+长度上限，GUI 会报错；可缩短名单或在 YAML 中使用更短的条件。
 
 GUI 提供以下预设；`--advanced` 保留为 GUI 别名：
 
@@ -69,7 +75,7 @@ Automatic Session 生成只读 starter，绑定相同的 key/run-name/concurrenc
 npm create deepseek-harness-action@latest -- --mode session
 ```
 
-安装器 `0.7.3` 面向正式 Action `v0.12.1`，两种 composition 都保持精确
+安装器 `0.7.3` 面向正式 Action `v0.12.2`，两种 composition 都保持精确
 DSH `0.2.1-rc.2`。只有 Action Tag、
 GitHub Release 和 canary 身份一致后，打包才通过 `DSH_ACTION_RELEASE_SHA`
 接收核验出的完整 commit。独立审查的安装器源码使用
@@ -150,8 +156,7 @@ uses: Lixiaoyiao/deepseek-harness-action@v0.12.2
 ```
 
 生产环境应把 Tag 替换为从正式 `v0.12.2` 解析出的完整、不可变 commit SHA。
-安装器绑定独立核验；安装器 `0.7.3` 的当前源码身份仍指向 Action `v0.12.1`，
-须等新正式 canary 通过后才能重新绑定。
+安装器 `0.7.3` 对应该 Action 身份，独立审查的 installer 源码 commit 是另一个身份。
 生成的 workflow 使用核验后的正式 commit，源码模板通过发布构建接收该值。
 
 必须分别核验 installer 源码 Tag 与 `DSH_ACTION_RELEASE_SHA` 打包输入；源码中的

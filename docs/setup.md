@@ -15,7 +15,7 @@ npm create deepseek-harness-action@latest
 With no flags in an interactive terminal, the installer opens a local browser GUI.
 It starts with read-only conversation and PR Review, and can load existing DSH
 workflows for later edits. Installer `0.7.3` includes this GUI and targets formal
-Action `v0.12.1`.
+Action `v0.12.2`.
 
 Choose a preset or an existing workflow, select controlled/native mode, model and
 thinking effort, then edit the supported Action inputs. The preview shows the
@@ -43,6 +43,15 @@ YAML is the configuration source. The GUI stores no sidecar database or saved
 browser configuration; reopening reads the files again. If an external editor
 changes a file after preview, reload it before saving. Unsupported YAML or
 workflows containing plaintext credentials require manual editing.
+
+Set the existing `allowed-actors` input to a literal comma-separated list to have
+the GUI add a job condition that skips other actors before a runner starts. The
+condition preserves custom job conditions and the Action's runtime authorization.
+The default `*` adds no filter. Dynamic expression lists need a job condition in
+the YAML editor; the GUI does not guess their values. If you manually change a
+generated actor condition, maintain that condition in YAML as well.
+If the combined condition exceeds GitHub's expression length limit, the GUI
+reports an error; use a shorter list or maintain a shorter condition in YAML.
 
 The GUI offers these presets; `--advanced` remains an alias for the GUI:
 
@@ -76,7 +85,7 @@ corrupt or unknown history requires reconciliation before continuing.
 npm create deepseek-harness-action@latest -- --mode session
 ```
 
-Installer `0.7.3` targets formal Action `v0.12.1` and exact DSH `0.2.1-rc.2`
+Installer `0.7.3` targets formal Action `v0.12.2` and exact DSH `0.2.1-rc.2`
 in both compositions. Only after the Action tag, GitHub Release and canary agree
 does packing receive the verified full commit through `DSH_ACTION_RELEASE_SHA`.
 The separately reviewed installer source is tagged
@@ -163,10 +172,9 @@ uses: Lixiaoyiao/deepseek-harness-action@v0.12.2
 ```
 
 For production, replace the tag with the full immutable commit SHA resolved
-from formal `v0.12.2`. The installer binding is qualified independently; installer
-`0.7.3` retains its Action `v0.12.1` source identity until the next formal canary
-qualifies its new binding. Generated workflows use the verified release commit;
-source templates receive it through the release build.
+from formal `v0.12.2`. Installer `0.7.3` targets that Action identity, with a
+separately reviewed source commit. Generated workflows use the verified release
+commit; source templates receive it through the release build.
 
 The installer source tag and `DSH_ACTION_RELEASE_SHA` packing input must each
 be verified for their own purpose. Source preparation does not establish a

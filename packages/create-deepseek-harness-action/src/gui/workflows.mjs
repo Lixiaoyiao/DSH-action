@@ -9,6 +9,99 @@ const CREDENTIAL_NAME =
   /(?:^|_)(?:secret|password|passwd|token|authorization|(?:api|access|secret|private)_?key)$/u;
 const credentialInputs = new Set(["deepseek-api-key", "github-token"]);
 const knownInputs = new Set(GUI_INPUTS.map(({ name }) => name));
+const ACTOR_GUARD_MARKER = "dsh-allowed-actors:v1";
+// https://github.com/actions/languageservices/blob/main/expressions/src/errors.ts
+const MAX_JOB_EXPRESSION_LENGTH = 21000;
+
+/** Compile literal routing semantics; checkConfiguration owns input validation. */
+function jobActorGate(steps) {
+  const gates = [];
+  for (const step of steps) {
+    const raw = step.inputs["allowed-actors"]?.trim() || "*";
+    if (!step.editable || raw.includes("${{")) return;
+    const patterns = raw
+      .split(",")
+      .map((entry) => entry.trim().replace(/^@/u, ""))
+      .filter(Boolean);
+    if (patterns.includes("*")) return "true";
+    const names = [
+      ...new Set(
+        patterns
+          .filter((entry) => entry !== "*[bot]")
+          .flatMap((entry) => {
+            const name = entry.toLowerCase().replace(/\[bot\]$/u, "");
+            return [name, `${name}[bot]`];
+          }),
+      ),
+    ];
+    const match = (actor) => {
+      const terms = names.length
+        ? [`contains(fromJSON('${JSON.stringify(names).replaceAll("'", "''")}'), ${actor})`]
+        : [];
+      if (patterns.includes("*[bot]")) terms.push(`endsWith(${actor}, '[bot]')`);
+      return terms.join(" || ") || "false";
+    };
+    const upstream = ["actor", "triggering_actor"].map((name) => {
+      const actor = `github.event.workflow_run.${name}.login`;
+      return `(!${actor} || (${match(actor)}))`;
+    });
+    gates.push(
+      `(${match("github.actor")}) && (github.event_name != 'workflow_run' || (${upstream.join(" && ")}))`,
+    );
+  }
+  return [...new Set(gates)].map((gate) => `(${gate})`).join(" || ") || "false";
+}
+
+function managedActorCondition(node, gate) {
+  if (!isScalar(node) || !node.comment?.split("\n").includes(ACTOR_GUARD_MARKER)) return;
+  const value = String(node.value).trim();
+  if (value === `\${{ ${gate} }}`) return { custom: undefined };
+  const suffix = `) && (${gate}) }}`;
+  if (gate !== undefined && value.startsWith("${{ (") && value.endsWith(suffix))
+    return { custom: value.slice("${{ (".length, -suffix.length) };
+}
+
+function updateJobActorGate(doc, jobId, previousSteps, nextSteps) {
+  const job = doc.getIn(["jobs", jobId], true);
+  const node = job.get("if", true);
+  if (node !== undefined && !isScalar(node)) return;
+  const owned = node?.comment?.split("\n").includes(ACTOR_GUARD_MARKER);
+  const previous = owned ? managedActorCondition(node, jobActorGate(previousSteps)) : undefined;
+  // A manually changed generated condition stays opaque; never replace it by guessing.
+  if (owned && previous === undefined) return;
+  const custom = owned ? previous.custom : node === undefined ? undefined : String(node.value);
+  const gate = jobActorGate(nextSteps);
+  if (gate === undefined || gate === "true") {
+    if (!owned) return;
+    if (custom === undefined) job.delete("if");
+    else {
+      node.value = custom;
+      node.comment =
+        node.comment
+          .split("\n")
+          .filter((line) => line !== ACTOR_GUARD_MARKER)
+          .join("\n") || undefined;
+    }
+    return;
+  }
+  const expression = custom
+    ?.trim()
+    .replace(/^\$\{\{([\s\S]*)\}\}$/u, "$1")
+    .trim();
+  const condition = expression === undefined ? gate : `(${expression}) && (${gate})`;
+  if (condition.length > MAX_JOB_EXPRESSION_LENGTH)
+    throw new Error(
+      "The generated job condition exceeds GitHub's 21000-character expression limit. Use a shorter allowed-actors list or configure the job condition in the YAML editor.",
+    );
+  const value = `\${{ ${condition} }}`;
+  const updated = node ?? doc.createNode(value);
+  updated.value = value;
+  updated.comment = [
+    ...(node?.comment?.split("\n").filter((line) => line !== ACTOR_GUARD_MARKER) ?? []),
+    ACTOR_GUARD_MARKER,
+  ].join("\n");
+  job.set("if", updated);
+}
 
 function documentFor(source) {
   if (typeof source !== "string" || Buffer.byteLength(source) > 256 * 1024)
@@ -135,7 +228,8 @@ export function editWorkflow({ source, stepId, inputs, upgradeAction = false }, 
   const inspected = inspectWorkflow(source);
   if (!inspected.editable || inspected.sensitive) throw new Error(inspected.reason);
   const doc = documentFor(source);
-  const selected = actionSteps(doc).find(({ id }) => id === stepId);
+  const previousSteps = actionSteps(doc);
+  const selected = previousSteps.find(({ id }) => id === stepId);
   if (!selected?.editable)
     throw new Error(selected?.reason ?? "The selected Action step no longer exists.");
   if (!inputs || typeof inputs !== "object" || Array.isArray(inputs))
@@ -157,6 +251,14 @@ export function editWorkflow({ source, stepId, inputs, upgradeAction = false }, 
     if (selected.inputs[name] !== value) withNode.set(name, value);
   }
   if (upgradeAction) selected.node.set("uses", `${ACTION}${releaseSha}`);
+  updateJobActorGate(
+    doc,
+    selected.jobId,
+    previousSteps.filter((step) => step.jobId === selected.jobId),
+    previousSteps
+      .filter((step) => step.jobId === selected.jobId)
+      .map((step) => (step.id === selected.id ? { ...step, inputs } : step)),
+  );
   const next = doc.toString({ lineWidth: 0 });
   const checked = inspectWorkflow(next);
   if (checked.sensitive) throw new Error(checked.reason);
@@ -255,6 +357,19 @@ export function validateWorkflow(source, checkConfiguration, sessionValidators) 
     const dynamic = Object.entries(step.inputs).filter(
       ([name, value]) => !credentialInputs.has(name) && value.includes("${{"),
     );
+    const jobIf = doc.getIn(["jobs", step.jobId, "if"], true);
+    if (
+      isScalar(jobIf) &&
+      jobIf.comment?.split("\n").includes(ACTOR_GUARD_MARKER) &&
+      !managedActorCondition(
+        jobIf,
+        jobActorGate(inspected.steps.filter((other) => other.jobId === step.jobId)),
+      )
+    )
+      diagnostics.push({
+        status: "not_checked",
+        message: `${step.id}: The generated actor condition was manually changed and was preserved; review the job condition in the YAML editor.`,
+      });
     const inputs = Object.fromEntries(
       Object.entries(step.inputs).map(([name, value]) => [
         name,
@@ -308,7 +423,7 @@ export function validateWorkflow(source, checkConfiguration, sessionValidators) 
     if (dynamic.length)
       diagnostics.push({
         status: "not_checked",
-        message: `${step.id}: GitHub expressions (${dynamic.map(([name]) => name).join(", ")}) use representative values for static checks; actual values are validated by the Action on the runner.`,
+        message: `${step.id}: GitHub expressions (${dynamic.map(([name]) => name).join(", ")}) use representative values for static checks; actual values are validated by the Action on the runner.${dynamic.some(([name]) => name === "allowed-actors") ? " Configure the pre-runner actor condition in the YAML editor; a dynamic allowed-actors list cannot be compiled statically." : ""}`,
       });
     if (!new RegExp(`^${ACTION}[a-f0-9]{40}$`, "u").test(step.uses))
       diagnostics.push({

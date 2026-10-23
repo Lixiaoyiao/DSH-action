@@ -34,10 +34,10 @@ The advisory stable/RC/alpha upstream canaries never replace these production ga
 Do not rerun task-bearing failures without first reconciling their diagnostics
 and confirmed effects; preserve a bounded continuation record for external blocks.
 
-The independent installer `0.7.3` targets formal Action `v0.12.1` through
+The independent installer `0.7.3` targets formal Action `v0.12.2` through
 `DSH_ACTION_RELEASE_SHA`. Its source tag is
 `create-deepseek-harness-action-v0.7.3`. Prepare its separate source identity only
-after the v0.12.1 formal canary succeeds.
+after the v0.12.2 formal canary succeeds.
 Its archive qualification exercises default GUI startup, existing-workflow edits,
 model/effort and plugin selection, diff/validation, local save, reopened YAML and
 the explicit non-interactive modes. Verify that the GUI performs no commit or
@@ -408,7 +408,7 @@ If the smoke fails after publication, keep the tag immutable. Diagnose the failu
 
 ## Publish the npm create package
 
-Installer `0.7.3` targets formal Action `v0.12.1` with exact DSH `0.2.1-rc.2`;
+Installer `0.7.3` targets formal Action `v0.12.2` with exact DSH `0.2.1-rc.2`;
 its source tag is `create-deepseek-harness-action-v0.7.3`. Keep the formal Action
 SHA and reviewed installer source SHA separate, and establish each through its
 respective qualification gates. Do not copy a historical release SHA into the
