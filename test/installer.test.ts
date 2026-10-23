@@ -22,7 +22,7 @@ import { sessionKeyHash } from "../src/session/contracts.js";
 import { assertSessionWorkflowPolicy } from "../src/session/workflow-policy.js";
 
 const execFileAsync = promisify(execFile);
-const INSTALLER_VERSION = "0.7.2";
+const INSTALLER_VERSION = "0.7.3";
 // Test-only binding. Production packing must resolve the qualified formal tag.
 const RELEASE_SHA = "0123456789abcdef0123456789abcdef01234567";
 const RELEASE_TOKEN = "__DSH_ACTION_RELEASE_SHA__";
@@ -131,7 +131,7 @@ afterAll(async () => {
 });
 
 describe("create-deepseek-harness-action release build", () => {
-  it("declares the independent 0.7.2 npm create package", async () => {
+  it("declares the independent 0.7.3 npm create package", async () => {
     const manifest: unknown = JSON.parse(
       await readFile(new URL("package.json", packageRoot), "utf8"),
     );
@@ -203,7 +203,7 @@ describe("create-deepseek-harness-action release build", () => {
       expect(runtime).not.toContain(DSH_MODE_TOKEN);
     }
     await expect(readFile(join(builtPackage, "installer.mjs"), "utf8")).resolves.toContain(
-      "/blob/create-deepseek-harness-action-v0.7.2/docs/setup.md",
+      "/blob/create-deepseek-harness-action-v0.7.3/docs/setup.md",
     );
 
     for (const [index, invalidReleaseSha] of [

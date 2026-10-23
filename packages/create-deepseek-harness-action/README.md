@@ -7,9 +7,8 @@ Configure GitHub workflows for
 npm create deepseek-harness-action@latest
 ```
 
-The local browser GUI is prepared for installer **0.7.3**, after formal Action
-**v0.12.1** qualification. Published installer **0.7.2** retains the previous
-terminal guide until that separate release is available.
+Installer **0.7.3** includes the local browser GUI and binds generated workflows
+to formal Action **v0.12.1**.
 
 ## Local configuration GUI
 
@@ -85,10 +84,9 @@ lowercase key and prompt. Reuse that key for follow-ups. See the
 
 ## Release identity
 
-The current independently published version `0.7.2` targets formal Action
-`v0.12.0`, exact DSH `0.2.1-rc.2`, and source tag
-`create-deepseek-harness-action-v0.7.2`. GUI source changes are prepared here before
-installer `0.7.3` receives the separately qualified Action `v0.12.1` identity.
+Installer `0.7.3` targets formal Action `v0.12.1`, exact DSH `0.2.1-rc.2`, and
+source tag `create-deepseek-harness-action-v0.7.3`. The reviewed installer source
+commit and the formal Action commit are separate release identities.
 
 Packing receives the full formal Action commit through `DSH_ACTION_RELEASE_SHA`
 only after its tag, GitHub Release and controlled/native canary agree. Source

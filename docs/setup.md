@@ -14,8 +14,8 @@ npm create deepseek-harness-action@latest
 
 With no flags in an interactive terminal, the installer opens a local browser GUI.
 It starts with read-only conversation and PR Review, and can load existing DSH
-workflows for later edits. The GUI is prepared for installer `0.7.3` after formal
-Action `v0.12.1` qualification; published `0.7.2` retains the previous terminal guide.
+workflows for later edits. Installer `0.7.3` includes this GUI and targets formal
+Action `v0.12.1`.
 
 Choose a preset or an existing workflow, select controlled/native mode, model and
 thinking effort, then edit the supported Action inputs. The preview shows the
@@ -76,11 +76,11 @@ corrupt or unknown history requires reconciliation before continuing.
 npm create deepseek-harness-action@latest -- --mode session
 ```
 
-Installer `0.7.2` targets formal Action `v0.12.0` and exact DSH `0.2.1-rc.2`
+Installer `0.7.3` targets formal Action `v0.12.1` and exact DSH `0.2.1-rc.2`
 in both compositions. Only after the Action tag, GitHub Release and canary agree
 does packing receive the verified full commit through `DSH_ACTION_RELEASE_SHA`.
 The separately reviewed installer source is tagged
-`create-deepseek-harness-action-v0.7.2`. Source templates retain the controlled
+`create-deepseek-harness-action-v0.7.3`. Source templates retain the controlled
 build token; generated workflows contain neither that token nor a candidate SHA,
 floating tag or branch. A source commit cannot supply its own future identity.
 
@@ -124,7 +124,7 @@ tests and untouched placeholders before model startup. A bounded, credential-fre
 `docker info` probe reports an unavailable CLI/daemon before runtime installation.
 These checks never grant authority or replace executed Controller validation.
 
-Installer 0.7.2 accepts optional `--test-commands` JSON argv arrays and
+Installer 0.7.3 accepts optional `--test-commands` JSON argv arrays and
 `--container-image name@sha256:<64 lowercase hex>` for `commands` or `both`. Maintainers must explicitly choose reviewed,
 credential-free commands. The installer never discovers or executes scripts,
 and omitting the flags preserves the fail-closed placeholder.
@@ -159,11 +159,11 @@ The default `github-token` is `${{ github.token }}` and is also Controller-only.
 The examples use the current release tag for readability:
 
 ```yaml
-uses: Lixiaoyiao/deepseek-harness-action@v0.12.0
+uses: Lixiaoyiao/deepseek-harness-action@v0.12.1
 ```
 
 For production, replace the tag with the full immutable commit SHA resolved
-from formal `v0.12.0`. Installer `0.7.2` targets that Action identity, with a
+from formal `v0.12.1`. Installer `0.7.3` targets that Action identity, with a
 separately reviewed source commit. Generated workflows use the verified release
 commit; source templates receive it through the release build.
 

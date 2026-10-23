@@ -51,7 +51,7 @@ npm.cmd create deepseek-harness-action@latest
 
 The local browser GUI configures **read-only `@dsh` conversation and automatic PR Review** by default. Select a workflow, edit its model, thinking effort and permissions, review the YAML diff, then save locally. Reopen the same command to edit existing workflows. You commit and push the saved files yourself.
 
-The GUI is prepared for installer `0.7.3`, after Action `v0.12.1` qualification. Published installer `0.7.2` uses the previous terminal guide until that separate release is available.
+Installer `0.7.3` includes this local GUI and binds generated workflows to formal Action `v0.12.1`.
 
 Add the key in **Settings → Secrets and variables → Actions → New repository secret** on GitHub. Set the name to `DEEPSEEK_API_KEY` and paste the key as its value. A key stored in local DSH does not configure this secret.
 
@@ -85,7 +85,7 @@ File-only and non-interactive setup remains available:
 npm.cmd create deepseek-harness-action@latest -- --mode both --dsh-mode native
 ```
 
-Controlled remains the default. Natural-language writes require both `natural-language-write: "true"` and `allow-write: "true"` in a write-capable workflow, repository-specific validation commands, and a clear request such as `@dsh Please fix this bug and open a PR`. The advanced Commands starter keeps the independent natural-language switch off; legacy `fix`, `implement` and `task --write` retain their existing write requests. Installer `0.7.2` targets Action `v0.12.0` and DSH `0.2.1-rc.2`. Its build binds the qualified Action commit through `DSH_ACTION_RELEASE_SHA`; its source tag is `create-deepseek-harness-action-v0.7.2`. See the [setup guide](docs/setup.md) for manual setup and recovery.
+Controlled remains the default. Natural-language writes require both `natural-language-write: "true"` and `allow-write: "true"` in a write-capable workflow, repository-specific validation commands, and a clear request such as `@dsh Please fix this bug and open a PR`. The advanced Commands starter keeps the independent natural-language switch off; legacy `fix`, `implement` and `task --write` retain their existing write requests. Installer `0.7.3` targets Action `v0.12.1` and DSH `0.2.1-rc.2`. Its build binds the qualified Action commit through `DSH_ACTION_RELEASE_SHA`; its source tag is `create-deepseek-harness-action-v0.7.3`. See the [setup guide](docs/setup.md) for manual setup and recovery.
 
 ### Manual installation
 
