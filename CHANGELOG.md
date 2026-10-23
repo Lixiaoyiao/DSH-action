@@ -18,7 +18,6 @@ versioning for published action releases.
 - Targets formal Action `v0.12.2` and DSH `0.2.1-rc.2`; source tag
   `create-deepseek-harness-action-v0.8.0` qualifies independently.
 
-
 ## [0.12.2] - 2026-10-23
 
 - Resolves the official DSH MCP bridge to patched

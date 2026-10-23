@@ -200,7 +200,9 @@ export function parseArguments(argv) {
     );
   }
   return {
-    help, mode, dshMode,
+    help,
+    mode,
+    dshMode,
     ...(testCommands === undefined ? {} : { testCommands }),
     ...(containerImage === undefined ? {} : { containerImage }),
   };
@@ -452,10 +454,16 @@ export async function runInstaller(options = {}) {
   const mode = parsed.mode ?? (isTTY && !environment.CI ? "review" : undefined);
   const dshMode = parsed.dshMode ?? DEFAULT_DSH_MODE;
   if (mode === undefined)
-    throw new Error("Non-interactive or CI input requires --mode review|commands|both|session\n\n" + usage());
+    throw new Error(
+      "Non-interactive or CI input requires --mode review|commands|both|session\n\n" + usage(),
+    );
   const createdFiles = await installWorkflows({
-    cwd, mode, dshMode, templateDirectory,
-    testCommands: parsed.testCommands, containerImage: parsed.containerImage,
+    cwd,
+    mode,
+    dshMode,
+    templateDirectory,
+    testCommands: parsed.testCommands,
+    containerImage: parsed.containerImage,
   });
   printSuccess(output, mode, dshMode, createdFiles, parsed.testCommands);
   return { mode, dshMode, createdFiles };

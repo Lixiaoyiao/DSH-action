@@ -551,7 +551,6 @@ describe("installer modes", () => {
       }
     },
   );
-
 });
 
 describe("safe filesystem and non-interactive behavior", () => {
