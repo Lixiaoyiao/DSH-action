@@ -49,11 +49,15 @@ gh auth login
 npm.cmd create deepseek-harness-action@latest
 ```
 
-默认打开本地浏览器配置界面，配置**只读 `@dsh` 对话和自动 PR Review**。选择工作流，调整模型、思考强度和权限，审查 YAML 差异后保存到本地。再次运行同一命令即可编辑现有工作流；保存后的文件由你自行提交和推送。
+默认直接生成安全的**只读 `@dsh` 对话与自动 PR Review** 工作流，
+不打开浏览器。其它模板可以用 `--mode commands|both|session` 明确选择。
+模型、工具、权限、插件与触发条件都直接编辑 YAML。
+现有工作流也在 GitHub 或本地编辑器里维护，不需要重装；生成后的文件由你自行提交、推送。
 
-安装器 `0.7.3` 提供本地 GUI，生成的工作流绑定正式 Action `v0.12.2`。
+安装器 `0.8.0` 已移除 Web GUI，生成的工作流绑定正式 Action `v0.12.2`。
 
-在 GitHub 仓库打开 **Settings → Secrets and variables → Actions → New repository secret**，名称填 `DEEPSEEK_API_KEY`，值填你的密钥。只在本地 DSH 中配置密钥，云端 Action 仍然无法使用它。
+在 GitHub **Settings → Secrets and variables → Actions** 中添加
+`DEEPSEEK_API_KEY`；不要将密钥明文写进 YAML。
 
 ### 4. 直接向 `@dsh` 提问
 
@@ -69,23 +73,23 @@ npm.cmd create deepseek-harness-action@latest
 
 需要自动审查时，创建**非草稿 PR**，或向已有 PR 推送一次新提交。Action 会发布审查结果，不改动 PR 文件。
 
-### 可选：导入本地插件或安装其他功能
+### 可选：其他工作流和插件配置
 
-在 GUI 中选择只读对话与 Review、Coding Commands、两者一起安装或自动 Session。`--gui` 显式打开界面；`--no-open` 只打印本地私有地址，不自动打开浏览器。已有本地 DSH 插件时，可用 `--import-plugins` 直接进入插件选择页：
-
-```powershell
-npm.cmd create deepseek-harness-action@latest -- --gui --import-plugins
-```
-
-Native 模式可直接使用 DSH Bundle。Controlled 模式还需要插件实际提供的只读工具名（`plugin__owner__tool`）。GitHub 会重新安装选中的精确版本，本地密钥和设置不会被复制。仅存在本地、已停用或不兼容的包会显示状态。DSH 使用其他目录时，可加 `--dsh-home "C:\你的路径\.dsh"`。`--advanced` 保留为 GUI 别名。
-
-只生成文件或在 CI 中运行，可以明确指定选项：
+要同时生成 Review 和 Commands，可直接运行：
 
 ```powershell
 npm.cmd create deepseek-harness-action@latest -- --mode both --dsh-mode native
 ```
 
-默认仍为 Controlled。自然语言写入需要在支持写入的工作流中同时配置 `natural-language-write: "true"`、`allow-write: "true"`，提供适合项目的验证命令，并明确要求修改代码，例如 `@dsh 修复这个 Bug 并提交 PR`。高级 Commands 模板默认关闭自然语言写入这一独立开关；旧的 `fix`、`implement` 和 `task --write` 保留原有写入请求语义。安装器 `0.7.3` 对应 Action `v0.12.2` 和 DSH `0.2.1-rc.2`；打包通过 `DSH_ACTION_RELEASE_SHA` 绑定已验证的 Action commit，源码 Tag 为 `create-deepseek-harness-action-v0.7.3`。手工安装和故障恢复见[安装指南](docs/setup.zh-CN.md)。
+`both` 模板已避免评论事件重复响应。要允许代码写入，还需配置仓库专用验证
+命令与原有可信权限；自然语言写入还要开启 `natural-language-write: "true"`。
+模型、思考强度、MCP、插件、Bundle、工具列表和 Session 全部在 YAML 中配置。
+本地 Web 插件导入器已移除，不会复制任何本地密钥或插件设置。
+
+安装器 `0.8.0` 对应 Action `v0.12.2`、DSH `0.2.1-rc.2`。
+打包时由 `DSH_ACTION_RELEASE_SHA` 注入经验证的完整 Action commit，
+安装器源码 Tag 为 `create-deepseek-harness-action-v0.8.0`。
+详细见[安装指南](docs/setup.zh-CN.md)。
 
 ### 手工安装
 

@@ -12,76 +12,35 @@
 npm create deepseek-harness-action@latest
 ```
 
-在交互式终端中不传选项时，安装器打开本地浏览器 GUI，默认配置只读对话与
-PR Review，也可以读取现有 DSH 工作流继续编辑。安装器 `0.7.3` 提供此 GUI，
-生成的工作流绑定正式 Action `v0.12.2`。
+在交互式终端中不传参数时，安装器直接生成安全的**只读 `@dsh` 对话和 PR Review**
+工作流 YAML，不再打开浏览器。安装器 `0.8.0` 对应正式 Action `v0.12.2`。
 
-选择预设或已有工作流，再选择 controlled/native、模型、思考强度和其它 Action
-选项。预览显示 YAML 差异，并调用 Action 自身的静态配置检查器。确认保存后只写入
-本地 `.github/workflows/*.yml` 或 `*.yaml`。安装器不提交、不推送、不创建远端仓库，
-也不上传密钥。
-
-在 GitHub **Settings → Secrets and variables → Actions** 添加 `DEEPSEEK_API_KEY`。
-工作流使用 `${{ secrets.DEEPSEEK_API_KEY }}` 等引用，不在编辑器或 YAML 中填写真实
-密钥。通过日常 Git 流程审查、提交并推送文件，让它们到达默认分支。
+需要其它组合时，显式传入参数：
 
 ```bash
-npm create deepseek-harness-action@latest -- --gui
-npm create deepseek-harness-action@latest -- --no-open
-```
-
-`--gui` 显式打开浏览器；`--no-open` 只打印本次会话的私有地址，供你自行打开。
-编辑期间保持终端运行。服务只监听 `127.0.0.1` 的随机端口，使用每次新生成的会话
-Token 和同源校验。停止服务后旧地址失效；再次运行即可建立新会话。不要转发端口或
-分享含 Token 的完整地址。
-
-YAML 是配置源，没有额外配置数据库或浏览器持久化副本。重新打开时从文件读取；
-如果外部编辑器在预览后改动文件，先重新加载再保存。不支持的 YAML 结构或包含明文
-密钥的工作流需要手工处理。
-
-在现有 `allowed-actors` 输入中填写逗号分隔的用户名，GUI 会生成 job 级条件，
-让名单外的触发者在 Runner 启动前被跳过，并保留自定义条件和 Action 的运行时授权。
-默认 `*` 不添加限制。动态表达式名单需要在 YAML 编辑器中配置前置条件；GUI 不猜测
-动态值。手工修改过的生成条件也由你在 YAML 中维护。若组合后的表达式超过 GitHub
-长度上限，GUI 会报错；可缩短名单或在 YAML 中使用更短的条件。
-
-GUI 提供以下预设；`--advanced` 保留为 GUI 别名：
-
-| 选择                     | 创建的文件                           |
-| ------------------------ | ------------------------------------ |
-| **只读对话 + PR Review** | `.github/workflows/dsh-review.yml`   |
-| **@dsh Coding Commands** | `.github/workflows/dsh-commands.yml` |
-| **Both**                 | 以上两个 workflow 文件               |
-| **Automatic Session**    | `.github/workflows/dsh-session.yml`  |
-
-CI 或其它非交互环境必须明确选择 mode。这一路径直接生成文件，保留已有文件，
-不需要浏览器或读取 stdin：
-
-```bash
-npm create deepseek-harness-action@latest -- --mode both
+npm create deepseek-harness-action@latest -- --mode review
 npm create deepseek-harness-action@latest -- --mode both --dsh-mode native
-```
-
-省略 `--dsh-mode` 时默认 controlled；CI 或非交互环境缺少 `--mode` 时直接显示
-用法错误。静态检查只确认配置结构；凭据有效性、在线权限/配额、Docker 与项目
-验证仍需首个真实 Action 运行来确认。
-
-Automatic Session 生成只读 starter，绑定相同的 key/run-name/concurrency，并以
-`queue: max` 保留排队请求。提交到默认分支后，从默认分支 dispatch；为逻辑任务
-选择小写 key，后续用同 key 和新 prompt 续接，无需 source run ID。
-失败、过期、损坏或状态不明的历史须先协调解决。
-
-```bash
 npm create deepseek-harness-action@latest -- --mode session
 ```
 
-安装器 `0.7.3` 面向正式 Action `v0.12.2`，两种 composition 都保持精确
-DSH `0.2.1-rc.2`。只有 Action Tag、
-GitHub Release 和 canary 身份一致后，打包才通过 `DSH_ACTION_RELEASE_SHA`
-接收核验出的完整 commit。独立审查的安装器源码使用
-`create-deepseek-harness-action-v0.7.3` Tag。源码模板保留受控 build token，
-生成的 workflow 不包含该 token、candidate SHA、浮动 Tag 或分支。
-源码 commit 不能提供自身尚未确定的未来身份。
+`both` 会拆分自动 Review 和 Commands 的评论事件，避免 `@dsh` 重复回复。
+Commands 若要写代码，必须配置项目专用验证命令。默认 Controlled，
+Native 需要显式选择。CI 和非交互环境必须传入 `--mode`。
+
+安装器拒绝覆盖已有 YAML。升级、修改、删除工作流请直接编辑
+`.github/workflows/` 下的文件；模型、思考强度、权限、MCP、插件、
+Session 和触发事件都直接通过 YAML 配置。
+
+Action 的 `allowed-actors` 是运行时权限检查，不会自动阻止 Runner
+启动。如果要提前过滤触发者，还需要自行维护 GitHub `jobs.<job>.if` 条件。
+CLI 不会生成该前置条件。
+
+安装器不会读取密钥、运行项目脚本、提交或推送。请在 GitHub Actions
+Secrets 中添加 `DEEPSEEK_API_KEY`，然后提交、推送生成的 YAML。
+
+安装器 `0.8.0` 面向 Action `v0.12.2`、DSH `0.2.1-rc.2`；
+打包时经 `DSH_ACTION_RELEASE_SHA` 注入验证过的不可变 Action SHA。
+独立源码 Tag 为 `create-deepseek-harness-action-v0.8.0`。
 
 安装成功后：
 
@@ -118,7 +77,7 @@ Action 的公开输入和扩展 schema，检查缺少凭据、DSH 精确版本�
 有时间上限、无 Controller 凭据的 `docker info` 预检会在安装 runtime 前
 报告 CLI/daemon 不可用。这些检查不授予权限，也不替代 Controller 的真实验证。
 
-安装器 0.7.3 为 `commands` / `both` 提供显式 `--test-commands` JSON argv
+安装器 0.8.0 为 `commands` / `both` 提供显式 `--test-commands` JSON argv
 和 `--container-image name@sha256:<64 位小写十六进制>`。维护者必须自行选择来源可信、经过审核、无凭据的验证命令。
 安装器不会自动发现或执行脚本；省略选项仍保留安全失败的验证占位符。
 
@@ -156,7 +115,7 @@ uses: Lixiaoyiao/deepseek-harness-action@v0.12.2
 ```
 
 生产环境应把 Tag 替换为从正式 `v0.12.2` 解析出的完整、不可变 commit SHA。
-安装器 `0.7.3` 对应该 Action 身份，独立审查的 installer 源码 commit 是另一个身份。
+安装器 `0.8.0` 对应该 Action 身份，独立审查的 installer 源码 commit 是另一个身份。
 生成的 workflow 使用核验后的正式 commit，源码模板通过发布构建接收该值。
 
 必须分别核验 installer 源码 Tag 与 `DSH_ACTION_RELEASE_SHA` 打包输入；源码中的
@@ -301,16 +260,15 @@ Docker image 本身就是可执行的 worker code。写入和扩展必须使用�
 
 接下来可阅读[使用指南](usage.zh-CN.md)了解命令，阅读[配置参考](configuration.md)了解全部输入、权限边界和输出。
 
-## 导入本地 DSH 插件
+## 配置 DSH 扩展
 
-在终端运行 `npm create deepseek-harness-action@latest -- --advanced --import-plugins`。安装器只读取 `DSH_HOME/profiles` 下的包元数据，默认目录是 `~/.dsh/profiles`。它会展示第三方包名称、已安装版本和对 DSH `0.2.1-rc.2` 的兼容情况，再询问要导入的编号并确认。其他目录可用 `--dsh-home` 指定。
+纯 CLI 不再扫描或自动导入本机插件。需要 Plugin、Bundle、MCP 时，
+请在工作流 YAML 中显式配置经过审核的精确版本与工具授权，参见
+[配置参考](configuration.md)和[扩展契约](extension-contracts.md)。
+不要把 `.env`、本地密钥或私有 Profile 复制进去。
+Native 支持获准的 DSH Bundle；Controlled 需要明确的工具授权。
 
-Native 模式可按精确版本重新安装已启用的 npm DSH Bundle。Controlled 模式还需要填写实际的 `plugin__owner__tool` 工具名，只允许你选中的只读工具。使用其他工具命名的插件需要 Native 或手工配置。本地路径、npm 别名、已停用的 Bundle、不兼容版本和普通依赖包需要手工处理，列表会说明原因。没有声明兼容范围时会明确显示未验证。
-
-确认后才会在工作流中启用插件安装。不会复制 `.env`、密钥、本地 Cordis 配置、兼容例外或插件设置。导入的插件使用包自带默认值，不额外申请网络或工作区写权限；现有工作流的权限和整个 worker 的挂载范围仍然适用；所需云端配置可通过已有扩展输入另外设置。Fork PR 审查继续使用不加载扩展的配置。
-
-Native 的网页搜索和读取通过 Controller 代理调用新版 DeepSeek Search/Fetch API。Controlled 的搜索也使用 Search API；Fetch 需要在 custom 或 standard 权限档位中明确加入 `native.web-fetch`。`base-url` 同时决定这些 API 的上游，`web-search-base-url` 保留为旧 Messages 搜索路由。新版 Flash 使用的模型 ID 是 `deepseek-flash`。
-
-Controlled 自动导入面向只读 Review 和 Session；Coding Commands 的插件需要手工声明各任务所需权限。选择同时安装时，插件只加入 Review，Commands 保持原样。Native Commands 保留原有信任检查，插件不能在不受信任的 fork 命令中运行。
+Native Search/Fetch 通过 Controller 代理 DeepSeek API；
+Controlled Fetch 需要显式开启 `native.web-fetch`。
 
 显式自定义 `web-search-base-url` 时保留原有 Messages 搜索协议；默认地址使用新版 Search API。Fetch 始终使用独立授权和 `base-url`，也可以只开启 Fetch 而不启用搜索。

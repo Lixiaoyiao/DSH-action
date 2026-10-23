@@ -12,86 +12,38 @@ From anywhere inside the existing GitHub repository you want to configure, run:
 npm create deepseek-harness-action@latest
 ```
 
-With no flags in an interactive terminal, the installer opens a local browser GUI.
-It starts with read-only conversation and PR Review, and can load existing DSH
-workflows for later edits. Installer `0.7.3` includes this GUI and targets formal
-Action `v0.12.2`.
+With no flags in an interactive terminal, the installer **directly generates**
+safe read-only `@dsh` chat and PR Review YAML. There is no browser or GUI.
+Installer `0.8.0` targets formal Action `v0.12.2`.
 
-Choose a preset or an existing workflow, select controlled/native mode, model and
-thinking effort, then edit the supported Action inputs. The preview shows the
-YAML diff and runs the Action's real static configuration checker. Saving requires
-your confirmation and writes only local `.github/workflows/*.yml` or `*.yaml` files.
-The installer does not commit, push, create a remote repository or upload secrets.
-
-Add `DEEPSEEK_API_KEY` in GitHub **Settings → Secrets and variables → Actions**.
-Use secret expressions in workflow inputs, for example `${{ secrets.DEEPSEEK_API_KEY }}`;
-keep secret values out of the editor and YAML. Commit and push the reviewed files
-with your normal Git workflow so they reach the default branch.
+To choose other templates, use explicit flags:
 
 ```bash
-npm create deepseek-harness-action@latest -- --gui
-npm create deepseek-harness-action@latest -- --no-open
-```
-
-`--gui` opens the browser explicitly. `--no-open` prints the private session URL
-for you to open yourself. Keep the terminal running while editing. The server
-listens only on `127.0.0.1` at a random port and uses a fresh session token plus
-same-origin checks. Closing the server invalidates that URL; rerun to start a new
-session. Do not forward the port or share the token-bearing URL.
-
-YAML is the configuration source. The GUI stores no sidecar database or saved
-browser configuration; reopening reads the files again. If an external editor
-changes a file after preview, reload it before saving. Unsupported YAML or
-workflows containing plaintext credentials require manual editing.
-
-Set the existing `allowed-actors` input to a literal comma-separated list to have
-the GUI add a job condition that skips other actors before a runner starts. The
-condition preserves custom job conditions and the Action's runtime authorization.
-The default `*` adds no filter. Dynamic expression lists need a job condition in
-the YAML editor; the GUI does not guess their values. If you manually change a
-generated actor condition, maintain that condition in YAML as well.
-If the combined condition exceeds GitHub's expression length limit, the GUI
-reports an error; use a shorter list or maintain a shorter condition in YAML.
-
-The GUI offers these presets; `--advanced` remains an alias for the GUI:
-
-| Choice                         | Files created                        |
-| ------------------------------ | ------------------------------------ |
-| **Read-only chat + PR Review** | `.github/workflows/dsh-review.yml`   |
-| **@dsh Coding Commands**       | `.github/workflows/dsh-commands.yml` |
-| **Both**                       | Both workflow files above            |
-| **Automatic Session**          | `.github/workflows/dsh-session.yml`  |
-
-For CI or non-interactive use, choose the mode explicitly. This path generates
-files directly, preserves existing files, and requires no browser or stdin:
-
-```bash
-npm create deepseek-harness-action@latest -- --mode both
+npm create deepseek-harness-action@latest -- --mode review
 npm create deepseek-harness-action@latest -- --mode both --dsh-mode native
-```
-
-Omitting `--dsh-mode` selects `controlled`. Missing `--mode` in CI or a
-non-interactive session fails with usage guidance. Static validation proves
-configuration shape only; credentials, online permissions/quota, Docker and
-repository validation require the first real Action run.
-
-Automatic Session creates a read-only starter with matching key/run-name/
-concurrency and `queue: max` to retain pending follow-ups. Commit it to the
-default branch and dispatch there with a lowercase key for the logical task.
-Reuse the key with a new prompt; no source run ID is needed. Failed, expired,
-corrupt or unknown history requires reconciliation before continuing.
-
-```bash
 npm create deepseek-harness-action@latest -- --mode session
 ```
 
-Installer `0.7.3` targets formal Action `v0.12.2` and exact DSH `0.2.1-rc.2`
-in both compositions. Only after the Action tag, GitHub Release and canary agree
-does packing receive the verified full commit through `DSH_ACTION_RELEASE_SHA`.
-The separately reviewed installer source is tagged
-`create-deepseek-harness-action-v0.7.3`. Source templates retain the controlled
-build token; generated workflows contain neither that token nor a candidate SHA,
-floating tag or branch. A source commit cannot supply its own future identity.
+`both` creates separate Review and Commands workflows while routing
+`@dsh` comments only to Commands; it avoids duplicate replies.
+Commands requires real repository validation commands for writable tasks.
+Controlled is the default composition; Native is an explicit option.
+
+CI and other non-interactive shells must pass `--mode`. Existing YAML is never
+overwritten. Edit, upgrade or remove a workflow under `.github/workflows/`
+with GitHub's editor or your normal code editor. Model, tools, permissions,
+Session, extension definitions and triggers live in YAML.
+
+The Action's `allowed-actors` runtime authorization does not automatically
+skip Runner startup. Add a matching `jobs.<job>.if` condition yourself
+if you want a pre-Runner actor filter; the CLI does not synthesize it.
+
+The initializer never accesses Secrets, runs repository code, commits or
+pushes. Add `DEEPSEEK_API_KEY` in GitHub Actions Secrets, then commit/push YAML.
+
+Installer `0.8.0` targets Action `v0.12.2` and DSH `0.2.1-rc.2`; release
+packaging binds the verified Action SHA using `DSH_ACTION_RELEASE_SHA`.
+The separate source tag is `create-deepseek-harness-action-v0.8.0`.
 
 After the installer succeeds:
 
@@ -133,7 +85,7 @@ tests and untouched placeholders before model startup. A bounded, credential-fre
 `docker info` probe reports an unavailable CLI/daemon before runtime installation.
 These checks never grant authority or replace executed Controller validation.
 
-Installer 0.7.3 accepts optional `--test-commands` JSON argv arrays and
+Installer 0.8.0 accepts optional `--test-commands` JSON argv arrays and
 `--container-image name@sha256:<64 lowercase hex>` for `commands` or `both`. Maintainers must explicitly choose reviewed,
 credential-free commands. The installer never discovers or executes scripts,
 and omitting the flags preserves the fail-closed placeholder.
@@ -172,7 +124,7 @@ uses: Lixiaoyiao/deepseek-harness-action@v0.12.2
 ```
 
 For production, replace the tag with the full immutable commit SHA resolved
-from formal `v0.12.2`. Installer `0.7.3` targets that Action identity, with a
+from formal `v0.12.2`. Installer `0.8.0` targets that Action identity, with a
 separately reviewed source commit. Generated workflows use the verified release
 commit; source templates receive it through the release build.
 
@@ -319,16 +271,16 @@ After the first run, check that:
 
 Next, read [Usage](usage.md) for commands and [Configuration](configuration.md) for every input, permission boundary, and output.
 
-## Import local DSH plugins
+## Configure DSH extensions
 
-Run `npm create deepseek-harness-action@latest -- --advanced --import-plugins` in a terminal. The installer reads only package metadata under `DSH_HOME/profiles` (default `~/.dsh/profiles`). It lists third-party package names, installed versions and compatibility with DSH `0.2.1-rc.2`, then asks for the package numbers and confirmation. Use `--dsh-home` for another location.
+The CLI does not scan or import local plugins. Configure trusted pinned DSH
+Bundles, Plugins, MCP servers and explicit tool grants directly in the YAML,
+using [Configuration](configuration.md) and [extension contracts](extension-contracts.md).
+Do not copy private local profiles, `.env`, or credentials to the workflow.
+Native supports admitted DSH Bundles; Controlled requires explicit tool grants.
 
-Enabled npm DSH Bundles can be reinstalled at exact versions in Native mode. Controlled mode also asks for the exact `plugin__owner__tool` names and grants only the selected read-only tools. Packages using arbitrary tool names need Native mode or manual configuration. Local paths, npm aliases, disabled Bundles, incompatible versions and plain dependencies need manual setup; the list explains each case. An undeclared compatibility range is shown as unverified.
-
-The generated workflow enables package installation only after confirmation. It does not copy `.env`, credentials, local Cordis patches, compatibility exceptions or plugin settings. Imported plugins use package defaults and request no extra network or workspace-write access; existing workflow permissions and shared worker mounts still apply. Add any required cloud configuration separately with the existing extension inputs. Fork reviews retain their extension-free configuration.
-
-Native web search and fetch now use the DeepSeek Search/Fetch API through the Controller proxy. Controlled search uses the same Search API; add `native.web-fetch` explicitly under a custom or standard permission profile to enable Fetch. The `base-url` input also selects the upstream for these API routes; `web-search-base-url` remains the legacy Messages-search route. The API model ID for the new Flash catalog entry is `deepseek-flash`.
-
-Controlled automatic import targets read-only Review and Session workflows. Coding-command plugins need manual per-task permission declarations; selecting both workflows imports into Review and leaves Commands unchanged. Native commands retain the existing trusted-context gates, so plugins cannot run for untrusted fork commands.
+Native web search and fetch use the DeepSeek Search/Fetch API through the Controller.
+Controlled Fetch needs an explicit `native.web-fetch` tool grant.
+The `base-url` selects the API upstream; `web-search-base-url` is the legacy route.
 
 An explicit custom `web-search-base-url` keeps its legacy Messages-search protocol. The default selects the new Search API. Fetch always uses its separate API grant and `base-url`, including when Fetch is the only selected web tool.
