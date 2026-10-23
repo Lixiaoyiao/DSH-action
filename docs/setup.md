@@ -159,13 +159,14 @@ The default `github-token` is `${{ github.token }}` and is also Controller-only.
 The examples use the current release tag for readability:
 
 ```yaml
-uses: Lixiaoyiao/deepseek-harness-action@v0.12.1
+uses: Lixiaoyiao/deepseek-harness-action@v0.12.2
 ```
 
 For production, replace the tag with the full immutable commit SHA resolved
-from formal `v0.12.1`. Installer `0.7.3` targets that Action identity, with a
-separately reviewed source commit. Generated workflows use the verified release
-commit; source templates receive it through the release build.
+from formal `v0.12.2`. The installer binding is qualified independently; installer
+`0.7.3` retains its Action `v0.12.1` source identity until the next formal canary
+qualifies its new binding. Generated workflows use the verified release commit;
+source templates receive it through the release build.
 
 The installer source tag and `DSH_ACTION_RELEASE_SHA` packing input must each
 be verified for their own purpose. Source preparation does not establish a
@@ -222,7 +223,7 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
           persist-credentials: false
           fetch-depth: 1
-      - uses: Lixiaoyiao/deepseek-harness-action@v0.12.1
+      - uses: Lixiaoyiao/deepseek-harness-action@v0.12.2
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           dsh-version: 0.2.1-rc.2

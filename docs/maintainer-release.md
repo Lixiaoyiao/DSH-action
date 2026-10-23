@@ -4,7 +4,9 @@
 
 This guide is for repository maintainers qualifying and publishing an Action release. A successful run proves only the exact commit SHA it tested. After any candidate change, repeat every required check against the new latest SHA.
 
-For v0.12.1, retain the exact production DSH `0.2.1-rc.2` family. The local GUI
+For v0.12.2, retain the exact production DSH `0.2.1-rc.2` family and resolve its
+MCP bridge to official `@modelcontextprotocol/client` `2.3.0` through the exact
+parent-scoped security override, with peer and lock validation intact. The local GUI
 and optional model settings reuse the existing Session protocol, history selection,
 storage, concurrency and trusted harness. On the frozen release `main` SHA, qualify
 one explicit save/resume pair and one automatic pair in each composition

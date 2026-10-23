@@ -99,9 +99,11 @@ describe("official streamable-http transport", () => {
   let server: Server;
   let url: string;
   const authorization: (string | undefined)[] = [];
+  const customHeaders: (string | string[] | undefined)[] = [];
 
   async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     authorization.push(request.headers.authorization);
+    customHeaders.push(request.headers["x-mcp-key"]);
     const mcp = new McpServer(
       { name: "dsh-action-http-fixture", version: "1.0.0" },
       { capabilities: { tools: {} } },
@@ -124,6 +126,12 @@ describe("official streamable-http transport", () => {
 
   beforeAll(async () => {
     server = createServer((request, response) => {
+      const redirect = /^\/redirect-(307|308)$/u.exec(request.url ?? "");
+      if (redirect !== null) {
+        request.resume();
+        response.writeHead(Number(redirect[1]), { location: "/mcp" }).end();
+        return;
+      }
       handle(request, response).catch((error: unknown) => {
         response.writeHead(500).end(String(error));
       });
@@ -139,7 +147,10 @@ describe("official streamable-http transport", () => {
       transport: "streamable-http",
       serverName: "httpfixture",
       url,
-      headers: { Authorization: "Bearer controlled-test-token" },
+      headers: {
+        Authorization: "Bearer controlled-test-token",
+        "X-MCP-Key": "same-origin-fixture-key",
+      },
       toolCallTimeoutMs: 5_000,
       failOnStartupError: true,
       reconnect: { enabled: false },
@@ -164,5 +175,99 @@ describe("official streamable-http transport", () => {
     });
     expect(authorization.length).toBeGreaterThan(0);
     expect(new Set(authorization)).toEqual(new Set(["Bearer controlled-test-token"]));
+    expect(new Set(customHeaders)).toEqual(new Set(["same-origin-fixture-key"]));
   });
+
+  it.each([307, 308])("preserves tool calls through same-origin %i redirects", async (status) => {
+    const redirected = new Context();
+    try {
+      await redirected.plugin(SystemPrompt);
+      await redirected.plugin(ToolRuntime);
+      await applyOfficialMcpClient(redirected, {
+        transport: "streamable-http",
+        serverName: "redirectfixture",
+        url: new URL(`/redirect-${String(status)}`, url).href,
+        headers: {
+          Authorization: "Bearer controlled-test-token",
+          "X-MCP-Key": "same-origin-fixture-key",
+        },
+        toolCallTimeoutMs: 5_000,
+        failOnStartupError: true,
+        reconnect: { enabled: false },
+      });
+      const result = await redirected.tools.execute({
+        signal: new AbortController().signal,
+        callId: brandString<ToolCallId>(`same-origin-${String(status)}`),
+        name: "mcp__redirectfixture__shout",
+        arguments: { message: "same origin" },
+      });
+      expect(result).toMatchObject({
+        isError: false,
+        content: [{ type: "text", text: "SAME ORIGIN" }],
+      });
+      expect(new Set(customHeaders)).toEqual(new Set(["same-origin-fixture-key"]));
+    } finally {
+      await redirected.fiber.dispose();
+    }
+  });
+});
+
+describe("official MCP HTTP redirect confidentiality", () => {
+  it.each([307, 308])(
+    "sends no credentials or body to a cross-origin %i target",
+    async (status) => {
+      let originalRequests = 0;
+      let targetRequests = 0;
+      const originalCredentials: (string | string[] | undefined)[] = [];
+      const target = createServer((request, response) => {
+        targetRequests += 1;
+        request.resume();
+        response.writeHead(500).end("The untrusted redirect target must never receive a request");
+      });
+      await new Promise<void>((resolvePromise) => target.listen(0, "127.0.0.1", resolvePromise));
+      const targetAddress = target.address();
+      if (targetAddress === null || typeof targetAddress === "string")
+        throw new Error("Expected TCP address");
+      const original = createServer((request, response) => {
+        originalRequests += 1;
+        originalCredentials.push(request.headers["x-mcp-key"]);
+        request.resume();
+        response
+          .writeHead(status, { location: `http://127.0.0.1:${String(targetAddress.port)}/mcp` })
+          .end();
+      });
+      await new Promise<void>((resolvePromise) => original.listen(0, "127.0.0.1", resolvePromise));
+      const originalAddress = original.address();
+      if (originalAddress === null || typeof originalAddress === "string")
+        throw new Error("Expected TCP address");
+      const rejected = new Context();
+      try {
+        await rejected.plugin(SystemPrompt);
+        await rejected.plugin(ToolRuntime);
+        await expect(
+          applyOfficialMcpClient(rejected, {
+            transport: "streamable-http",
+            serverName: "confidentialityfixture",
+            url: `http://127.0.0.1:${String(originalAddress.port)}/mcp`,
+            headers: { "X-MCP-Key": "synthetic-mcp-credential" },
+            toolCallTimeoutMs: 5_000,
+            failOnStartupError: true,
+            reconnect: { enabled: false },
+          }),
+        ).rejects.toThrow("initial connection or tool synchronization failed");
+        expect(originalRequests).toBeGreaterThan(0);
+        expect(new Set(originalCredentials)).toEqual(new Set(["synthetic-mcp-credential"]));
+        // No second-origin request means neither custom headers nor POST data can escape.
+        expect(targetRequests).toBe(0);
+      } finally {
+        await rejected.fiber.dispose();
+        await Promise.all(
+          [original, target].map(
+            (httpServer) =>
+              new Promise<void>((resolvePromise) => httpServer.close(() => resolvePromise())),
+          ),
+        );
+      }
+    },
+  );
 });

@@ -1,6 +1,6 @@
 {
   "name": "deepseek-harness-action",
-  "version": "0.12.1",
+  "version": "0.12.2",
   "description": "DeepSeek Harness for GitHub - controlled and native DSH composition, coding tasks, review, and safe automation",
   "author": "Lixiaoyiao",
   "repository": {
@@ -19,6 +19,11 @@
   "type": "module",
   "engines": {
     "node": ">=24"
+  },
+  "overrides": {
+    "@deepseek-ai/dsh-mcp-client@0.2.1-rc.2": {
+      "@modelcontextprotocol/client": "2.3.0"
+    }
   },
   "scripts": {
     "prebuild": "node scripts/clean-dist.mjs",
