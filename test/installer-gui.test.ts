@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { request as httpRequest } from "node:http";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
-import { parseDocument } from "yaml";
+import { isScalar, isSeq, parseDocument } from "yaml";
 import { z } from "zod";
 import { checkConfiguration } from "../src/configuration-check.js";
 import { assertSessionWorkflowPolicy } from "../src/session/workflow-policy.js";
@@ -128,6 +128,134 @@ async function writeWorkflow(root: string, source: string, name = workflowName) 
 function simpleWorkflow(extra = "") {
   return `name: Test\non: workflow_dispatch\njobs:\n  task:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: ${action}\n        with:\n          deepseek-api-key: \${{ secrets.DEEPSEEK_API_KEY }}\n          command: task\n          prompt: Explain this repository\n${extra}`;
 }
+
+function editActors(source: string, actors: string, index = 0) {
+  const selected = inspectWorkflow(source).steps[index];
+  if (!selected) throw new Error("Missing Action step");
+  return editWorkflow(
+    { source, stepId: selected.id, inputs: { ...selected.inputs, "allowed-actors": actors } },
+    releaseSha,
+  ).source;
+}
+
+it("compiles an actor job filter with exact normalized names and workflow_run identities", () => {
+  const source = editActors(simpleWorkflow(), " @Alice, release[bot], Alice ");
+  const condition = String(parseDocument(source).getIn(["jobs", "task", "if"]));
+  const names = z
+    .array(z.string())
+    .parse(JSON.parse(/fromJSON\('([^']+)'\)/u.exec(condition)?.[1] ?? "null"));
+  expect(names).toEqual(["alice", "alice[bot]", "release", "release[bot]"]);
+  expect(names.includes("ali")).toBe(false);
+  expect(names.includes("malice")).toBe(false);
+  expect(condition).toContain("contains(fromJSON(");
+  expect(condition).toContain(", github.actor)");
+  for (const actor of ["actor", "triggering_actor"])
+    expect(condition).toContain(`!github.event.workflow_run.${actor}.login || (`);
+  expect(condition).not.toContain("github.triggering_actor");
+  expect(source).toContain("dsh-allowed-actors:v1");
+});
+
+it("rejects an actor job filter that exceeds GitHub's expression limit for a valid list", () => {
+  const actors = Array.from(
+    { length: 100 },
+    (_, index) => `actor${String(index).padStart(3, "0")}${"x".repeat(31)}`,
+  ).join(",");
+  const doc = parseDocument(simpleWorkflow());
+  doc.setIn(["jobs", "task", "steps", 0, "with", "allowed-actors"], actors);
+  const source = doc.toString();
+  expect(Buffer.byteLength(actors)).toBe(3999);
+  expect(validateWorkflow(source, checkConfiguration).ok).toBe(true);
+  expect(() => editActors(source, actors)).toThrow("21000-character expression limit");
+});
+
+it.each([
+  "github.ref == 'refs/heads/main' || always()",
+  "${{ github.ref == 'refs/heads/main' || always() }}",
+])("preserves %s while replacing an actor job filter on repeated edits", (custom) => {
+  const doc = parseDocument(simpleWorkflow());
+  doc.setIn(["jobs", "task", "if"], custom);
+  const first = editActors(doc.toString(), "alice");
+  const second = editActors(first, "bob");
+  const condition = String(parseDocument(second).getIn(["jobs", "task", "if"]));
+  expect(condition).toContain("(github.ref == 'refs/heads/main' || always()) && (");
+  expect(condition).toContain('["bob","bob[bot]"]');
+  expect(condition).not.toContain("alice");
+  expect(second.match(/dsh-allowed-actors:v1/gu)).toHaveLength(1);
+  expect(editActors(second, "bob")).toBe(second);
+  expect(parseDocument(editActors(second, "*")).getIn(["jobs", "task", "if"])).toBe(
+    "github.ref == 'refs/heads/main' || always()",
+  );
+});
+
+it("keeps default wildcard, bot wildcard and empty actor job filter semantics", () => {
+  for (const unrestricted of ["*", "", "   "])
+    expect(
+      parseDocument(editActors(simpleWorkflow(), unrestricted)).hasIn(["jobs", "task", "if"]),
+    ).toBe(false);
+  const bots = String(
+    parseDocument(editActors(simpleWorkflow(), "*[bot]")).getIn(["jobs", "task", "if"]),
+  );
+  expect(bots).toContain("endsWith(github.actor, '[bot]')");
+  expect(bots).not.toContain("fromJSON");
+  const empty = editActors(simpleWorkflow(), ", ,");
+  expect(String(parseDocument(empty).getIn(["jobs", "task", "if"]))).toContain("(false)");
+  expect(parseDocument(editActors(empty, "*")).hasIn(["jobs", "task", "if"])).toBe(false);
+});
+
+it("removes a stale actor job filter for dynamic lists without guessing their values", () => {
+  const doc = parseDocument(simpleWorkflow());
+  doc.setIn(["jobs", "task", "if"], "github.ref == 'refs/heads/main'");
+  const source = editActors(editActors(doc.toString(), "alice"), "${{ vars.DSH_ACTORS }}");
+  expect(parseDocument(source).getIn(["jobs", "task", "if"])).toBe(
+    "github.ref == 'refs/heads/main'",
+  );
+  expect(inspectWorkflow(source).steps[0]?.inputs["allowed-actors"]).toBe("${{ vars.DSH_ACTORS }}");
+  expect(source).not.toContain("dsh-allowed-actors:v1");
+  expect(
+    validateWorkflow(source, checkConfiguration).diagnostics.some(
+      ({ status, message }) =>
+        status === "not_checked" &&
+        message.includes("a dynamic allowed-actors list cannot be compiled statically"),
+    ),
+  ).toBe(true);
+});
+
+it("combines same-job actor job filters with OR and leaves other jobs unchanged", () => {
+  const doc = parseDocument(simpleWorkflow());
+  const steps: unknown = doc.getIn(["jobs", "task", "steps"], true);
+  if (!isSeq(steps)) throw new Error("Missing steps");
+  steps.add(doc.createNode({ uses: action, with: { "allowed-actors": "bob" } }));
+  doc.setIn(
+    ["jobs", "other"],
+    doc.createNode({ "runs-on": "ubuntu-latest", if: "always()", steps: [{ run: "echo other" }] }),
+  );
+  const originalOther = String(doc.getIn(["jobs", "other"]));
+  const source = editActors(doc.toString(), "alice");
+  const updated = parseDocument(source);
+  const condition = String(updated.getIn(["jobs", "task", "if"]));
+  expect(condition).toContain('["alice","alice[bot]"]');
+  expect(condition).toContain('["bob","bob[bot]"]');
+  expect(condition).toContain(") || (");
+  expect(String(updated.getIn(["jobs", "other"]))).toBe(originalOther);
+  expect(
+    parseDocument(editActors(source, "${{ vars.OTHER_ACTORS }}", 1)).hasIn(["jobs", "task", "if"]),
+  ).toBe(false);
+});
+
+it("preserves a manually changed actor job filter instead of replacing its condition", () => {
+  const doc = parseDocument(editActors(simpleWorkflow(), "alice"));
+  const node: unknown = doc.getIn(["jobs", "task", "if"], true);
+  if (!isScalar(node)) throw new Error("Missing condition");
+  node.value = "${{ github.ref == 'refs/heads/manual' }}";
+  const source = editActors(doc.toString(), "bob");
+  expect(parseDocument(source).getIn(["jobs", "task", "if"])).toBe(node.value);
+  expect(
+    validateWorkflow(source, checkConfiguration).diagnostics.some(
+      ({ status, message }) =>
+        status === "not_checked" && message.includes("manually changed and was preserved"),
+    ),
+  ).toBe(true);
+});
 
 it.each(["directory", "worktree-file"])(
   "opens the repository root from a nested directory with a .git %s marker",

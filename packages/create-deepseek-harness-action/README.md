@@ -8,7 +8,7 @@ npm create deepseek-harness-action@latest
 ```
 
 Installer **0.7.3** includes the local browser GUI and binds generated workflows
-to formal Action **v0.12.1**.
+to formal Action **v0.12.2**.
 
 ## Local configuration GUI
 
@@ -84,7 +84,7 @@ lowercase key and prompt. Reuse that key for follow-ups. See the
 
 ## Release identity
 
-Installer `0.7.3` targets formal Action `v0.12.1`, exact DSH `0.2.1-rc.2`, and
+Installer `0.7.3` targets formal Action `v0.12.2`, exact DSH `0.2.1-rc.2`, and
 source tag `create-deepseek-harness-action-v0.7.3`. The reviewed installer source
 commit and the formal Action commit are separate release identities.
 
