@@ -13,6 +13,9 @@ versioning for published action releases.
 - Prevents Streamable HTTP MCP redirects from forwarding custom headers,
   MCP session headers and request bodies to another origin. Configure the final MCP
   endpoint URL when a deployment previously redirected across origins.
+- Verifies the exact current Session job when GitHub's attempt job list still
+  reports it as queued. The job must match the run, attempt, workflow SHA and
+  producer identity and actually be running; queued or unknown jobs remain denied.
 
 ## Installer 0.7.3
 
