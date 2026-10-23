@@ -15,19 +15,19 @@ import {
   runInstaller,
   type InstallerDshMode,
   type InstallerMode,
-} from "../packages/create-deepseek-harness-action/src/installer.mjs";
+} from "../packages/create-dsh-action/src/installer.mjs";
 import { assertPinnedContainerImage } from "../src/dsh/docker-policy.js";
 import { DSH_VERSION } from "../src/release.js";
 import { sessionKeyHash } from "../src/session/contracts.js";
 import { assertSessionWorkflowPolicy } from "../src/session/workflow-policy.js";
 
 const execFileAsync = promisify(execFile);
-const INSTALLER_VERSION = "0.7.3";
+const INSTALLER_VERSION = "0.7.4";
 // Test-only binding. Production packing must resolve the qualified formal tag.
 const RELEASE_SHA = "0123456789abcdef0123456789abcdef01234567";
 const RELEASE_TOKEN = "__DSH_ACTION_RELEASE_SHA__";
 const DSH_MODE_TOKEN = "__DSH_MODE_INPUT__";
-const packageRoot = new URL("../packages/create-deepseek-harness-action/", import.meta.url);
+const packageRoot = new URL("../packages/create-dsh-action/", import.meta.url);
 const packageRootPath = fileURLToPath(packageRoot);
 const buildScript = fileURLToPath(new URL("scripts/build.mjs", packageRoot));
 const sourceTemplates = new URL("src/templates/", packageRoot);
@@ -87,7 +87,7 @@ function installerDshVersion(contents: string): unknown {
     .parse(parse(contents));
   const actionSteps = Object.values(document.jobs)
     .flatMap((job) => job.steps)
-    .filter((step) => step.uses?.startsWith("Lixiaoyiao/deepseek-harness-action@"));
+    .filter((step) => step.uses?.startsWith("Lixiaoyiao/DSH-action@"));
   expect(actionSteps).toHaveLength(1);
   return actionSteps[0]?.with?.["dsh-version"];
 }
@@ -122,7 +122,7 @@ beforeAll(async () => {
     },
   );
   packStdout = packed.stdout;
-  // Share the real prepack build with the CLI fixtures; compile the validator once.
+  // Share the real prepack build with the CLI fixtures; reuse its bound templates.
   await cp(new URL("dist/", packageRoot), builtPackage, { recursive: true });
 }, 60_000);
 
@@ -130,17 +130,17 @@ afterAll(async () => {
   if (suiteDirectory !== "") await rm(suiteDirectory, { force: true, recursive: true });
 });
 
-describe("create-deepseek-harness-action release build", () => {
-  it("declares the independent 0.7.3 npm create package", async () => {
+describe("create-dsh-action release build", () => {
+  it("declares the independent 0.7.4 npm create package", async () => {
     const manifest: unknown = JSON.parse(
       await readFile(new URL("package.json", packageRoot), "utf8"),
     );
     expect(manifest).toMatchObject({
-      name: "create-deepseek-harness-action",
+      name: "create-dsh-action",
       version: INSTALLER_VERSION,
       private: false,
       type: "module",
-      bin: { "create-deepseek-harness-action": "./dist/cli.mjs" },
+      bin: { "create-dsh-action": "./dist/cli.mjs" },
       files: ["dist/"],
       publishConfig: {
         access: "public",
@@ -183,10 +183,8 @@ describe("create-deepseek-harness-action release build", () => {
       expect(built).not.toContain(RELEASE_TOKEN);
       expect(built).not.toContain(DSH_MODE_TOKEN);
       expect(installerDshVersion(built)).toBe(DSH_VERSION);
-      expect(built).toContain(`Lixiaoyiao/deepseek-harness-action@${RELEASE_SHA}`);
-      expect(built.match(new RegExp(`deepseek-harness-action@${RELEASE_SHA}`, "gu"))).toHaveLength(
-        1,
-      );
+      expect(built).toContain(`Lixiaoyiao/DSH-action@${RELEASE_SHA}`);
+      expect(built.match(new RegExp(`DSH-action@${RELEASE_SHA}`, "gu"))).toHaveLength(1);
       expect(() => {
         parse(built);
       }).not.toThrow();
@@ -203,7 +201,7 @@ describe("create-deepseek-harness-action release build", () => {
       expect(runtime).not.toContain(DSH_MODE_TOKEN);
     }
     await expect(readFile(join(builtPackage, "installer.mjs"), "utf8")).resolves.toContain(
-      "/blob/create-deepseek-harness-action-v0.7.3/docs/setup.md",
+      "/blob/create-dsh-action-v0.7.4/docs/setup.md",
     );
 
     for (const [index, invalidReleaseSha] of [
@@ -249,8 +247,8 @@ describe("create-deepseek-harness-action release build", () => {
 
     expect(packResult).toHaveLength(1);
     expect(packResult[0]).toMatchObject({
-      filename: `create-deepseek-harness-action-${INSTALLER_VERSION}.tgz`,
-      name: "create-deepseek-harness-action",
+      filename: `create-dsh-action-${INSTALLER_VERSION}.tgz`,
+      name: "create-dsh-action",
       version: INSTALLER_VERSION,
     });
     await expect(
@@ -265,23 +263,8 @@ describe("create-deepseek-harness-action release build", () => {
         "dist/cli.mjs",
         "dist/installer.mjs",
         "dist/local-plugins.mjs",
-        "dist/process.mjs",
+        "dist/workflow-files.mjs",
         "dist/workflow-text.mjs",
-        "dist/gui/contract.generated.mjs",
-        "dist/gui/files.mjs",
-        "dist/gui/workflows.mjs",
-        "dist/gui/plugins.mjs",
-        "dist/gui/server.mjs",
-        "dist/gui/config-validation.mjs",
-        "dist/gui/THIRD_PARTY_NOTICES.txt",
-        "dist/gui/ui/index.html",
-        "dist/gui/ui/app.mjs",
-        "dist/gui/ui/api.mjs",
-        "dist/gui/ui/state.mjs",
-        "dist/gui/ui/components.mjs",
-        "dist/gui/ui/views.mjs",
-        "dist/gui/ui/tokens.css",
-        "dist/gui/ui/styles.css",
         "dist/templates/dsh-commands-native.yml",
         "dist/templates/dsh-commands.yml",
         "dist/templates/dsh-review-native.yml",
@@ -394,7 +377,7 @@ describe("explicit maintainer validation setup", () => {
       expect(contents.match(/^ {10}container-image: .+$/gmu)).toHaveLength(1);
       expect(await workflow(project, "dsh-review.yml")).not.toContain(image);
       expect(withInputs?.["run-tests"]).toBe("true");
-      expect(contents).toContain(`deepseek-harness-action@${RELEASE_SHA}`);
+      expect(contents).toContain(`DSH-action@${RELEASE_SHA}`);
       expect(contents).not.toContain("REQUIRED: replace test-commands");
       await expect(readFile(marker)).rejects.toThrow();
       expect(output.text).toContain("The installer has not run your project");
@@ -553,9 +536,7 @@ describe("installer modes", () => {
         expect(() => {
           parse(contents);
         }).not.toThrow();
-        expect(
-          contents.match(new RegExp(`deepseek-harness-action@${RELEASE_SHA}`, "gu")),
-        ).toHaveLength(1);
+        expect(contents.match(new RegExp(`DSH-action@${RELEASE_SHA}`, "gu"))).toHaveLength(1);
         expect(contents).not.toContain(RELEASE_TOKEN);
         expect(contents).not.toContain(DSH_MODE_TOKEN);
         expect(installerDshVersion(contents)).toBe(DSH_VERSION);
@@ -565,52 +546,6 @@ describe("installer modes", () => {
           expect(contents.match(/^\s*dsh-mode: native\s*$/gmu)).toHaveLength(1);
         }
       }
-    },
-  );
-
-  it.each([
-    [[], "controlled"],
-    [["--advanced"], "controlled"],
-    [["--advanced", "--mode", "review"], "controlled"],
-    [["--dsh-mode", "native"], "native"],
-    [["--gui", "--mode", "both", "--dsh-mode", "native"], "native"],
-  ] as const)(
-    "opens the same GUI for %j without reading terminal choices",
-    async (argv, dshMode) => {
-      const project = await createProject();
-      const output = new OutputCapture();
-      let read = false;
-      const input = new Readable({
-        read() {
-          read = true;
-          this.destroy(new Error("stdin must not be read"));
-        },
-      });
-      const session = {
-        origin: "http://127.0.0.1:1",
-        token: "fixture",
-        url: "http://127.0.0.1:1/#token=fixture",
-        close: () => Promise.resolve(),
-      };
-      const result = await runInstaller({
-        argv,
-        cwd: project,
-        input,
-        output,
-        isTTY: true,
-        env: {},
-        templateDirectory: join(builtPackage, "templates"),
-        guiLauncher: (options) => {
-          expect(options).toMatchObject({ cwd: project, dshMode, openBrowser: true });
-          return Promise.resolve(session);
-        },
-      });
-      expect(result).toEqual({ dshMode, createdFiles: [], gui: session });
-      expect(read).toBe(false);
-      expect(output.text).not.toContain("Selection");
-      await expect(
-        readFile(join(project, ".github/workflows/dsh-review.yml")),
-      ).rejects.toMatchObject({ code: "ENOENT" });
     },
   );
 });
@@ -660,7 +595,7 @@ describe("safe filesystem and non-interactive behavior", () => {
         default: "repository-summary",
       });
       const step = document.jobs.session.steps.at(-1);
-      expect(step?.uses).toBe(`Lixiaoyiao/deepseek-harness-action@${RELEASE_SHA}`);
+      expect(step?.uses).toBe(`Lixiaoyiao/DSH-action@${RELEASE_SHA}`);
       expect(step?.with).toMatchObject({
         "session-mode": "auto",
         "session-key": "${{ inputs.session_key }}",
@@ -900,13 +835,11 @@ describe("generated workflow contracts", () => {
       );
 
       for (const contents of [review, commands]) {
-        expect(
-          contents.match(new RegExp(`deepseek-harness-action@${RELEASE_SHA}`, "gu")),
-        ).toHaveLength(1);
+        expect(contents.match(new RegExp(`DSH-action@${RELEASE_SHA}`, "gu"))).toHaveLength(1);
         expect(contents).not.toContain(RELEASE_TOKEN);
         expect(contents).not.toContain(DSH_MODE_TOKEN);
         expect(installerDshVersion(contents)).toBe(DSH_VERSION);
-        expect(contents).not.toMatch(/deepseek-harness-action@(?:main|latest|v\d)/u);
+        expect(contents).not.toMatch(/DSH-action@(?:main|latest|v\d)/u);
         if (dshMode === "controlled") {
           expect(contents).not.toMatch(/^\s*dsh-mode:/mu);
         } else {

@@ -105,7 +105,7 @@ async function discover(home, output) {
   return result;
 }
 
-/** Read package metadata only; shared by the CLI and the authenticated local GUI. */
+/** Read package metadata only; never load plugin code, local patches or credentials. */
 export async function discoverLocalPlugins({
   home,
   env = process.env,
@@ -119,6 +119,98 @@ export async function discoverLocalPlugins({
         ? join(homedir(), selectedHome.slice(2))
         : selectedHome;
   return discover(resolve(expanded), output);
+}
+
+/** Read package metadata only; never load plugin code, local patches or credentials. */
+export async function selectLocalPlugins({ home, env, prompt, output, dshMode, mode }) {
+  const plugins = await discoverLocalPlugins({ home, env, output });
+  if (plugins.length === 0) {
+    output.write("No local DSH plugins found. You can continue without importing any.\n");
+    return undefined;
+  }
+  output.write(`\nLocal plugins (cloud DSH ${TARGET}):\n`);
+  plugins.forEach((plugin, index) =>
+    output.write(
+      `  ${index + 1}) ${plugin.name}@${plugin.version} — ${plugin.reason ? `cannot import: ${plugin.reason}` : plugin.compatibility}\n`,
+    ),
+  );
+  if (dshMode === "controlled" && (mode === "commands" || mode === "both")) {
+    output.write(
+      "Controlled coding commands need per-task plugin permissions. Import applies to the Review workflow; configure command plugins manually.\n",
+    );
+    if (mode === "commands") return undefined;
+  }
+  output.write(
+    "Only package names and versions are imported. Local settings and keys stay on this computer.\n",
+  );
+  const answer = (
+    await prompt.question("Plugin numbers to import, separated by commas (Enter to skip): ")
+  ).trim();
+  if (answer === "") return undefined;
+  if (!/^\d+(?:\s*,\s*\d+)*$/u.test(answer))
+    throw new Error("Enter plugin numbers separated by commas, for example 1,3.");
+  const indices = [...new Set(answer.split(",").map((value) => Number(value.trim()) - 1))];
+  if (indices.length > 16 || indices.some((index) => !plugins[index] || plugins[index].reason))
+    throw new Error("Select up to 16 importable plugins from the list.");
+  const bundles = [];
+  const allowedTools = [];
+  for (const index of indices) {
+    const plugin = plugins[index];
+    const entry = {
+      id: `local-${index + 1}`,
+      package: plugin.name,
+      source: plugin.version,
+      network: false,
+    };
+    if (dshMode === "native") entry.workspaceWrite = false;
+    else {
+      output.write(
+        `${plugin.name}: Controlled needs the plugin's exact read-only tool names (plugin__owner__tool).\n`,
+      );
+      const names = (
+        await prompt.question("Tool names, separated by commas (Enter to skip this plugin): ")
+      ).trim();
+      if (names === "") continue;
+      const tools = [...new Set(names.split(",").map((name) => name.trim()))];
+      const matches = tools.map((name) =>
+        /^plugin__([a-z][a-z0-9-]{0,31})__([a-z][a-z0-9_-]{0,63})$/u.exec(name),
+      );
+      if (
+        tools.length > 64 ||
+        matches.some((match) => !match) ||
+        tools.some((name) => name.length > 64) ||
+        matches.some((match) => match[1] !== matches[0][1])
+      )
+        throw new Error(
+          "These tools need manual Controlled configuration. Native mode supports DSH's own tool names.",
+        );
+      entry.id = matches[0][1];
+      entry.tools = tools.map((name, i) => ({
+        id: matches[i][2],
+        name,
+        description: `Read-only ${plugin.name} tool`,
+        permissions: ["read"],
+      }));
+      allowedTools.push(...entry.tools.map((tool) => `plugin.${entry.id}.${tool.id}`));
+    }
+    if (bundles.some((bundle) => bundle.id === entry.id || bundle.package === entry.package))
+      throw new Error("Choose one version per plugin and distinct Controlled tool owners.");
+    bundles.push(entry);
+  }
+  if (bundles.length === 0) return undefined;
+  output.write(
+    `\nCloud DSH will install: ${bundles.map((entry) => `${entry.package}@${entry.source}`).join(", ")}\n`,
+  );
+  output.write(
+    "Plugins use their package defaults. Add required cloud configuration separately. Import does not request extra network or write access; existing workflow permissions still apply.\n",
+  );
+  if (
+    !/^(?:y|yes)$/iu.test(
+      (await prompt.question("Import these plugins into the workflow? [y/N]: ")).trim(),
+    )
+  )
+    return undefined;
+  return { configuration: { schemaVersion: 1, bundles, plugins: [] }, allowedTools };
 }
 
 export function addPluginInputs(contents, selection, review, commands = false) {

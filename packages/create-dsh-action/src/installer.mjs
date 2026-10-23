@@ -1,14 +1,15 @@
 import { access, lstat, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { join, resolve } from "node:path";
+import { createInterface } from "node:readline/promises";
 
 import { INSTALLER_ACTION_INPUTS } from "./action-inputs.generated.mjs";
 import { canonicalWorkflowText } from "./workflow-text.mjs";
-import { saveWorkflowChanges } from "./gui/files.mjs";
+import { saveWorkflowChanges } from "./workflow-files.mjs";
 
 const DOCUMENTATION_URL =
-  "https://github.com/Lixiaoyiao/deepseek-harness-action/blob/create-deepseek-harness-action-v0.7.3/docs/setup.md";
-const ACTION_REFERENCE_PATTERN = /uses: Lixiaoyiao\/deepseek-harness-action@[0-9a-f]{40}(?:\s|$)/gu;
+  "https://github.com/Lixiaoyiao/DSH-action/blob/create-dsh-action-v0.7.4/docs/setup.md";
+const ACTION_REFERENCE_PATTERN = /uses: Lixiaoyiao\/DSH-action@[0-9a-f]{40}(?:\s|$)/gu;
 const MODES = new Set(["review", "commands", "both", "session"]);
 const DSH_MODES = new Set(["controlled", "native"]);
 const DSH_MODE_INPUT_NAME = INSTALLER_ACTION_INPUTS.dshMode.name;
@@ -53,14 +54,14 @@ const WORKFLOWS = Object.freeze({
 
 function usage() {
   return [
-    "Usage: create-deepseek-harness-action [--gui] [--no-open] [--mode review|commands|both|session] [--dsh-mode controlled|native]",
+    "Usage: create-dsh-action [--advanced] [--mode review|commands|both|session] [--dsh-mode controlled|native]",
     "  [--test-commands '<JSON argv arrays>'] [--container-image '<name>@sha256:<digest>']",
     "  [--import-plugins] [--dsh-home '<local DSH folder>']",
     "",
-    "Without flags, a local browser GUI configures read-only @dsh chat and PR Review. Reopen it to edit existing workflows.",
-    "Use --gui to open it explicitly, --no-open to copy its private URL, or --advanced as a GUI alias.",
+    "Without flags, choose workflows in the terminal; read-only @dsh chat + PR Review and Controlled are the defaults.",
+    "Use --advanced to choose workflow and DSH modes in the terminal, including with --mode.",
     "Explicit --mode keeps non-interactive file generation. No workflow is committed or pushed automatically.",
-    "Use --import-plugins to open the GUI plugin selector; discovery starts there after you choose a mode.",
+    "Use --import-plugins in a terminal to choose installed local DSH plugins for cloud installation.",
     "",
     "Workflow choices:",
     "  1) Read-only @dsh chat + PR Review",
@@ -133,20 +134,9 @@ export function parseArguments(argv) {
   let advanced = false;
   let importPlugins = false;
   let dshHome;
-  let gui = false;
-  let noOpen = false;
 
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
-    if (argument === "--gui") {
-      gui = true;
-      continue;
-    }
-    if (argument === "--no-open") {
-      gui = true;
-      noOpen = true;
-      continue;
-    }
     if (argument === "--import-plugins") {
       if (importPlugins) throw new Error("--import-plugins may be provided only once");
       importPlugins = true;
@@ -253,8 +243,6 @@ export function parseArguments(argv) {
     ...(advanced ? { advanced } : {}),
     ...(importPlugins ? { importPlugins } : {}),
     ...(dshHome === undefined ? {} : { dshHome }),
-    ...(gui ? { gui } : {}),
-    ...(noOpen ? { noOpen } : {}),
     ...(testCommands === undefined ? {} : { testCommands }),
     ...(containerImage === undefined ? {} : { containerImage }),
   };
@@ -295,6 +283,90 @@ function parseValidationCommands(value) {
   return commands;
 }
 
+async function promptForMode(readline, output) {
+  while (true) {
+    const answer = (
+      await readline.question(
+        [
+          "Choose what to install:\n",
+          "  1) Read-only @dsh chat + PR Review\n",
+          "  2) @dsh Coding Commands\n",
+          "  3) Both\n",
+          "  4) Automatic Session\n",
+          "Selection [1-4, default 1]: ",
+        ].join(""),
+      )
+    )
+      .trim()
+      .toLowerCase();
+
+    if (answer === "" || answer === "1" || answer === "review") return "review";
+    if (answer === "2" || answer === "commands") return "commands";
+    if (answer === "3" || answer === "both") return "both";
+    if (answer === "4" || answer === "session") return "session";
+    output.write("Please enter 1, 2, 3, or 4.\n");
+  }
+}
+
+async function promptForDshMode(readline, output) {
+  while (true) {
+    const answer = (
+      await readline.question(
+        [
+          "Choose the DSH mode:\n",
+          "  1) Controlled — choose allowed tools (default)\n",
+          "  2) Native — use DSH's own tools and plugins\n",
+          "Selection [1-2, default 1]: ",
+        ].join(""),
+      )
+    )
+      .trim()
+      .toLowerCase();
+
+    if (answer === "" || answer === "1" || answer === "controlled") return "controlled";
+    if (answer === "2" || answer === "native") return "native";
+    output.write("Please enter 1 or 2.\n");
+  }
+}
+
+async function promptForMissingSelections({
+  input,
+  output,
+  mode,
+  dshMode,
+  importPlugins,
+  dshHome,
+  env,
+}) {
+  const readline = createInterface({ input, output, terminal: false });
+  const answers = readline[Symbol.asyncIterator]();
+  const prompt = {
+    async question(message) {
+      output.write(message);
+      const answer = await answers.next();
+      if (answer.done) {
+        throw new Error("Interactive input ended before all installer choices were selected");
+      }
+      return answer.value;
+    },
+  };
+  try {
+    mode ??= await promptForMode(prompt, output);
+    dshMode ??= await promptForDshMode(prompt, output);
+    return {
+      mode,
+      dshMode,
+      pluginImport: importPlugins
+        ? await (
+            await import("./local-plugins.mjs")
+          ).selectLocalPlugins({ home: dshHome, env, prompt, output, dshMode, mode })
+        : undefined,
+    };
+  } finally {
+    readline.close();
+  }
+}
+
 function workflowDefinitions(mode, dshMode) {
   const workflows = WORKFLOWS[dshMode];
   if (mode === "review") return [workflows.review];
@@ -329,6 +401,7 @@ async function installWorkflows({
   templateDirectory,
   testCommands,
   containerImage,
+  pluginImport,
 }) {
   const definitions = workflowDefinitions(mode, dshMode).map((definition) => ({
     ...definition,
@@ -378,6 +451,13 @@ async function installWorkflows({
         )
         .replace(/^ {2}issues: write\r?\n/mu, "");
     }
+    if (pluginImport)
+      contents = (await import("./local-plugins.mjs")).addPluginInputs(
+        contents,
+        pluginImport,
+        definition.target.endsWith("dsh-review.yml"),
+        definition.target.endsWith("dsh-commands.yml"),
+      );
     if (definition.target.endsWith("dsh-commands.yml")) {
       if (testCommands !== undefined) {
         contents = contents.replace(
@@ -397,7 +477,7 @@ async function installWorkflows({
           );
         }
         const actionInputs =
-          /^([ \t]*)- uses: Lixiaoyiao\/deepseek-harness-action@[0-9a-f]{40}[ \t]*\r?\n\1 {2}with:[ \t]*\r?\n((?:\1 {4}.*(?:\r?\n|$))+)/mu.exec(
+          /^([ \t]*)- uses: Lixiaoyiao\/DSH-action@[0-9a-f]{40}[ \t]*\r?\n\1 {2}with:[ \t]*\r?\n((?:\1 {4}.*(?:\r?\n|$))+)/mu.exec(
             contents,
           );
         const imageInput = imageInputs[0];
@@ -505,40 +585,39 @@ export async function runInstaller(options = {}) {
     return { dshMode: parsed.dshMode ?? DEFAULT_DSH_MODE, createdFiles: [] };
   }
 
-  const mode = parsed.mode;
-  const dshMode = parsed.dshMode ?? DEFAULT_DSH_MODE;
+  let mode = parsed.mode;
+  let dshMode = parsed.dshMode;
+  let pluginImport;
   const interactive = isTTY && !environment.CI;
-  if (
-    parsed.gui ||
-    parsed.advanced ||
-    (interactive && (mode === undefined || parsed.importPlugins))
-  ) {
-    if (environment.CI)
-      throw new Error(
-        "The local GUI is for a developer machine. Use --mode for CI file generation.",
-      );
-    const launch = options.guiLauncher ?? (await import("./gui/server.mjs")).runLocalGui;
-    const gui = await launch({
-      ...options,
-      cwd,
-      output,
-      env: environment,
-      templateDirectory,
-      dshMode,
-      importPlugins: parsed.importPlugins,
-      dshHome: parsed.dshHome,
-      openBrowser: !parsed.noOpen,
-    });
-    return { dshMode, createdFiles: [], gui };
-  }
-  if (parsed.importPlugins)
+  if (parsed.importPlugins && !interactive)
     throw new Error(
-      "Plugin import uses the local GUI. Run --gui --import-plugins on a developer machine, or omit --import-plugins for non-interactive generation.",
+      "Plugin import needs a terminal so you can choose and confirm the plugins. Run without CI or omit --import-plugins.",
     );
-  if (mode === undefined)
+  if (mode === undefined && !interactive)
     throw new Error(
       `Non-interactive or CI input requires --mode review|commands|both|session\n\n${usage()}`,
     );
+  if (
+    interactive &&
+    (mode === undefined || (parsed.advanced && dshMode === undefined) || parsed.importPlugins)
+  ) {
+    ({ mode, dshMode, pluginImport } = await promptForMissingSelections({
+      input,
+      output,
+      mode,
+      dshMode: dshMode ?? (mode !== undefined && !parsed.advanced ? DEFAULT_DSH_MODE : undefined),
+      importPlugins: parsed.importPlugins,
+      dshHome: parsed.dshHome,
+      env: environment,
+    }));
+  }
+  dshMode ??= DEFAULT_DSH_MODE;
+  if (
+    (mode === "review" || mode === "session") &&
+    (parsed.testCommands !== undefined || parsed.containerImage !== undefined)
+  ) {
+    throw new Error("--test-commands/--container-image require commands or both");
+  }
 
   const createdFiles = await installWorkflows({
     cwd,
@@ -547,6 +626,7 @@ export async function runInstaller(options = {}) {
     templateDirectory,
     testCommands: parsed.testCommands,
     containerImage: parsed.containerImage,
+    pluginImport,
   });
   printSuccess(output, mode, dshMode, createdFiles, parsed.testCommands);
   return { mode, dshMode, createdFiles };

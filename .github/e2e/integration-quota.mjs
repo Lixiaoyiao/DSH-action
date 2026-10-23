@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 
-const repository = "Lixiaoyiao/deepseek-harness-action";
+const repository = "Lixiaoyiao/DSH-action";
 const fail = () => {
   throw new Error(
     "Integration job content-read quota was not established; no fixture or task was started",

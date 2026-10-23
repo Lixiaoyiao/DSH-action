@@ -10,7 +10,7 @@ Give the Action step an `id`, then inspect `result-json` even when the step
 fails:
 
 ```yaml
-- uses: Lixiaoyiao/deepseek-harness-action@v0.10.1
+- uses: Lixiaoyiao/DSH-action@v0.10.1
   id: dsh
   with:
     deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
@@ -48,26 +48,25 @@ authorization or tamper-proof security evidence. Keep their strings in data
 channels such as environment variables; do not interpolate them into shell
 source.
 
-## The local configuration GUI does not open
+## The installer stops before creating workflows
 
-Installer 0.7.3 includes the local GUI and targets formal Action v0.12.2. Run
-`npm create deepseek-harness-action@latest -- --no-open` and open the full private
-URL printed by the terminal. Keep that terminal running. A stopped or restarted
-server invalidates the previous session URL.
+Installer `0.7.4` targets formal Action `v0.12.2`. Without options, use an
+interactive terminal to choose a workflow and DSH composition. Press Enter for
+read-only Review, then `controlled`. CI and non-interactive shells must use
+`--mode review|commands|both|session`; `--dsh-mode` defaults to `controlled`.
+Local plugin import with `--import-plugins` requires an interactive terminal
+outside CI so you can choose and confirm packages.
 
-The server is local to `127.0.0.1`. Do not replace it with a public hostname,
-forward the port, or share its token-bearing URL. A 401 means the browser lacks
-the current session token; reopen the latest private URL. A 403 means the request
-does not match the local host/origin; use the printed address directly.
+If a target workflow already exists, edit that YAML manually. The installer
+refuses to overwrite existing files or follow symbolic-link destinations. Keep
+secret values in GitHub Actions Secrets and use their expressions in YAML.
+Review, commit and push the workflow to the default branch with your normal Git
+workflow.
 
-If Save reports a changed file, reload the workflow and preview again before
-saving. Unsupported YAML structures and plaintext credentials require a manual
-edit. Keep secret values in GitHub Actions Secrets and use their expressions in
-the YAML. Successful GUI validation proves configuration shape; it does not run
-a model, repository tests, or online credential checks.
-
-CI and non-interactive shells must use `--mode review|commands|both|session`.
-The GUI saves local YAML only; commit and push it to the default branch yourself.
+Use the [offline configuration check](configuration-check.md) to validate input
+and extension configuration. Its success covers configuration shape; a real
+Action run checks credentials, online permissions/quota, Docker and repository
+validation.
 
 ## The request is denied
 

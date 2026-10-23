@@ -17,20 +17,17 @@ versioning for published action releases.
   reports it as queued. The job must match the run, attempt, workflow SHA and
   producer identity and actually be running; queued or unknown jobs remain denied.
 
-## Installer 0.7.3
+## Installer 0.7.4
 
-- Binds installer `0.7.3` to formal Action `v0.12.2` through
+- Binds installer `0.7.4` to formal Action `v0.12.2` through
   `DSH_ACTION_RELEASE_SHA`, with exact DSH `0.2.1-rc.2` and source tag
-  `create-deepseek-harness-action-v0.7.3`.
-- Delivers the local browser GUI for existing-workflow edits, presets, model and
-  thinking controls, plugin selection, diff preview, static validation and
-  explicit local YAML saves. The installer performs no commit or push.
-- Compiles literal `allowed-actors` lists into job conditions so excluded actors
-  are skipped before a runner starts. Preserves custom conditions and updates the
-  generated filter when the list changes; dynamic lists remain explicit YAML
-  configuration.
-- Retains the explicit browser-free workflow modes and separate installer source,
-  qualified archive, npm publication and fresh anonymous public-consumer gates.
+  `create-dsh-action-v0.7.4`.
+- Provides terminal workflow and composition selection, explicit non-interactive
+  modes and local plugin import through the existing CLI.
+- Preserves safe local file creation, overwrite refusal and the controlled/native
+  YAML templates. The installer performs no commit or push.
+- Keeps separate installer source, qualified archive, npm publication and fresh
+  anonymous public-consumer checks.
 
 ## [0.12.1] - 2026-10-23
 
@@ -51,11 +48,6 @@ versioning for published action releases.
   require successful current validation.
 - Removes unused in-process engine metadata and shares identical extension
   validation without changing the external worker protocol or authority checks.
-- Prepares a local browser configuration UI for the separately released
-  installer 0.7.3: YAML editing, presets, model controls, plugin selection,
-  diff preview, static validation and explicit local saves. It does not commit
-  or push. The Action release retains published installer 0.7.2 metadata until
-  v0.12.1 and its formal canary qualify the next installer binding.
 
 ## Installer 0.7.2
 
@@ -230,7 +222,7 @@ versioning for published action releases.
 ## Installer 0.5.0 - 2026-10-08
 
 - Adds controlled/native automatic Session starter workflows with matching key identity and concurrency; existing review/commands/both modes remain.
-- Binds only to formal Action v0.10.0 commit `9c52f682bbeed1b7752a9e21273e6c13b01e79b1` through `DSH_ACTION_RELEASE_SHA`, after formal controlled/native canary [37654999388](https://github.com/Lixiaoyiao/deepseek-harness-action/actions/runs/37654999388). Production DSH remains exactly `0.2.0-rc.2`.
+- Binds only to formal Action v0.10.0 commit `9c52f682bbeed1b7752a9e21273e6c13b01e79b1` through `DSH_ACTION_RELEASE_SHA`, after formal controlled/native canary [37654999388](https://github.com/Lixiaoyiao/DSH-action/actions/runs/37654999388). Production DSH remains exactly `0.2.0-rc.2`.
 - Source CI, qualified tarball, official npm publication and fresh anonymous public installations remain separate release gates.
 
 ## [0.10.0] - 2026-10-07
@@ -1291,15 +1283,15 @@ versioning for published action releases.
   PR workflows, strict structured-output validation, controller-owned tracking
   comments and fail-closed write gates.
 
-[0.8.1]: https://github.com/Lixiaoyiao/deepseek-harness-action/compare/v0.8.0...v0.8.1
-[0.8.0]: https://github.com/Lixiaoyiao/deepseek-harness-action/compare/v0.7.0...v0.8.0
-[0.7.0]: https://github.com/Lixiaoyiao/deepseek-harness-action/compare/v0.6.0...v0.7.0
-[0.6.0]: https://github.com/Lixiaoyiao/deepseek-harness-action/compare/v0.5.3...v0.6.0
-[0.5.3]: https://github.com/Lixiaoyiao/deepseek-harness-action/compare/v0.5.2...v0.5.3
-[0.5.2]: https://github.com/Lixiaoyiao/deepseek-harness-action/compare/v0.5.1...v0.5.2
-[0.5.1]: https://github.com/Lixiaoyiao/deepseek-harness-action/compare/v0.5.0...v0.5.1
-[0.5.0]: https://github.com/Lixiaoyiao/deepseek-harness-action/compare/v0.4.0...v0.5.0
-[0.4.0]: https://github.com/Lixiaoyiao/deepseek-harness-action/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/Lixiaoyiao/deepseek-harness-action/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/Lixiaoyiao/deepseek-harness-action/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/Lixiaoyiao/deepseek-harness-action/releases/tag/v0.1.0
+[0.8.1]: https://github.com/Lixiaoyiao/DSH-action/compare/v0.8.0...v0.8.1
+[0.8.0]: https://github.com/Lixiaoyiao/DSH-action/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/Lixiaoyiao/DSH-action/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/Lixiaoyiao/DSH-action/compare/v0.5.3...v0.6.0
+[0.5.3]: https://github.com/Lixiaoyiao/DSH-action/compare/v0.5.2...v0.5.3
+[0.5.2]: https://github.com/Lixiaoyiao/DSH-action/compare/v0.5.1...v0.5.2
+[0.5.1]: https://github.com/Lixiaoyiao/DSH-action/compare/v0.5.0...v0.5.1
+[0.5.0]: https://github.com/Lixiaoyiao/DSH-action/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/Lixiaoyiao/DSH-action/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/Lixiaoyiao/DSH-action/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/Lixiaoyiao/DSH-action/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/Lixiaoyiao/DSH-action/releases/tag/v0.1.0

@@ -2,176 +2,153 @@ import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable, Writable } from "node:stream";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { runInstaller } from "../packages/create-deepseek-harness-action/src/installer.mjs";
+import { afterEach, describe, expect, it } from "vitest";
+import { parseArguments, runInstaller } from "../packages/create-dsh-action/src/installer.mjs";
 
 const roots: string[] = [];
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
-async function project() {
-  const root = await mkdtemp(join(tmpdir(), "dsh-gui-dispatch-"));
+
+async function fixture() {
+  const root = await mkdtemp(join(tmpdir(), "dsh-cli-onboarding-"));
   roots.push(root);
   await writeFile(join(root, "README.md"), "existing repository content\n");
-  return root;
-}
-function io() {
-  let inputRead = false;
+  const templates = join(root, "templates");
+  await mkdir(templates);
+  for (const kind of ["review", "commands", "session"]) {
+    const source = await readFile(
+      new URL(`../packages/create-dsh-action/src/templates/dsh-${kind}.yml`, import.meta.url),
+      "utf8",
+    );
+    const pinned = source.replace(
+      "__DSH_ACTION_RELEASE_SHA__",
+      "0123456789abcdef0123456789abcdef01234567",
+    );
+    await writeFile(
+      join(templates, `dsh-${kind}.yml`),
+      pinned.replace("# __DSH_MODE_INPUT__", "# controlled"),
+    );
+    await writeFile(
+      join(templates, `dsh-${kind}-native.yml`),
+      pinned.replace("# __DSH_MODE_INPUT__", "dsh-mode: native"),
+    );
+  }
   let output = "";
   return {
-    input: new Readable({
-      read() {
-        inputRead = true;
-        this.destroy(new Error("No terminal questions"));
-      },
-    }),
+    root,
+    templates,
     output: new Writable({
       write(chunk, _encoding, done) {
         output += String(chunk);
         done();
       },
     }),
-    wasRead: () => inputRead,
     text: () => output,
   };
 }
-function gui() {
-  const session = {
-    origin: "http://127.0.0.1:1",
-    token: "fixture-token",
-    url: "http://127.0.0.1:1/#token=fixture-token",
-    close: vi.fn(() => Promise.resolve()),
-  };
-  return { session, launch: vi.fn(() => Promise.resolve(session)) };
-}
 
-describe("installer browser onboarding", () => {
-  it("hands the repository to the GUI without reading Secrets or creating, committing or pushing files", async () => {
-    const root = await project();
-    const streams = io();
-    const browser = gui();
+describe("installer terminal onboarding", () => {
+  it("defaults empty terminal choices to read-only Review and Controlled", async () => {
+    const f = await fixture();
     const result = await runInstaller({
       argv: [],
-      cwd: root,
+      cwd: f.root,
       isTTY: true,
       env: {},
-      ...streams,
-      guiLauncher: browser.launch,
+      input: Readable.from(["\n\n"]),
+      output: f.output,
+      templateDirectory: f.templates,
     });
-    expect(result.gui).toBe(browser.session);
-    expect(result.createdFiles).toEqual([]);
-    expect(browser.launch).toHaveBeenCalledWith(
-      expect.objectContaining({ cwd: root, dshMode: "controlled", openBrowser: true }),
+    expect(result).toEqual({
+      mode: "review",
+      dshMode: "controlled",
+      createdFiles: [".github/workflows/dsh-review.yml"],
+    });
+    expect(f.text()).toContain("Selection [1-4, default 1]");
+    expect(f.text()).toContain("Selection [1-2, default 1]");
+    expect(f.text()).toContain("Add DEEPSEEK_API_KEY");
+    expect(await readFile(join(f.root, ".github/workflows/dsh-review.yml"), "utf8")).toContain(
+      'allow-write: "false"',
     );
-    expect(browser.session.close).not.toHaveBeenCalled();
-    expect(streams.wasRead()).toBe(false);
-    expect(streams.text()).not.toMatch(/Secret value|commit|push|Selection/u);
-    expect(await readdir(root)).toEqual(["README.md"]);
-    expect(await readFile(join(root, "README.md"), "utf8")).toBe("existing repository content\n");
+    expect(await readFile(join(f.root, "README.md"), "utf8")).toBe("existing repository content\n");
+    expect((await readdir(f.root)).sort()).toEqual([".github", "README.md", "templates"]);
   });
 
-  it.each(["--gui", "--advanced", "--no-open"])(
-    "supports explicit %s without a TTY",
-    async (flag) => {
-      const root = await project();
-      const browser = gui();
-      await runInstaller({
-        argv: [flag],
-        cwd: root,
-        isTTY: false,
-        env: {},
-        ...io(),
-        guiLauncher: browser.launch,
-      });
-      expect(browser.launch).toHaveBeenCalledWith(
-        expect.objectContaining({ openBrowser: flag !== "--no-open" }),
-      );
-      expect(await readdir(root)).toEqual(["README.md"]);
-    },
-  );
-
-  it("opens plugin selection without discovering or importing plugins before the page is used", async () => {
-    const root = await project();
-    const browser = gui();
-    const home = join(root, "not-read-before-browser");
-    await runInstaller({
-      argv: ["--gui", "--import-plugins", "--dsh-home", home, "--dsh-mode", "native"],
-      cwd: root,
-      isTTY: false,
+  it("retries invalid terminal choices and installs the selected workflows", async () => {
+    const f = await fixture();
+    const result = await runInstaller({
+      argv: [],
+      cwd: f.root,
+      isTTY: true,
       env: {},
-      ...io(),
-      guiLauncher: browser.launch,
+      input: Readable.from(["unknown\n3\nunknown\n2\n"]),
+      output: f.output,
+      templateDirectory: f.templates,
     });
-    expect(browser.launch).toHaveBeenCalledWith(
-      expect.objectContaining({ dshMode: "native", dshHome: home, importPlugins: true }),
-    );
-    expect(await readdir(root)).toEqual(["README.md"]);
+    expect(result).toMatchObject({ mode: "both", dshMode: "native" });
+    expect(result.createdFiles).toEqual([
+      ".github/workflows/dsh-review.yml",
+      ".github/workflows/dsh-commands.yml",
+    ]);
+    expect(f.text()).toContain("Please enter 1, 2, 3, or 4.");
+    expect(f.text()).toContain("Please enter 1 or 2.");
   });
 
-  it("reports a GUI startup failure without falling back to a terminal flow or writing files", async () => {
-    const root = await project();
-    const streams = io();
+  it("preserves --advanced terminal composition selection with an explicit workflow mode", async () => {
+    const f = await fixture();
+    const result = await runInstaller({
+      argv: ["--advanced", "--mode", "review"],
+      cwd: f.root,
+      isTTY: true,
+      env: {},
+      input: Readable.from(["2\n"]),
+      output: f.output,
+      templateDirectory: f.templates,
+    });
+    expect(result).toMatchObject({ mode: "review", dshMode: "native" });
+    expect(f.text()).not.toContain("Choose what to install");
+    expect(f.text()).toContain("Choose the DSH mode");
+  });
+
+  it("does not read terminal input for explicit --mode generation", async () => {
+    const f = await fixture();
+    let read = false;
+    await runInstaller({
+      argv: ["--mode", "review"],
+      cwd: f.root,
+      isTTY: true,
+      env: {},
+      input: new Readable({
+        read() {
+          read = true;
+          this.destroy(new Error("Unexpected prompt"));
+        },
+      }),
+      output: f.output,
+      templateDirectory: f.templates,
+    });
+    expect(read).toBe(false);
+    expect(f.text()).not.toContain("Selection");
+  });
+
+  it("fails before writing files when terminal choices end early", async () => {
+    const f = await fixture();
     await expect(
       runInstaller({
         argv: [],
-        cwd: root,
+        cwd: f.root,
         isTTY: true,
         env: {},
-        ...streams,
-        guiLauncher: () => Promise.reject(new Error("loopback unavailable")),
+        input: Readable.from(["1\n"]),
+        output: f.output,
+        templateDirectory: f.templates,
       }),
-    ).rejects.toThrow("loopback unavailable");
-    expect(streams.wasRead()).toBe(false);
-    expect(await readdir(root)).toEqual(["README.md"]);
+    ).rejects.toThrow("Interactive input ended");
+    expect((await readdir(f.root)).sort()).toEqual(["README.md", "templates"]);
   });
 
-  it("keeps CI generation explicit and never starts a GUI in CI", async () => {
-    const root = await project();
-    const browser = gui();
-    await expect(
-      runInstaller({
-        argv: ["--gui"],
-        cwd: root,
-        isTTY: true,
-        env: { CI: "true" },
-        ...io(),
-        guiLauncher: browser.launch,
-      }),
-    ).rejects.toThrow("Use --mode for CI");
-    expect(browser.launch).not.toHaveBeenCalled();
-  });
-
-  it("preserves noninteractive --mode generation without launching the GUI", async () => {
-    const root = await project();
-    const templates = join(root, "templates");
-    await mkdir(templates);
-    const source = await readFile(
-      new URL(
-        "../packages/create-deepseek-harness-action/src/templates/dsh-review.yml",
-        import.meta.url,
-      ),
-      "utf8",
-    );
-    await writeFile(
-      join(templates, "dsh-review.yml"),
-      source
-        .replace("__DSH_ACTION_RELEASE_SHA__", "0123456789abcdef0123456789abcdef01234567")
-        .replace("# __DSH_MODE_INPUT__", "# controlled"),
-    );
-    const browser = gui();
-    const streams = io();
-    const result = await runInstaller({
-      argv: ["--mode", "review"],
-      cwd: root,
-      isTTY: true,
-      env: {},
-      ...streams,
-      templateDirectory: templates,
-      guiLauncher: browser.launch,
-    });
-    expect(browser.launch).not.toHaveBeenCalled();
-    expect(result.createdFiles).toEqual([".github/workflows/dsh-review.yml"]);
-    expect(streams.wasRead()).toBe(false);
-    expect(streams.text()).toContain("Add DEEPSEEK_API_KEY");
+  it.each(["--gui", "--no-open"])("rejects removed browser option %s", (flag) => {
+    expect(() => parseArguments([flag])).toThrow(`Unknown argument: ${flag}`);
   });
 });

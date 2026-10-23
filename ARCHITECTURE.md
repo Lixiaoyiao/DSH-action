@@ -39,7 +39,7 @@ a current diff preview, checks the source hash again, and affects only workflow
 files. Git publication and runtime GitHub authority remain outside this UI.
 
 The UI files live under
-`packages/create-deepseek-harness-action/src/gui/ui/`; the sibling backend files
+`packages/create-dsh-action/src/gui/ui/`; the sibling backend files
 can evolve independently while keeping the HTTP contract. These modules are
 installer tooling and are not loaded by the Action worker.
 

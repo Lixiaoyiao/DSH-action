@@ -1,11 +1,11 @@
 {
-  "name": "create-deepseek-harness-action",
-  "version": "0.7.3",
+  "name": "create-dsh-action",
+  "version": "0.7.4",
   "description": "Create safe DeepSeek Harness GitHub workflows",
   "private": false,
   "type": "module",
   "bin": {
-    "create-deepseek-harness-action": "./dist/cli.mjs"
+    "create-dsh-action": "./dist/cli.mjs"
   },
   "files": [
     "dist/"
@@ -19,8 +19,8 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Lixiaoyiao/deepseek-harness-action.git",
-    "directory": "packages/create-deepseek-harness-action"
+    "url": "git+https://github.com/Lixiaoyiao/DSH-action.git",
+    "directory": "packages/create-dsh-action"
   },
   "publishConfig": {
     "access": "public",
