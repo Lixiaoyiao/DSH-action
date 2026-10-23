@@ -1,0 +1,32 @@
+name: Temporary CLI installer formatter
+on:
+  push:
+    branches: [refactor/cli-only-installer-20261024]
+permissions:
+  contents: write
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Format only five changed files
+        run: |
+          npx --yes prettier@3.9.6 --write \
+            CHANGELOG.md \
+            packages/create-deepseek-harness-action/src/installer.mjs \
+            packages/create-deepseek-harness-action/src/workflow-files.d.mts \
+            test/installer-cli.test.ts test/installer.test.ts
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add CHANGELOG.md packages/create-deepseek-harness-action/src/installer.mjs packages/create-deepseek-harness-action/src/workflow-files.d.mts test/installer-cli.test.ts test/installer.test.ts
+          if ! git diff --cached --quiet; then
+            git commit -m 'style(installer): apply Prettier formatting'
+            git push origin HEAD:refactor/cli-only-installer-20261024
+          fi
