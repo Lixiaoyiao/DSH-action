@@ -4,10 +4,10 @@ import { join, resolve } from "node:path";
 
 import { INSTALLER_ACTION_INPUTS } from "./action-inputs.generated.mjs";
 import { canonicalWorkflowText } from "./workflow-text.mjs";
-import { saveWorkflowChanges } from "./gui/files.mjs";
+import { saveWorkflowChanges } from "./workflow-files.mjs";
 
 const DOCUMENTATION_URL =
-  "https://github.com/Lixiaoyiao/deepseek-harness-action/blob/create-deepseek-harness-action-v0.7.3/docs/setup.md";
+  "https://github.com/Lixiaoyiao/deepseek-harness-action/blob/create-deepseek-harness-action-v0.8.0/docs/setup.md";
 const ACTION_REFERENCE_PATTERN = /uses: Lixiaoyiao\/deepseek-harness-action@[0-9a-f]{40}(?:\s|$)/gu;
 const MODES = new Set(["review", "commands", "both", "session"]);
 const DSH_MODES = new Set(["controlled", "native"]);
@@ -53,27 +53,13 @@ const WORKFLOWS = Object.freeze({
 
 function usage() {
   return [
-    "Usage: create-deepseek-harness-action [--gui] [--no-open] [--mode review|commands|both|session] [--dsh-mode controlled|native]",
+    "Usage: create-deepseek-harness-action [--mode review|commands|both|session] [--dsh-mode controlled|native]",
     "  [--test-commands '<JSON argv arrays>'] [--container-image '<name>@sha256:<digest>']",
-    "  [--import-plugins] [--dsh-home '<local DSH folder>']",
     "",
-    "Without flags, a local browser GUI configures read-only @dsh chat and PR Review. Reopen it to edit existing workflows.",
-    "Use --gui to open it explicitly, --no-open to copy its private URL, or --advanced as a GUI alias.",
-    "Explicit --mode keeps non-interactive file generation. No workflow is committed or pushed automatically.",
-    "Use --import-plugins to open the GUI plugin selector; discovery starts there after you choose a mode.",
-    "",
-    "Workflow choices:",
-    "  1) Read-only @dsh chat + PR Review",
-    "  2) @dsh Coding Commands",
-    "  3) Both",
-    "  4) Automatic Session",
-    "",
-    "DSH mode choices:",
-    "  1) Controlled (default: choose which tools DSH may use)",
-    "  2) Native (use DSH's own plugins and tools inside Docker)",
-    "",
-    "CI/non-interactive usage requires --mode; --dsh-mode defaults to controlled.",
-    "For coding writes, supply the commands that check your project. The installer does not run them.",
+    "Without flags in an interactive terminal: safely generate read-only chat and PR Review.",
+    "Use --mode for other templates or in CI. The installer never overwrites workflows.",
+    "Edit .github/workflows/*.yml directly to change or remove installed workflows.",
+    "No browser, Git commit, push, Secrets, or repository scripts are used.",
   ].join("\n");
 }
 
@@ -130,39 +116,8 @@ export function parseArguments(argv) {
   let help = false;
   let testCommands;
   let containerImage;
-  let advanced = false;
-  let importPlugins = false;
-  let dshHome;
-  let gui = false;
-  let noOpen = false;
-
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
-    if (argument === "--gui") {
-      gui = true;
-      continue;
-    }
-    if (argument === "--no-open") {
-      gui = true;
-      noOpen = true;
-      continue;
-    }
-    if (argument === "--import-plugins") {
-      if (importPlugins) throw new Error("--import-plugins may be provided only once");
-      importPlugins = true;
-      continue;
-    }
-    if (argument === "--dsh-home" || argument?.startsWith("--dsh-home=")) {
-      if (dshHome !== undefined) throw new Error("--dsh-home may be provided only once");
-      dshHome = argument === "--dsh-home" ? argv[++index] : argument.slice("--dsh-home=".length);
-      if (!dshHome || dshHome.startsWith("--") || dshHome.includes("\0"))
-        throw new Error("--dsh-home requires a folder path");
-      continue;
-    }
-    if (argument === "--advanced") {
-      advanced = true;
-      continue;
-    }
     if (argument === "--help" || argument === "-h") {
       help = true;
       continue;
@@ -244,17 +199,10 @@ export function parseArguments(argv) {
       "--test-commands/--container-image are for commands or both; review and session need no write setup",
     );
   }
-  if (dshHome !== undefined && !importPlugins)
-    throw new Error("--dsh-home requires --import-plugins");
   return {
     help,
     mode,
     dshMode,
-    ...(advanced ? { advanced } : {}),
-    ...(importPlugins ? { importPlugins } : {}),
-    ...(dshHome === undefined ? {} : { dshHome }),
-    ...(gui ? { gui } : {}),
-    ...(noOpen ? { noOpen } : {}),
     ...(testCommands === undefined ? {} : { testCommands }),
     ...(containerImage === undefined ? {} : { containerImage }),
   };
@@ -499,47 +447,16 @@ export async function runInstaller(options = {}) {
   const templateDirectory =
     options.templateDirectory ?? fileURLToPath(new URL("./templates/", import.meta.url));
   const parsed = parseArguments(argv);
-
   if (parsed.help) {
-    output.write(`${usage()}\n`);
+    output.write(usage() + "\n");
     return { dshMode: parsed.dshMode ?? DEFAULT_DSH_MODE, createdFiles: [] };
   }
-
-  const mode = parsed.mode;
+  const mode = parsed.mode ?? (isTTY && !environment.CI ? "review" : undefined);
   const dshMode = parsed.dshMode ?? DEFAULT_DSH_MODE;
-  const interactive = isTTY && !environment.CI;
-  if (
-    parsed.gui ||
-    parsed.advanced ||
-    (interactive && (mode === undefined || parsed.importPlugins))
-  ) {
-    if (environment.CI)
-      throw new Error(
-        "The local GUI is for a developer machine. Use --mode for CI file generation.",
-      );
-    const launch = options.guiLauncher ?? (await import("./gui/server.mjs")).runLocalGui;
-    const gui = await launch({
-      ...options,
-      cwd,
-      output,
-      env: environment,
-      templateDirectory,
-      dshMode,
-      importPlugins: parsed.importPlugins,
-      dshHome: parsed.dshHome,
-      openBrowser: !parsed.noOpen,
-    });
-    return { dshMode, createdFiles: [], gui };
-  }
-  if (parsed.importPlugins)
-    throw new Error(
-      "Plugin import uses the local GUI. Run --gui --import-plugins on a developer machine, or omit --import-plugins for non-interactive generation.",
-    );
   if (mode === undefined)
     throw new Error(
-      `Non-interactive or CI input requires --mode review|commands|both|session\n\n${usage()}`,
+      "Non-interactive or CI input requires --mode review|commands|both|session\n\n" + usage(),
     );
-
   const createdFiles = await installWorkflows({
     cwd,
     mode,

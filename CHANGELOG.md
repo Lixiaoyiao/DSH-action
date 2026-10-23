@@ -5,6 +5,19 @@ versioning for published action releases.
 
 ## Unreleased
 
+## Installer 0.8.0 (proposed)
+
+- Removes the local browser GUI, loopback server, browser plugin importer,
+  and GUI-only validator/assets from the standalone npm installer.
+- Restores minimal CLI-first installation: a no-flag terminal invocation
+  creates the safe read-only Review starter. Explicit `--mode` retains
+  Review, Commands, Both and Session with Controlled/Native composition.
+- Keeps the atomic no-overwrite workflow transaction and full immutable
+  Action SHA binding through `DSH_ACTION_RELEASE_SHA`; all configuration
+  is directly maintained in YAML. Existing installed workflows are unaffected.
+- Targets formal Action `v0.12.2` and DSH `0.2.1-rc.2`; source tag
+  `create-deepseek-harness-action-v0.8.0` qualifies independently.
+
 ## [0.12.2] - 2026-10-23
 
 - Resolves the official DSH MCP bridge to patched

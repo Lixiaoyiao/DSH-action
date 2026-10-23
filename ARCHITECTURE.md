@@ -23,25 +23,16 @@ after an eligible change and before a commit, ref update, pull request, or typed
 GitHub mutation is flushed. A model response cannot waive it
 ([INV-004](docs/invariants.md#inv-004-githubmutationrequiresvalidation)).
 
-## Local configuration GUI
+## CLI installer and YAML configuration
 
-The standalone installer has a local browser UI over a small loopback HTTP
-backend. Browser code owns presentation and editing state; backend modules own
-YAML inspection/editing, plugin metadata discovery, static validation, diff
-preview and local file saves. The server binds to `127.0.0.1`, uses a fresh
-session token and checks the request host/origin.
-
-`src/action-contract.ts` generates the GUI's input metadata. The packaged
-validator bundles the same `checkConfiguration` implementation used by the
-Action, so browser forms do not become a second schema. YAML workflow files are
-the persistent source; there is no sidecar configuration store. Saving requires
-a current diff preview, checks the source hash again, and affects only workflow
-files. Git publication and runtime GitHub authority remain outside this UI.
-
-The UI files live under
-`packages/create-deepseek-harness-action/src/gui/ui/`; the sibling backend files
-can evolve independently while keeping the HTTP contract. These modules are
-installer tooling and are not loaded by the Action worker.
+The standalone initializer generates immutable-SHA-bound YAML workflows.
+With no flags in an interactive terminal it creates the safe Review starter;
+`--mode` selects explicit templates and works in CI. There is no local
+HTTP server, browser configuration, GUI state, or second configuration schema.
+The only persistent configuration is `.github/workflows/*.yml`, maintained
+through GitHub or a normal editor. The installer refuses to overwrite
+existing files and stages new workflow writes with hash/conflict checks.
+It never loads Secrets, runs repository commands, commits or pushes.
 
 ## Controlled and native composition
 
@@ -171,17 +162,15 @@ attempts every acquired resource's disposer, preserving the primary outcome.
 
 ## Installation design
 
-The installer defaults to read-only conversation and automatic PR Review in the
-local configuration GUI described above. Advanced modes are explicit choices.
-GUI and non-interactive entrypoints share release-bound templates and the local
-workflow save transaction. Existing files are read from the repository root;
-concurrent edits invalidate the preview before saving.
+The CLI installer defaults to read-only conversation and automatic PR Review.
+Explicit templates supply Commands, Both, and Session in Controlled or Native
+composition. Installed workflow files are directly maintained as YAML;
+no GUI or sidecar state exists.
 
 The installer stores Secret references in YAML and never sets GitHub Secrets,
 commits, pushes, or runs repository scripts. Maintainers perform those steps
-through their normal GitHub and Git tools. Local plugin discovery reads package
-metadata only; cloud configuration names exact packages and explicit tools,
-without copying local credentials or private settings.
+through their normal GitHub and Git tools. Extension settings are explicitly maintained in YAML, using exact package
+versions and explicit tool grants without copying local credentials.
 
 ## Verification seams
 

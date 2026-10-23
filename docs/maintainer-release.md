@@ -6,8 +6,7 @@ This guide is for repository maintainers qualifying and publishing an Action rel
 
 For v0.12.2, retain the exact production DSH `0.2.1-rc.2` family and resolve its
 MCP bridge to official `@modelcontextprotocol/client` `2.3.0` through the exact
-parent-scoped security override, with peer and lock validation intact. The local GUI
-and optional model settings reuse the existing Session protocol, history selection,
+parent-scoped security override, with peer and lock validation intact. The optional model settings reuse the existing Session protocol, history selection,
 storage, concurrency and trusted harness. On the frozen release `main` SHA, qualify
 one explicit save/resume pair and one automatic pair in each composition
 (controlled/native), using fresh keys. Include `image_attachment=true` in the
@@ -34,9 +33,9 @@ The advisory stable/RC/alpha upstream canaries never replace these production ga
 Do not rerun task-bearing failures without first reconciling their diagnostics
 and confirmed effects; preserve a bounded continuation record for external blocks.
 
-The independent installer `0.7.3` targets formal Action `v0.12.2` through
+The independent installer `0.8.0` targets formal Action `v0.12.2` through
 `DSH_ACTION_RELEASE_SHA`. Its source tag is
-`create-deepseek-harness-action-v0.7.3`. Prepare its separate source identity only
+`create-deepseek-harness-action-v0.8.0`. Prepare its separate source identity only
 after the v0.12.2 formal canary succeeds.
 Its archive qualification exercises default GUI startup, existing-workflow edits,
 model/effort and plugin selection, diff/validation, local save, reopened YAML and
@@ -408,21 +407,18 @@ If the smoke fails after publication, keep the tag immutable. Diagnose the failu
 
 ## Publish the npm create package
 
-Installer `0.7.3` targets formal Action `v0.12.2` with exact DSH `0.2.1-rc.2`;
-its source tag is `create-deepseek-harness-action-v0.7.3`. Keep the formal Action
-SHA and reviewed installer source SHA separate, and establish each through its
-respective qualification gates. Do not copy a historical release SHA into the
-new binding.
+Installer `0.8.0` targets formal Action `v0.12.2`, DSH `0.2.1-rc.2`,
+and source tag `create-deepseek-harness-action-v0.8.0`. Preserve separate
+qualified Action and installer source SHAs.
 
-Qualify the public CLI from the actual archive in a fresh existing repository.
-No flags in an interactive terminal must open the GUI; `--gui` and `--no-open`
-must work explicitly, while `--mode` retains browser-free generation. Exercise
-editing, preview, validation and save, restart the GUI and read the persisted
-YAML. Preserve unrelated files and refuse stale previews; verify loopback/token/
-origin restrictions without exposing tokens in evidence. Review the immutable
-Action SHA and exact DSH pin in generated YAML, then publish the workflow through
-the maintainer's normal Git path and record its first real Action run. The GUI
-must never commit, push, set Secrets or execute repository scripts.
+Qualify the public CLI from its real packed npm archive. No arguments in
+an interactive terminal must create a read-only Review workflow, with no
+browser or local server. Test explicit `--mode` for Review, Commands,
+Both and Session in Controlled and Native composition. The `both` path
+must not cause duplicate `@dsh` comment triggers. Test non-TTY usage
+requiring `--mode`, exact SHA pins, no-overwrite behavior, and safe
+handling of other repository files. The initializer must not read
+credentials, set Secrets, execute project code, commit or push.
 
 Publish `create-deepseek-harness-action` only after the formal Action tag,
 GitHub Release, and release canary all resolve to `release_sha`. A Git commit
@@ -508,10 +504,9 @@ template, packed template, and generated workflow has exactly one
 the current Action:
 
 The exact archive allowlist is exercised in `test/installer.test.ts`. It includes
-the package metadata/license, CLI runtime, GUI backend and static assets,
-generated input metadata, the bundled Action validator with third-party notices,
-and six bound templates. Reject missing/extra files and symlinks. Test `review`,
-`commands`, `both`, and `session` in both compositions, plus GUI preview/save/reopen
+the package metadata/license, CLI runtime, workflow file transaction,
+generated input metadata, and six bound templates. Reject missing/extra files and symlinks. Test `review`,
+`commands`, `both`, and `session` in both compositions, plus no-argument CLI creation and no-overwrite checks
 from the actual archive. Each Session workflow must keep `queue: max` and read-only
 permissions.
 

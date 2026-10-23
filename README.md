@@ -49,11 +49,16 @@ Choose GitHub.com and browser sign-in. The `origin` remote should point to the r
 npm.cmd create deepseek-harness-action@latest
 ```
 
-The local browser GUI configures **read-only `@dsh` conversation and automatic PR Review** by default. Select a workflow, edit its model, thinking effort and permissions, review the YAML diff, then save locally. Reopen the same command to edit existing workflows. You commit and push the saved files yourself.
+The CLI installer safely generates **read-only `@dsh` Issue/PR chat and automatic PR Review**
+by default, without a browser. Use `--mode both`, `commands` or `session`
+for other templates. Set model, tools, permissions and triggers in the YAML.
+To manage an existing installation, edit `.github/workflows/*.yml` directly.
+You commit and push generated files yourself.
 
-Installer `0.7.3` includes this local GUI and binds generated workflows to formal Action `v0.12.2`.
+Installer `0.8.0` removes the Web GUI and targets formal Action `v0.12.2`.
 
-Add the key in **Settings → Secrets and variables → Actions → New repository secret** on GitHub. Set the name to `DEEPSEEK_API_KEY` and paste the key as its value. A key stored in local DSH does not configure this secret.
+Add `DEEPSEEK_API_KEY` under GitHub **Settings → Secrets and variables → Actions**.
+Never put your API key in YAML; only use a GitHub Secret reference.
 
 ### 4. Ask `@dsh` a question
 
@@ -69,23 +74,24 @@ You can also use `@dsh 帮我分析这个问题`. Start `@dsh` on a line outside
 
 For automatic review, open a **non-draft pull request** or push a new commit to an existing one. The Action reviews the PR without changing its files.
 
-### Optional: local plugins and other workflows
+### Optional: other workflows and extensions
 
-Choose read-only conversation + Review, Coding Commands, both, or automatic Session in the GUI. `--gui` opens it explicitly; `--no-open` prints its private local URL without opening a browser. If you already have local DSH plugins, `--import-plugins` opens their selection page:
-
-```powershell
-npm.cmd create deepseek-harness-action@latest -- --gui --import-plugins
-```
-
-Native mode supports DSH Bundles directly. Controlled mode also needs their exact read-only tool names (`plugin__owner__tool`). The cloud installs selected packages at exact versions; local settings and keys stay on your computer. Local-only, disabled and incompatible packages show their status. Use `--dsh-home "C:\path\to\.dsh"` with the import option for another DSH home. `--advanced` remains a GUI alias.
-
-File-only and non-interactive setup remains available:
+Install both automatic review and coding commands without a browser:
 
 ```powershell
 npm.cmd create deepseek-harness-action@latest -- --mode both --dsh-mode native
 ```
 
-Controlled remains the default. Natural-language writes require both `natural-language-write: "true"` and `allow-write: "true"` in a write-capable workflow, repository-specific validation commands, and a clear request such as `@dsh Please fix this bug and open a PR`. The advanced Commands starter keeps the independent natural-language switch off; legacy `fix`, `implement` and `task --write` retain their existing write requests. Installer `0.7.3` targets Action `v0.12.2` and DSH `0.2.1-rc.2`. Its build binds the qualified Action commit through `DSH_ACTION_RELEASE_SHA`; its source tag is `create-deepseek-harness-action-v0.7.3`. See the [setup guide](docs/setup.md) for manual setup and recovery.
+The `both` template avoids duplicate `@dsh` comment triggers. Coding writes
+still need repository-specific validation commands, trusted actors, and
+`allow-write: "true"`. Natural-language writes additionally require
+`natural-language-write: "true"`. Model settings, MCP, Plugins, Bundles,
+tool grants and Session are configured directly in YAML.
+
+The previous local plugin importer was removed; no local secrets or settings
+are copied. Installer `0.8.0` targets Action `v0.12.2` and DSH `0.2.1-rc.2`.
+Packing binds the immutable Action SHA through `DSH_ACTION_RELEASE_SHA` using
+source tag `create-deepseek-harness-action-v0.8.0`. See [Setup](docs/setup.md).
 
 ### Manual installation
 
