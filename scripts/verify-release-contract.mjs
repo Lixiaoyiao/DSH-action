@@ -43,19 +43,19 @@ const [
   read("package-lock.json"),
   read("action.yml"),
   read(".github/workflows/release-canary.yml"),
-  read("packages/create-deepseek-harness-action/package.json"),
-  read("packages/create-deepseek-harness-action/package-lock.json"),
-  read("packages/create-deepseek-harness-action/README.md"),
+  read("packages/create-dsh-action/package.json"),
+  read("packages/create-dsh-action/package-lock.json"),
+  read("packages/create-dsh-action/README.md"),
   read("README.md"),
   read("README.zh-CN.md"),
   read("docs/setup.md"),
   read("docs/setup.zh-CN.md"),
   read("CHANGELOG.md"),
   read("docs/maintainer-release.md"),
-  read("packages/create-deepseek-harness-action/src/installer.mjs"),
-  read("packages/create-deepseek-harness-action/src/templates/dsh-review.yml"),
-  read("packages/create-deepseek-harness-action/src/templates/dsh-commands.yml"),
-  read("packages/create-deepseek-harness-action/src/templates/dsh-session.yml"),
+  read("packages/create-dsh-action/src/installer.mjs"),
+  read("packages/create-dsh-action/src/templates/dsh-review.yml"),
+  read("packages/create-dsh-action/src/templates/dsh-commands.yml"),
+  read("packages/create-dsh-action/src/templates/dsh-session.yml"),
 ]);
 const manifest = JSON.parse(manifestText);
 const lock = JSON.parse(lockText);
@@ -63,7 +63,7 @@ const installerManifest = JSON.parse(installerManifestText);
 const installerLock = JSON.parse(installerLockText);
 const installerVersion = installerManifest.version;
 const installerActionTag = "v0.12.2";
-const installerSourceTag = `create-deepseek-harness-action-v${installerVersion}`;
+const installerSourceTag = `create-dsh-action-v${installerVersion}`;
 const installerReleaseBinding = "DSH_ACTION_RELEASE_SHA";
 const directDependencies = {
   ...(manifest.dependencies ?? {}),
@@ -174,14 +174,10 @@ for (const expected of [
   assert.ok(nativeAssertion.includes(expected), `native canary is missing: ${expected}`);
 }
 
-assert.equal(
-  installerManifest.name,
-  "create-deepseek-harness-action",
-  "installer npm package name drifted",
-);
+assert.equal(installerManifest.name, "create-dsh-action", "installer npm package name drifted");
 assert.equal(installerManifest.private, false, "installer must remain publishable");
 assert.equal(
-  installerManifest.bin?.["create-deepseek-harness-action"],
+  installerManifest.bin?.["create-dsh-action"],
   "./dist/cli.mjs",
   "installer bin entry drifted",
 );
@@ -228,13 +224,13 @@ for (const [name, document] of [
   );
 }
 assert.ok(
-  maintainerReleaseGuide.includes('repository="Lixiaoyiao/deepseek-harness-action"') &&
+  maintainerReleaseGuide.includes('repository="Lixiaoyiao/DSH-action"') &&
     !maintainerReleaseGuide.includes("$GITHUB_REPOSITORY"),
   "installer publish guide must use an explicit repository identity",
 );
 // Installer CLI behavior, archive contents, invalid release bindings, and
 // deterministic controlled/native rendering are tested through the real build
-// and packed package in installer.test.ts and installer-guided.test.ts.
+// and packed package in the installer tests.
 const installerReleaseToken = "__DSH_ACTION_RELEASE_SHA__";
 const installerDshModeToken = "__DSH_MODE_INPUT__";
 for (const [name, template] of [
@@ -246,9 +242,7 @@ for (const [name, template] of [
   const actionSteps = Object.values(workflow.jobs ?? {})
     .flatMap((job) => job.steps ?? [])
     .filter(
-      (step) =>
-        typeof step.uses === "string" &&
-        step.uses.startsWith("Lixiaoyiao/deepseek-harness-action@"),
+      (step) => typeof step.uses === "string" && step.uses.startsWith("Lixiaoyiao/DSH-action@"),
     );
   assert.equal(actionSteps.length, 1, `${name} installer template must contain one Action step`);
   assert.equal(
@@ -272,11 +266,11 @@ for (const [name, template] of [
     `${name} source template must leave controlled mode implicit`,
   );
   assert.ok(
-    template.includes(`Lixiaoyiao/deepseek-harness-action@${installerReleaseToken}`),
+    template.includes(`Lixiaoyiao/DSH-action@${installerReleaseToken}`),
     `${name} installer template must bind only through the controlled release token`,
   );
   assert.ok(
-    !/deepseek-harness-action@(?:main|latest|v\d)/u.test(template),
+    !/DSH-action@(?:main|latest|v\d)/u.test(template),
     `${name} installer template must not use a floating Action reference`,
   );
   assert.ok(

@@ -1,4 +1,4 @@
-name: "DeepSeek Harness for GitHub"
+name: "DSH-action"
 description: "DeepSeek coding tasks with controlled and native DSH composition, ecosystem extensions, and GitHub automation"
 author: "Lixiaoyiao"
 branding:

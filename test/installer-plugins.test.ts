@@ -1,11 +1,10 @@
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Readable, Writable } from "node:stream";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  guiLocalPlugins,
-  guiPluginInputs,
-} from "../packages/create-deepseek-harness-action/src/gui/plugins.mjs";
+import { parse } from "yaml";
+import { runInstaller } from "../packages/create-dsh-action/src/installer.mjs";
 import {
   parseNativePluginConfiguration,
   parsePluginConfiguration,
@@ -15,8 +14,9 @@ const roots: string[] = [];
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
+
 async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), "dsh-plugin-gui-"));
+  const root = await mkdtemp(join(tmpdir(), "dsh-plugin-import-"));
   roots.push(root);
   const home = join(root, "home");
   const profile = join(home, "profiles", "default");
@@ -40,113 +40,161 @@ async function fixture() {
   );
   await writeFile(join(home, ".credentials.yaml"), "PRIVATE_LOCAL_KEY_MUST_STAY_LOCAL");
   await writeFile(join(profile, "cordis.patch.yml"), "PRIVATE_PROFILE_CONFIG_MUST_STAY_LOCAL");
-  return { root, home, installed };
-}
-const selection = {
-  name: "example-bundle",
-  version: "1.2.3",
-  id: "audit",
-  kind: "bundle" as const,
-};
-
-describe("local plugin selection in the GUI", () => {
-  it("only discovers package metadata after an explicit mode-specific request", async () => {
-    const f = await fixture();
-    const result = await guiLocalPlugins({ dshMode: "native", home: f.home }, {});
-    expect(result.plugins).toEqual([
-      expect.objectContaining({ name: "example-bundle", version: "1.2.3", compatible: true }),
-    ]);
-    expect(JSON.stringify(result)).not.toContain("PRIVATE_");
-    expect(await readdir(f.root)).toEqual(["home"]);
-    await expect(guiLocalPlugins({ dshMode: "unknown", home: f.home }, {})).rejects.toThrow(
-      "Choose a mode",
-    );
-  });
-  it("keeps selected Controlled tools explicit and preserves existing command permissions", () => {
-    const original = {
-      "allow-write": "true",
-      "run-tests": "true",
-      "permission-profile": "standard",
-      "allowed-tools": '["workspace.edit"]',
-    };
-    expect(() =>
-      guiPluginInputs({ dshMode: "controlled", inputs: original, selections: [selection] }),
-    ).toThrow("explicitly selected");
-    const result = guiPluginInputs({
-      dshMode: "controlled",
-      inputs: original,
-      selections: [{ ...selection, tools: ["plugin__audit__scan"] }],
-    });
-    expect(parsePluginConfiguration(result.inputs["plugin-config"] ?? "").bundles[0]).toMatchObject(
-      {
-        id: "audit",
-        network: false,
-        tools: [{ id: "scan", name: "plugin__audit__scan", permissions: ["read"] }],
+  const templates = join(root, "templates");
+  await mkdir(templates);
+  const source = await readFile(
+    new URL("../packages/create-dsh-action/src/templates/dsh-review.yml", import.meta.url),
+    "utf8",
+  );
+  const pinned = source.replace(
+    "__DSH_ACTION_RELEASE_SHA__",
+    "0123456789abcdef0123456789abcdef01234567",
+  );
+  await writeFile(
+    join(templates, "dsh-review-native.yml"),
+    pinned.replace("# __DSH_MODE_INPUT__", "dsh-mode: native"),
+  );
+  await writeFile(
+    join(templates, "dsh-review.yml"),
+    pinned.replace("# __DSH_MODE_INPUT__", "# controlled"),
+  );
+  const commands = await readFile(
+    new URL("../packages/create-dsh-action/src/templates/dsh-commands.yml", import.meta.url),
+    "utf8",
+  );
+  await writeFile(
+    join(templates, "dsh-commands.yml"),
+    commands
+      .replace("__DSH_ACTION_RELEASE_SHA__", "0123456789abcdef0123456789abcdef01234567")
+      .replace("# __DSH_MODE_INPUT__", "# controlled"),
+  );
+  let output = "";
+  return {
+    root,
+    home,
+    installed,
+    templates,
+    output: new Writable({
+      write(chunk, _encoding, next) {
+        output += String(chunk);
+        next();
       },
+    }),
+    text: () => output,
+  };
+}
+
+describe("local plugin import through the installer", () => {
+  it("preserves coding command permissions when importing read-only Controlled plugins into both workflows", async () => {
+    const f = await fixture();
+    await runInstaller({
+      argv: ["--mode", "both", "--import-plugins", "--dsh-home", f.home],
+      cwd: f.root,
+      isTTY: true,
+      env: {},
+      input: Readable.from(["1\nplugin__audit__scan\ny\n"]),
+      output: f.output,
+      templateDirectory: f.templates,
+    });
+    expect(await readFile(join(f.root, ".github/workflows/dsh-review.yml"), "utf8")).toContain(
+      "plugin.audit.scan",
     );
-    expect(result.inputs).toMatchObject({
-      "allow-write": "true",
-      "run-tests": "true",
-      "permission-profile": "standard",
-      "allowed-tools": '["workspace.edit","plugin.audit.scan"]',
-    });
-    expect(original).not.toHaveProperty("plugin-config");
+    const commands = await readFile(join(f.root, ".github/workflows/dsh-commands.yml"), "utf8");
+    expect(commands).not.toContain("plugin-config");
+    expect(commands).toContain('allow-write: "true"');
+    expect(commands).toContain('run-tests: "true"');
+    expect(f.text()).toContain("configure command plugins manually");
   });
-  it("reports incompatible local package metadata without modifying its files", async () => {
+  it("keeps import optional and writes no plugin configuration when declined", async () => {
     const f = await fixture();
-    const source = JSON.stringify({
-      name: "example-bundle",
-      version: "1.2.3",
-      engines: { dsh: "<0.2.0" },
-      dsh: { bundle: { patch: "./cordis.patch.yml" } },
+    await runInstaller({
+      argv: ["--mode", "review", "--dsh-mode", "native", "--import-plugins", "--dsh-home", f.home],
+      cwd: f.root,
+      isTTY: true,
+      env: {},
+      input: Readable.from(["1\nn\n"]),
+      output: f.output,
+      templateDirectory: f.templates,
     });
-    await writeFile(join(f.installed, "package.json"), source);
-    const result = await guiLocalPlugins({ dshMode: "native", home: f.home }, {});
-    expect(result.plugins[0]).toMatchObject({
-      compatible: false,
-    });
-    expect(result.plugins[0]?.reason).toContain("incompatible with DSH");
-    expect(await readFile(join(f.installed, "package.json"), "utf8")).toBe(source);
-    expect(await readdir(f.root)).toEqual(["home"]);
+    expect(await readFile(join(f.root, ".github/workflows/dsh-review.yml"), "utf8")).not.toContain(
+      "plugin-config",
+    );
   });
-  it("builds pinned Native configuration without importing local secrets or extra authority", async () => {
+  it("requires explicit read-only names for compatible Controlled tools", async () => {
     const f = await fixture();
-    await guiLocalPlugins({ dshMode: "native", home: f.home }, {});
-    const result = guiPluginInputs({
-      dshMode: "native",
-      inputs: { "allow-write": "false", "permission-profile": "strict" },
-      selections: [selection],
+    await runInstaller({
+      argv: ["--mode", "review", "--import-plugins", "--dsh-home", f.home],
+      cwd: f.root,
+      isTTY: true,
+      env: {},
+      input: Readable.from(["1\nplugin__audit__scan\ny\n"]),
+      output: f.output,
+      templateDirectory: f.templates,
     });
-    expect(
-      parseNativePluginConfiguration(result.inputs["plugin-config"] ?? "").bundles[0],
-    ).toMatchObject({
+    const text = await readFile(join(f.root, ".github/workflows/dsh-review.yml"), "utf8");
+    const config = /\{"schemaVersion":1,"bundles":\[.*?\],"plugins":\[\]\}/u.exec(text)?.[0];
+    expect(parsePluginConfiguration(config ?? "").bundles[0]).toMatchObject({
+      id: "audit",
+      network: false,
+      tools: [{ id: "scan", name: "plugin__audit__scan", permissions: ["read"] }],
+    });
+    expect(text).toContain("plugin.audit.scan");
+    expect(text).toContain("permission-profile: strict");
+    expect(text).not.toContain("PRIVATE_");
+  });
+  it("reports incompatible local plugins and rejects their selection without creating workflows", async () => {
+    const f = await fixture();
+    await writeFile(
+      join(f.installed, "package.json"),
+      JSON.stringify({
+        name: "example-bundle",
+        version: "1.2.3",
+        engines: { dsh: "<0.2.0" },
+        dsh: { bundle: { patch: "./cordis.patch.yml" } },
+      }),
+    );
+    await expect(
+      runInstaller({
+        argv: ["--mode", "review", "--import-plugins", "--dsh-home", f.home],
+        cwd: f.root,
+        isTTY: true,
+        env: {},
+        input: Readable.from(["1\n"]),
+        output: f.output,
+        templateDirectory: f.templates,
+      }),
+    ).rejects.toThrow("importable plugins");
+    expect(f.text()).toContain("incompatible with DSH");
+    await expect(readFile(join(f.root, ".github/workflows/dsh-review.yml"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+  it("shows installed versions, confirms selection, and emits pinned Native config without local secrets", async () => {
+    const f = await fixture();
+    await runInstaller({
+      argv: ["--mode", "review", "--dsh-mode", "native", "--import-plugins", "--dsh-home", f.home],
+      cwd: f.root,
+      isTTY: true,
+      env: {},
+      input: Readable.from(["1\ny\n"]),
+      output: f.output,
+      templateDirectory: f.templates,
+    });
+    const text = await readFile(join(f.root, ".github/workflows/dsh-review.yml"), "utf8");
+    expect(f.text()).toContain("example-bundle@1.2.3");
+    expect(f.text()).toContain("compatible");
+    expect(text).not.toContain("PRIVATE_");
+    expect(text).toContain('"source":"1.2.3"');
+    expect(text).toContain("head.repo.full_name == github.repository");
+    expect(text).toContain('allow-write: "false"');
+    expect(text).toContain("permission-profile: strict");
+    const config = /\{"schemaVersion":1,"bundles":\[.*?\],"plugins":\[\]\}/u.exec(text)?.[0];
+    expect(parseNativePluginConfiguration(config ?? "").bundles[0]).toMatchObject({
       package: "example-bundle",
       source: "1.2.3",
       network: false,
       workspaceWrite: false,
     });
-    expect(result.inputs).toMatchObject({ "allow-write": "false", "permission-profile": "strict" });
-    expect(JSON.stringify(result)).not.toContain("PRIVATE_");
-  });
-  it.each(["latest", "^1.2.3", "1.2", "file:../plugin"])(
-    "rejects an unpinned version %s",
-    (version) => {
-      expect(() =>
-        guiPluginInputs({ dshMode: "native", inputs: {}, selections: [{ ...selection, version }] }),
-      ).toThrow("exact published version");
-    },
-  );
-  it("does not overwrite an existing package or an expression-based plugin configuration", () => {
-    const result = guiPluginInputs({ dshMode: "native", inputs: {}, selections: [selection] });
-    expect(() =>
-      guiPluginInputs({ dshMode: "native", inputs: result.inputs, selections: [selection] }),
-    ).toThrow("already configured");
-    expect(() =>
-      guiPluginInputs({
-        dshMode: "native",
-        inputs: { "plugin-config": "${{ inputs.plugins }}" },
-        selections: [selection],
-      }),
-    ).toThrow("Edit it in Advanced");
+    expect(parse(text)).toBeDefined();
   });
 });

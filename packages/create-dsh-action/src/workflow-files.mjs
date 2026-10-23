@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { lstat, readFile, readdir, mkdir, writeFile, rename, link, unlink } from "node:fs/promises";
+import { lstat, readFile, mkdir, writeFile, rename, link, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 const MAX_BYTES = 256 * 1024;
@@ -37,31 +37,7 @@ export async function readWorkflow(root, name) {
   }
 }
 
-export async function listWorkflows(root) {
-  await workflowPath(root, ".github/workflows/check.yml");
-  let names;
-  try {
-    names = await readdir(join(root, ".github", "workflows"));
-  } catch (error) {
-    if (error.code === "ENOENT") return [];
-    throw error;
-  }
-  const files = names.filter((name) => /\.ya?ml$/u.test(name));
-  if (files.length > 100)
-    throw new Error("This GUI supports up to 100 workflow files per repository.");
-  return Promise.all(
-    files.sort().map(async (name) => {
-      const path = `.github/workflows/${name}`;
-      try {
-        return await readWorkflow(root, path);
-      } catch (error) {
-        return { path, editable: false, reason: error.message };
-      }
-    }),
-  );
-}
-
-/** A preview's expected bytes must still be present. No Git commit or push occurs. */
+/** Expected bytes must still be present; batch writes roll back on conflict. */
 export async function saveWorkflowChanges(root, changes, options = {}) {
   const entries = [];
   const written = [];
@@ -69,7 +45,7 @@ export async function saveWorkflowChanges(root, changes, options = {}) {
     for (const change of changes) {
       const original = await readWorkflow(root, change.path);
       if (original.hash !== change.expectedHash)
-        throw new Error(`${change.path} changed since preview. Reload and preview again.`);
+        throw new Error(`${change.path} changed before save. Read the current file and retry.`);
       const target = await workflowPath(root, change.path);
       await mkdir(join(root, ".github", "workflows"), { recursive: true });
       const suffix = randomBytes(12).toString("hex");
@@ -83,7 +59,7 @@ export async function saveWorkflowChanges(root, changes, options = {}) {
       await workflowPath(root, entry.path);
       const latest = await readWorkflow(root, entry.path);
       if (latest.hash !== entry.expectedHash)
-        throw new Error(`${entry.path} changed since preview. Reload and preview again.`);
+        throw new Error(`${entry.path} changed before save. Read the current file and retry.`);
       if (entry.expectedHash !== null) {
         await rename(entry.target, entry.backup);
         entry.backedUp = true;
@@ -128,29 +104,4 @@ export async function saveWorkflowChanges(root, changes, options = {}) {
       await unlink(entry.backup).catch(() => options.onCleanupWarning?.(entry.backup));
   }
   return entries.map(({ path }) => path);
-}
-
-export function workflowDiff(path, before, after) {
-  if (before === after) return "";
-  const a = before.split(/\r?\n/u),
-    b = after.split(/\r?\n/u);
-  let start = 0,
-    endA = a.length,
-    endB = b.length;
-  while (start < endA && start < endB && a[start] === b[start]) start++;
-  while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) {
-    endA--;
-    endB--;
-  }
-  const context = Math.max(0, start - 3);
-  const tail = Math.min(3, a.length - endA);
-  return [
-    `--- ${before === "" ? "/dev/null" : path}`,
-    `+++ ${path}`,
-    `@@ -${context + 1},${endA - context + tail} +${context + 1},${endB - context + tail} @@`,
-    ...a.slice(context, start).map((line) => ` ${line}`),
-    ...a.slice(start, endA).map((line) => `-${line}`),
-    ...b.slice(start, endB).map((line) => `+${line}`),
-    ...a.slice(endA, endA + tail).map((line) => ` ${line}`),
-  ].join("\n");
 }

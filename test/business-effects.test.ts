@@ -12,13 +12,13 @@ const blobSha = "d".repeat(40);
 const candidate = "e".repeat(40);
 const path = ".github/dsh-e2e-fixtures/checks-10-1.txt";
 const key = createHash("sha256")
-  .update(["lixiaoyiao", "deepseek-harness-action", "20", "10"].join("\0"))
+  .update(["lixiaoyiao", "dsh-action", "20", "10"].join("\0"))
   .digest("hex")
   .slice(0, 24);
 const snapshot = "f".repeat(24);
 const implementationBranch = `dsh-e2e/implement-20-${key}`;
 const environment = {
-  REPOSITORY: "Lixiaoyiao/deepseek-harness-action",
+  REPOSITORY: "Lixiaoyiao/DSH-action",
   GITHUB_RUN_ID: "10",
   GITHUB_RUN_ATTEMPT: "1",
   ISSUE_NUMBER: "20",

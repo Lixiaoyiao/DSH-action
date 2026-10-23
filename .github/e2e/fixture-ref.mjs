@@ -1,6 +1,6 @@
 import { setTimeout as delay } from "node:timers/promises";
 
-const REPOSITORY = "Lixiaoyiao/deepseek-harness-action";
+const REPOSITORY = "Lixiaoyiao/DSH-action";
 const MAX_READS = 5;
 const TOTAL_MS = 20_000;
 const REQUEST_MS = 5_000;

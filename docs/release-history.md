@@ -6,7 +6,7 @@ These identities and qualification notes record earlier releases. Use the curren
 release procedure for new candidates; historical SHAs never supply a new binding.
 
 Historical installer `0.5.0` binds formal v0.10.0 commit `9c52f682bbeed1b7752a9e21273e6c13b01e79b1` only after
-[formal canary 37654999388](https://github.com/Lixiaoyiao/deepseek-harness-action/actions/runs/37654999388) succeeds.
+[formal canary 37654999388](https://github.com/Lixiaoyiao/DSH-action/actions/runs/37654999388) succeeds.
 Pass this verified SHA as `DSH_ACTION_RELEASE_SHA`; qualify and publish the same
 actual tarball and repeat controlled/native and Session consumers against the
 official registry with a fresh anonymous cache. Historical identities below remain unchanged.
@@ -32,7 +32,7 @@ failure must be reported; never resend a task or artifact upload to find a
 green result. The artifact SDK uses the Controller job's runtime credential;
 its requests are distinct from Core E2E fixtures and the release monitor.
 Installer `0.4.1` binds the formal v0.9.3 Action commit `e7da1b33a043b4e2e26daa7e731c266817677a4a`
-after its [controlled/native canary](https://github.com/Lixiaoyiao/deepseek-harness-action/actions/runs/37172280127) succeeds.
+after its [controlled/native canary](https://github.com/Lixiaoyiao/DSH-action/actions/runs/37172280127) succeeds.
 Installer source qualification and public npm installation remain separate gates.
 
 For v0.9.2, keep DSH `0.2.0-rc.2` fixed. Qualify the independent text-file,

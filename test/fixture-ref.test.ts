@@ -80,7 +80,7 @@ process.stdout.write(JSON.stringify({ result, error, requests, reports, waits, r
 function request(operation: Input["operation"] = "create", ref = "dsh-e2e/checks-123-2"): Input {
   return {
     operation,
-    repository: "Lixiaoyiao/deepseek-harness-action",
+    repository: "Lixiaoyiao/DSH-action",
     runId: "123",
     runAttempt: "2",
     ref,

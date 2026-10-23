@@ -61,7 +61,7 @@ describe("integration writer-profile quota admission", () => {
     let bodyCancelled = false;
     await probeIntegrationQuota(
       {
-        repository: "Lixiaoyiao/deepseek-harness-action",
+        repository: "Lixiaoyiao/DSH-action",
         blobSha: "a".repeat(40),
         token: "test-private-token",
       },
@@ -96,7 +96,7 @@ describe("integration writer-profile quota admission", () => {
     );
     expect(calls).toHaveLength(1);
     expect(calls[0]?.url).toBe(
-      "https://api.github.com/repos/Lixiaoyiao/deepseek-harness-action/git/blobs/" + "a".repeat(40),
+      "https://api.github.com/repos/Lixiaoyiao/DSH-action/git/blobs/" + "a".repeat(40),
     );
     expect(calls[0]?.options?.method).toBe("GET");
     expect(bodyCancelled).toBe(true);
@@ -137,7 +137,7 @@ describe("integration writer-profile quota admission", () => {
       await expect(
         probeIntegrationQuota(
           {
-            repository: "Lixiaoyiao/deepseek-harness-action",
+            repository: "Lixiaoyiao/DSH-action",
             blobSha: "a".repeat(40),
             token: "test-private-token",
           },
@@ -169,7 +169,7 @@ describe("integration writer-profile quota admission", () => {
     await expect(
       probeIntegrationQuota(
         {
-          repository: "Lixiaoyiao/deepseek-harness-action",
+          repository: "Lixiaoyiao/DSH-action",
           blobSha: "a".repeat(40),
           token: "test-private-token",
         },

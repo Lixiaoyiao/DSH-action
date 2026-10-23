@@ -36,10 +36,7 @@ describe("typed Action public contract", () => {
 
   it("generates the installer subset from the same default", async () => {
     const installerMetadata = await readFile(
-      new URL(
-        "../packages/create-deepseek-harness-action/src/action-inputs.generated.mjs",
-        import.meta.url,
-      ),
+      new URL("../packages/create-dsh-action/src/action-inputs.generated.mjs", import.meta.url),
       "utf8",
     );
     expect(installerMetadata).toContain('name: "dsh-mode"');

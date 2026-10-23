@@ -5,7 +5,7 @@ export default tseslint.config(
   {
     ignores: [
       "dist/**",
-      "packages/create-deepseek-harness-action/dist/**",
+      "packages/create-dsh-action/dist/**",
       "node_modules/**",
       "coverage/**",
       "eslint.config.js",
@@ -43,7 +43,7 @@ export default tseslint.config(
     rules: tseslint.configs.disableTypeChecked.rules,
   },
   {
-    files: ["packages/create-deepseek-harness-action/**/*.{mjs,mts}"],
+    files: ["packages/create-dsh-action/**/*.{mjs,mts}"],
     languageOptions: {
       parserOptions: { projectService: false },
       globals: {

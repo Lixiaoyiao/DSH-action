@@ -6,54 +6,33 @@ This guide takes you from installation to read-only `@dsh` conversation and auto
 
 ## Quick Start: installer
 
-From anywhere inside the existing GitHub repository you want to configure, run:
+From the root of the existing GitHub repository you want to configure, run:
 
 ```bash
-npm create deepseek-harness-action@latest
+npm create dsh-action@latest
 ```
 
-With no flags in an interactive terminal, the installer opens a local browser GUI.
-It starts with read-only conversation and PR Review, and can load existing DSH
-workflows for later edits. Installer `0.7.3` includes this GUI and targets formal
-Action `v0.12.2`.
+With no flags in an interactive terminal, the installer asks which workflow to
+install, then which DSH composition to use. Press Enter to select read-only
+conversation and PR Review, then `controlled`. Installer `0.7.4` targets formal
+Action `v0.12.2`. Use `--advanced` to enter these terminal questions explicitly.
 
-Choose a preset or an existing workflow, select controlled/native mode, model and
-thinking effort, then edit the supported Action inputs. The preview shows the
-YAML diff and runs the Action's real static configuration checker. Saving requires
-your confirmation and writes only local `.github/workflows/*.yml` or `*.yaml` files.
-The installer does not commit, push, create a remote repository or upload secrets.
+The installer creates local workflow YAML under `.github/workflows`. Existing
+workflow files and symbolic-link destinations are rejected without overwriting
+them. Review, commit and push the generated files with your normal Git workflow.
 
 Add `DEEPSEEK_API_KEY` in GitHub **Settings → Secrets and variables → Actions**.
 Use secret expressions in workflow inputs, for example `${{ secrets.DEEPSEEK_API_KEY }}`;
-keep secret values out of the editor and YAML. Commit and push the reviewed files
-with your normal Git workflow so they reach the default branch.
+keep secret values out of YAML. Commit the workflow to the default branch before
+trying comment triggers.
 
-```bash
-npm create deepseek-harness-action@latest -- --gui
-npm create deepseek-harness-action@latest -- --no-open
-```
+Edit model, thinking effort, permissions and other Action inputs directly in YAML
+using the [configuration reference](configuration.md). To skip actors before a
+runner starts, add a job-level `if` condition in YAML and retain the Action's
+runtime authorization. Run the [offline configuration check](configuration-check.md)
+for supported input and extension validation.
 
-`--gui` opens the browser explicitly. `--no-open` prints the private session URL
-for you to open yourself. Keep the terminal running while editing. The server
-listens only on `127.0.0.1` at a random port and uses a fresh session token plus
-same-origin checks. Closing the server invalidates that URL; rerun to start a new
-session. Do not forward the port or share the token-bearing URL.
-
-YAML is the configuration source. The GUI stores no sidecar database or saved
-browser configuration; reopening reads the files again. If an external editor
-changes a file after preview, reload it before saving. Unsupported YAML or
-workflows containing plaintext credentials require manual editing.
-
-Set the existing `allowed-actors` input to a literal comma-separated list to have
-the GUI add a job condition that skips other actors before a runner starts. The
-condition preserves custom job conditions and the Action's runtime authorization.
-The default `*` adds no filter. Dynamic expression lists need a job condition in
-the YAML editor; the GUI does not guess their values. If you manually change a
-generated actor condition, maintain that condition in YAML as well.
-If the combined condition exceeds GitHub's expression length limit, the GUI
-reports an error; use a shorter list or maintain a shorter condition in YAML.
-
-The GUI offers these presets; `--advanced` remains an alias for the GUI:
+Choose one of these workflows:
 
 | Choice                         | Files created                        |
 | ------------------------------ | ------------------------------------ |
@@ -62,18 +41,17 @@ The GUI offers these presets; `--advanced` remains an alias for the GUI:
 | **Both**                       | Both workflow files above            |
 | **Automatic Session**          | `.github/workflows/dsh-session.yml`  |
 
-For CI or non-interactive use, choose the mode explicitly. This path generates
-files directly, preserves existing files, and requires no browser or stdin:
+For CI or non-interactive use, choose the mode explicitly to generate files
+without terminal questions:
 
 ```bash
-npm create deepseek-harness-action@latest -- --mode both
-npm create deepseek-harness-action@latest -- --mode both --dsh-mode native
+npm create dsh-action@latest -- --mode both
+npm create dsh-action@latest -- --mode both --dsh-mode native
 ```
 
 Omitting `--dsh-mode` selects `controlled`. Missing `--mode` in CI or a
-non-interactive session fails with usage guidance. Static validation proves
-configuration shape only; credentials, online permissions/quota, Docker and
-repository validation require the first real Action run.
+non-interactive session fails with usage guidance. Credentials, online
+permissions/quota, Docker and repository validation require a real Action run.
 
 Automatic Session creates a read-only starter with matching key/run-name/
 concurrency and `queue: max` to retain pending follow-ups. Commit it to the
@@ -82,14 +60,15 @@ Reuse the key with a new prompt; no source run ID is needed. Failed, expired,
 corrupt or unknown history requires reconciliation before continuing.
 
 ```bash
-npm create deepseek-harness-action@latest -- --mode session
+npm create dsh-action@latest -- --mode session
 ```
 
-Installer `0.7.3` targets formal Action `v0.12.2` and exact DSH `0.2.1-rc.2`
+Installer `0.7.4` targets formal Action `v0.12.2` at
+`23a998ccd209f5422f220f038234a89984f0471c` and exact DSH `0.2.1-rc.2`
 in both compositions. Only after the Action tag, GitHub Release and canary agree
 does packing receive the verified full commit through `DSH_ACTION_RELEASE_SHA`.
 The separately reviewed installer source is tagged
-`create-deepseek-harness-action-v0.7.3`. Source templates retain the controlled
+`create-dsh-action-v0.7.4`. Source templates retain the controlled
 build token; generated workflows contain neither that token nor a candidate SHA,
 floating tag or branch. A source commit cannot supply its own future identity.
 
@@ -98,7 +77,7 @@ After the installer succeeds:
 1. Add `DEEPSEEK_API_KEY` under **Settings → Secrets and variables → Actions**.
 2. Commit/push the workflow to the default branch; for Review, open or update a non-draft pull request.
 3. As a repository collaborator with write access, comment `@dsh Help me understand this issue` in an Issue or PR. Start the mention on a line outside quotes/code; no fixed subcommand is needed. Review mode also handles PR review bodies and inline review comments. When installing both starters, only Commands handles comments, preventing duplicate responses.
-4. For natural-language writes, explicitly enable `natural-language-write: "true"` in the advanced Commands workflow, retain `allow-write: "true"` and configure validation commands. Then use a clear request such as `@dsh Please fix this bug and open a PR`. The default starter remains read-only, even when a request says “fix”. `task-access` does not enable this independent switch.
+4. For natural-language writes, explicitly enable `natural-language-write: "true"` in the Commands workflow, retain `allow-write: "true"` and configure validation commands. Then use a clear request such as `@dsh Please fix this bug and open a PR`. The default starter remains read-only, even when a request says “fix”. `task-access` does not enable this independent switch.
 5. Continue with [Usage](usage.md) for existing commands and automation.
 
 Node.js and npm are needed locally only to run the installer. The generated workflows do not assume that the target repository is a Node.js project.
@@ -133,7 +112,7 @@ tests and untouched placeholders before model startup. A bounded, credential-fre
 `docker info` probe reports an unavailable CLI/daemon before runtime installation.
 These checks never grant authority or replace executed Controller validation.
 
-Installer 0.7.3 accepts optional `--test-commands` JSON argv arrays and
+Installer 0.7.4 accepts optional `--test-commands` JSON argv arrays and
 `--container-image name@sha256:<64 lowercase hex>` for `commands` or `both`. Maintainers must explicitly choose reviewed,
 credential-free commands. The installer never discovers or executes scripts,
 and omitting the flags preserves the fail-closed placeholder.
@@ -168,11 +147,11 @@ The default `github-token` is `${{ github.token }}` and is also Controller-only.
 The examples use the current release tag for readability:
 
 ```yaml
-uses: Lixiaoyiao/deepseek-harness-action@v0.12.2
+uses: Lixiaoyiao/DSH-action@v0.12.2
 ```
 
 For production, replace the tag with the full immutable commit SHA resolved
-from formal `v0.12.2`. Installer `0.7.3` targets that Action identity, with a
+from formal `v0.12.2`. Installer `0.7.4` targets that Action identity, with a
 separately reviewed source commit. Generated workflows use the verified release
 commit; source templates receive it through the release build.
 
@@ -231,7 +210,7 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
           persist-credentials: false
           fetch-depth: 1
-      - uses: Lixiaoyiao/deepseek-harness-action@v0.12.2
+      - uses: Lixiaoyiao/DSH-action@v0.12.2
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           dsh-version: 0.2.1-rc.2
@@ -321,7 +300,7 @@ Next, read [Usage](usage.md) for commands and [Configuration](configuration.md) 
 
 ## Import local DSH plugins
 
-Run `npm create deepseek-harness-action@latest -- --advanced --import-plugins` in a terminal. The installer reads only package metadata under `DSH_HOME/profiles` (default `~/.dsh/profiles`). It lists third-party package names, installed versions and compatibility with DSH `0.2.1-rc.2`, then asks for the package numbers and confirmation. Use `--dsh-home` for another location.
+Run `npm create dsh-action@latest -- --import-plugins` in an interactive terminal outside CI. The installer reads only package metadata under `DSH_HOME/profiles` (default `~/.dsh/profiles`). It lists third-party package names, installed versions and compatibility with DSH `0.2.1-rc.2`, then asks for the package numbers and final confirmation. Use `--dsh-home` for another location.
 
 Enabled npm DSH Bundles can be reinstalled at exact versions in Native mode. Controlled mode also asks for the exact `plugin__owner__tool` names and grants only the selected read-only tools. Packages using arbitrary tool names need Native mode or manual configuration. Local paths, npm aliases, disabled Bundles, incompatible versions and plain dependencies need manual setup; the list explains each case. An undeclared compatibility range is shown as unverified.
 

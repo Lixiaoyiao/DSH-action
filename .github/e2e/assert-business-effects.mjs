@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { pathToFileURL, URLSearchParams } from "node:url";
 
-const repository = "Lixiaoyiao/deepseek-harness-action";
+const repository = "Lixiaoyiao/DSH-action";
 const botId = 41898282;
 const sha = /^[a-f0-9]{40}$/u;
 

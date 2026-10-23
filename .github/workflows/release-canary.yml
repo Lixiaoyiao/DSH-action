@@ -15,7 +15,7 @@ concurrency:
 jobs:
   gate:
     name: Bind canary to the live default branch
-    if: github.repository == 'Lixiaoyiao/deepseek-harness-action'
+    if: github.repository == 'Lixiaoyiao/DSH-action'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -109,7 +109,7 @@ jobs:
       - name: Checkout the fixed release action
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          repository: Lixiaoyiao/deepseek-harness-action
+          repository: Lixiaoyiao/DSH-action
           ref: ${{ env.RELEASE_SHA }}
           path: release-action
           persist-credentials: false

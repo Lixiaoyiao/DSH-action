@@ -6,8 +6,8 @@ This guide is for repository maintainers qualifying and publishing an Action rel
 
 For v0.12.2, retain the exact production DSH `0.2.1-rc.2` family and resolve its
 MCP bridge to official `@modelcontextprotocol/client` `2.3.0` through the exact
-parent-scoped security override, with peer and lock validation intact. The local GUI
-and optional model settings reuse the existing Session protocol, history selection,
+parent-scoped security override, with peer and lock validation intact. Optional
+model settings reuse the existing Session protocol, history selection,
 storage, concurrency and trusted harness. On the frozen release `main` SHA, qualify
 one explicit save/resume pair and one automatic pair in each composition
 (controlled/native), using fresh keys. Include `image_attachment=true` in the
@@ -34,15 +34,19 @@ The advisory stable/RC/alpha upstream canaries never replace these production ga
 Do not rerun task-bearing failures without first reconciling their diagnostics
 and confirmed effects; preserve a bounded continuation record for external blocks.
 
-The independent installer `0.7.3` targets formal Action `v0.12.2` through
+The independent installer `0.7.4` targets formal Action `v0.12.2` through
 `DSH_ACTION_RELEASE_SHA`. Its source tag is
-`create-deepseek-harness-action-v0.7.3`. Prepare its separate source identity only
+`create-dsh-action-v0.7.4`. Prepare its separate source identity only
 after the v0.12.2 formal canary succeeds.
-Its archive qualification exercises default GUI startup, existing-workflow edits,
-model/effort and plugin selection, diff/validation, local save, reopened YAML and
-the explicit non-interactive modes. Verify that the GUI performs no commit or
-push. A real first Action run still establishes online setup. Public consumers
+Its archive qualification exercises terminal workflow/composition selection,
+plugin import, explicit non-interactive modes, generated YAML and safe local file
+creation. A real first Action run still establishes online setup. Public consumers
 must install the same qualified archive through anonymous fresh caches.
+
+An installer-only patch retains the existing formal Action's CI/Core/Session and
+canary evidence when its runtime is unchanged. Qualify the new installer source
+with its own local checks, PR/main CI, source tag, archive and public consumers;
+do not rerun unchanged Action runtime gates for an installer-only release.
 
 Earlier release identities and qualification notes are preserved in
 [historical release evidence](release-history.md). Use only the newly qualified
@@ -129,7 +133,7 @@ For an Action version bump, update every release surface together:
 5. `dist/`, generated through the normal build.
 6. Any release-specific verification fixture or documentation.
 
-The standalone `create-deepseek-harness-action` package has its own semantic
+The standalone `create-dsh-action` package has its own semantic
 version; prepare its new release version and binding only
 after the formal Action canary succeeds. Installer feature source may land with
 the Action while retaining the published installer's release identity. Keep its standalone manifest/lock,
@@ -408,30 +412,28 @@ If the smoke fails after publication, keep the tag immutable. Diagnose the failu
 
 ## Publish the npm create package
 
-Installer `0.7.3` targets formal Action `v0.12.2` with exact DSH `0.2.1-rc.2`;
-its source tag is `create-deepseek-harness-action-v0.7.3`. Keep the formal Action
+Installer `0.7.4` targets formal Action `v0.12.2` with exact DSH `0.2.1-rc.2`;
+its source tag is `create-dsh-action-v0.7.4`. Keep the formal Action
 SHA and reviewed installer source SHA separate, and establish each through its
 respective qualification gates. Do not copy a historical release SHA into the
 new binding.
 
 Qualify the public CLI from the actual archive in a fresh existing repository.
-No flags in an interactive terminal must open the GUI; `--gui` and `--no-open`
-must work explicitly, while `--mode` retains browser-free generation. Exercise
-editing, preview, validation and save, restart the GUI and read the persisted
-YAML. Preserve unrelated files and refuse stale previews; verify loopback/token/
-origin restrictions without exposing tokens in evidence. Review the immutable
-Action SHA and exact DSH pin in generated YAML, then publish the workflow through
-the maintainer's normal Git path and record its first real Action run. The GUI
+Exercise the terminal prompts and explicit `--mode` generation. Verify local
+plugin import and preserve unrelated files, overwrite refusal, path protections
+and rollback on a failed multi-file save. Review the immutable Action SHA and
+exact DSH pin in generated YAML, then publish the workflow through the
+maintainer's normal Git path and record its first real Action run. The installer
 must never commit, push, set Secrets or execute repository scripts.
 
-Publish `create-deepseek-harness-action` only after the formal Action tag,
+Publish `create-dsh-action` only after the formal Action tag,
 GitHub Release, and release canary all resolve to `release_sha`. A Git commit
 cannot safely contain its own not-yet-known object ID, so the source package
 uses one controlled build token. When an installer patch follows the Action
 release, keep two identities: `release_sha` is the immutable Action commit
 written into generated workflows, while `installer_source_sha` is the reviewed
 commit containing the installer manifest, tests, and documentation. Create an
-immutable `create-deepseek-harness-action-vX.Y.Z` source tag after CI succeeds
+immutable `create-dsh-action-vX.Y.Z` source tag after CI succeeds
 on that exact installer commit. Never move either tag or publish a tarball from
 an unreviewed working tree, with an unresolved token, or with a floating Action
 reference.
@@ -444,9 +446,9 @@ annotated or lightweight tag and must end at its expected commit:
 release_tag="${ACTION_RELEASE_TAG:?Set the qualified formal Action tag}"
 release_sha="${DSH_ACTION_RELEASE_SHA:?Set the verified formal Action release commit SHA}"
 installer_version="${INSTALLER_VERSION:?Set the independently qualified installer version}"
-installer_tag="create-deepseek-harness-action-v$installer_version"
+installer_tag="create-dsh-action-v$installer_version"
 installer_source_sha="${INSTALLER_SOURCE_SHA:?Set the reviewed installer source commit SHA}"
-repository="Lixiaoyiao/deepseek-harness-action"
+repository="Lixiaoyiao/DSH-action"
 sha_pattern='^[0-9a-f]{40}$'
 [[ "$release_sha" =~ $sha_pattern ]]
 [[ "$installer_source_sha" =~ $sha_pattern ]]
@@ -491,7 +493,7 @@ invalid value:
 ```bash
 pack_json="$(
   DSH_ACTION_RELEASE_SHA="$release_sha" \
-    npm pack "$installer_stage/source/packages/create-deepseek-harness-action" \
+    npm pack "$installer_stage/source/packages/create-dsh-action" \
       --silent --json --pack-destination "$installer_stage/pack"
 )"
 tarball="$installer_stage/pack/$(jq -r '.[0].filename' <<<"$pack_json")"
@@ -500,7 +502,7 @@ tar -xzf "$tarball" -C "$installer_stage/unpacked"
 ```
 
 Inspect the packed artifact, not only the source tree. It must contain version
-`installer_version`, expose the `create-deepseek-harness-action` executable, contain no
+`installer_version`, expose the `create-dsh-action` executable, contain no
 unresolved release token or floating Action reference, and generate controlled
 and native workflows bound only to `release_sha`. Verify that every source
 template, packed template, and generated workflow has exactly one
@@ -508,11 +510,10 @@ template, packed template, and generated workflow has exactly one
 the current Action:
 
 The exact archive allowlist is exercised in `test/installer.test.ts`. It includes
-the package metadata/license, CLI runtime, GUI backend and static assets,
-generated input metadata, the bundled Action validator with third-party notices,
-and six bound templates. Reject missing/extra files and symlinks. Test `review`,
-`commands`, `both`, and `session` in both compositions, plus GUI preview/save/reopen
-from the actual archive. Each Session workflow must keep `queue: max` and read-only
+the package metadata/license, CLI runtime, shared safe file writer, generated
+input metadata and six bound templates. Reject missing/extra files and symlinks.
+Test `review`, `commands`, `both`, and `session` in both compositions from the
+actual archive. Each Session workflow must keep `queue: max` and read-only
 permissions.
 
 ```bash
@@ -521,33 +522,33 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const manifest = JSON.parse(await readFile(process.argv[2], "utf8"));
-assert.equal(manifest.name, "create-deepseek-harness-action");
+assert.equal(manifest.name, "create-dsh-action");
 assert.equal(manifest.version, process.argv[3]);
-assert.ok(manifest.bin?.["create-deepseek-harness-action"]);
+assert.ok(manifest.bin?.["create-dsh-action"]);
 NODE
 
-! grep -R -E '__[A-Z0-9_]*RELEASE[A-Z0-9_]*__|Lixiaoyiao/deepseek-harness-action@(v[0-9]|main|latest)' \
+! grep -R -E '__[A-Z0-9_]*RELEASE[A-Z0-9_]*__|Lixiaoyiao/DSH-action@(v[0-9]|main|latest)' \
   "$installer_stage/unpacked/package"
 
 (
   cd "$installer_stage/controlled"
   npm exec --yes --package "$tarball" -- \
-    create-deepseek-harness-action --mode both
+    create-dsh-action --mode both
 )
 
 (
   cd "$installer_stage/native"
   npm exec --yes --package "$tarball" -- \
-    create-deepseek-harness-action --mode both --dsh-mode native
+    create-dsh-action --mode both --dsh-mode native
 )
 
 for variant in controlled native; do
   workflow_root="$installer_stage/$variant/.github/workflows"
   test "$(find "$workflow_root" -type f -name '*.yml' | wc -l)" -eq 2
   while IFS= read -r workflow; do
-    test "$(grep -F -o "Lixiaoyiao/deepseek-harness-action@$release_sha" "$workflow" | wc -l)" -eq 1
+    test "$(grep -F -o "Lixiaoyiao/DSH-action@$release_sha" "$workflow" | wc -l)" -eq 1
     grep -F "persist-credentials: false" "$workflow" >/dev/null
-    ! grep -E 'Lixiaoyiao/deepseek-harness-action@(v[0-9]|main|latest)' "$workflow"
+    ! grep -E 'Lixiaoyiao/DSH-action@(v[0-9]|main|latest)' "$workflow"
   done < <(find "$workflow_root" -type f -name '*.yml')
 done
 
@@ -559,7 +560,7 @@ printf 'user-owned\n' >"$installer_stage/overwrite/.github/workflows/dsh-review.
 if (
   cd "$installer_stage/overwrite"
   npm exec --yes --package "$tarball" -- \
-    create-deepseek-harness-action --mode both --dsh-mode native
+    create-dsh-action --mode both --dsh-mode native
 ); then
   echo "installer unexpectedly overwrote an existing workflow" >&2
   exit 1
@@ -605,8 +606,8 @@ that would rerun packing with an unreviewed environment:
 
 ```bash
 npm whoami --registry=https://registry.npmjs.org/
-npm publish "$tarball" --access public --registry=https://registry.npmjs.org/
-npm view "create-deepseek-harness-action@$installer_version" \
+npm publish "$tarball" --ignore-scripts --access public --registry=https://registry.npmjs.org/ --tag latest
+npm view "create-dsh-action@$installer_version" \
   name version dist-tags --json --registry=https://registry.npmjs.org/
 ```
 
@@ -615,10 +616,16 @@ consumer command must select the official registry explicitly. After publication
 run the complete anonymous consumer gate above against the fetched official
 archive and retain its byte comparison with the qualified tarball.
 
+If npm requires browser authentication or a one-time password, have the maintainer
+complete it in their terminal using the same retained tarball. Do not request
+credentials, repack, or automatically repeat the publish command. Confirm the
+official version and integrity before continuing after an uncertain outcome.
+
 Confirm the review, commands, and both file sets are correct; controlled remains
 the default; native is explicit; every workflow parses as YAML and contains
 exactly one `release_sha` Action reference; and checkout, permission, Docker,
-validation, credential, and overwrite boundaries remain intact. Then remove the
-disposable worktree and staging directory. npm versions and both release tags
+validation, credential, and overwrite boundaries remain intact. Retain the qualified
+tarball and verification receipts; the disposable working checkout may be removed.
+npm versions and both release tags
 are immutable; a bad published installer must be fixed with a new installer
 patch version rather than replacing a published archive.

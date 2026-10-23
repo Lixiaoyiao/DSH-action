@@ -1,8 +1,10 @@
-# DeepSeek Harness for GitHub
+# DSH-action
 
-[![CI](https://github.com/Lixiaoyiao/deepseek-harness-action/actions/workflows/ci.yml/badge.svg)](https://github.com/Lixiaoyiao/deepseek-harness-action/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Lixiaoyiao/deepseek-harness-action?display_name=tag)](https://github.com/Lixiaoyiao/deepseek-harness-action/releases/latest)
-[![MIT](https://img.shields.io/github/license/Lixiaoyiao/deepseek-harness-action)](LICENSE)
+For existing workflows, update the Action reference to Lixiaoyiao/DSH-action@the-existing-commit-SHA and keep its immutable commit pin. Use npm create dsh-action for the installer.
+
+[![CI](https://github.com/Lixiaoyiao/DSH-action/actions/workflows/ci.yml/badge.svg)](https://github.com/Lixiaoyiao/DSH-action/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Lixiaoyiao/DSH-action?display_name=tag)](https://github.com/Lixiaoyiao/DSH-action/releases/latest)
+[![MIT](https://img.shields.io/github/license/Lixiaoyiao/DSH-action)](LICENSE)
 
 [中文](README.zh-CN.md)
 
@@ -46,12 +48,12 @@ Choose GitHub.com and browser sign-in. The `origin` remote should point to the r
 ### 3. Install the workflow and set your key
 
 ```powershell
-npm.cmd create deepseek-harness-action@latest
+npm.cmd create dsh-action@latest
 ```
 
-The local browser GUI configures **read-only `@dsh` conversation and automatic PR Review** by default. Select a workflow, edit its model, thinking effort and permissions, review the YAML diff, then save locally. Reopen the same command to edit existing workflows. You commit and push the saved files yourself.
+The installer asks which workflow to install, starting with **read-only `@dsh` conversation and automatic PR Review**, then asks for the DSH composition, with `controlled` as the default. It creates local workflow files and preserves existing files. Review, commit and push the generated files with your normal Git workflow.
 
-Installer `0.7.3` includes this local GUI and binds generated workflows to formal Action `v0.12.2`.
+Installer `0.7.4` binds generated workflows to formal Action `v0.12.2`.
 
 Add the key in **Settings → Secrets and variables → Actions → New repository secret** on GitHub. Set the name to `DEEPSEEK_API_KEY` and paste the key as its value. A key stored in local DSH does not configure this secret.
 
@@ -71,21 +73,21 @@ For automatic review, open a **non-draft pull request** or push a new commit to 
 
 ### Optional: local plugins and other workflows
 
-Choose read-only conversation + Review, Coding Commands, both, or automatic Session in the GUI. `--gui` opens it explicitly; `--no-open` prints its private local URL without opening a browser. If you already have local DSH plugins, `--import-plugins` opens their selection page:
+The terminal choices include read-only conversation + Review, Coding Commands, both, and automatic Session. `--advanced` enters these questions explicitly. If you already have local DSH plugins, `--import-plugins` lists them for selection and confirmation in the terminal:
 
 ```powershell
-npm.cmd create deepseek-harness-action@latest -- --gui --import-plugins
+npm.cmd create dsh-action@latest -- --import-plugins
 ```
 
-Native mode supports DSH Bundles directly. Controlled mode also needs their exact read-only tool names (`plugin__owner__tool`). The cloud installs selected packages at exact versions; local settings and keys stay on your computer. Local-only, disabled and incompatible packages show their status. Use `--dsh-home "C:\path\to\.dsh"` with the import option for another DSH home. `--advanced` remains a GUI alias.
+Native mode supports DSH Bundles directly. Controlled mode also needs their exact read-only tool names (`plugin__owner__tool`). The cloud installs selected packages at exact versions; local settings and keys stay on your computer. Local-only, disabled and incompatible packages show their status. Use `--dsh-home "C:\path\to\.dsh"` with the import option for another DSH home. Plugin import requires an interactive terminal.
 
-File-only and non-interactive setup remains available:
+For non-interactive setup, choose the workflow and composition explicitly:
 
 ```powershell
-npm.cmd create deepseek-harness-action@latest -- --mode both --dsh-mode native
+npm.cmd create dsh-action@latest -- --mode both --dsh-mode native
 ```
 
-Controlled remains the default. Natural-language writes require both `natural-language-write: "true"` and `allow-write: "true"` in a write-capable workflow, repository-specific validation commands, and a clear request such as `@dsh Please fix this bug and open a PR`. The advanced Commands starter keeps the independent natural-language switch off; legacy `fix`, `implement` and `task --write` retain their existing write requests. Installer `0.7.3` targets Action `v0.12.2` and DSH `0.2.1-rc.2`. Its build binds the qualified Action commit through `DSH_ACTION_RELEASE_SHA`; its source tag is `create-deepseek-harness-action-v0.7.3`. See the [setup guide](docs/setup.md) for manual setup and recovery.
+Controlled remains the default. Natural-language writes require both `natural-language-write: "true"` and `allow-write: "true"` in a write-capable workflow, repository-specific validation commands, and a clear request such as `@dsh Please fix this bug and open a PR`. The Commands starter keeps the independent natural-language switch off; legacy `fix`, `implement` and `task --write` retain their existing write requests. Installer `0.7.4` targets Action `v0.12.2` and DSH `0.2.1-rc.2`. Its build binds the qualified Action commit through `DSH_ACTION_RELEASE_SHA`; its source tag is `create-dsh-action-v0.7.4`. Edit the workflow YAML for models, thinking effort and other inputs. See the [setup guide](docs/setup.md) for configuration checks, manual setup and recovery.
 
 ### Manual installation
 
@@ -128,7 +130,7 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
           persist-credentials: false
           fetch-depth: 1
-      - uses: Lixiaoyiao/deepseek-harness-action@v0.12.2
+      - uses: Lixiaoyiao/DSH-action@v0.12.2
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           dsh-version: 0.2.1-rc.2
@@ -174,12 +176,12 @@ Binary repository files retain their exact bytes through workspace copies and Gi
 
 These public runs show the comments and Actions logs produced by this repository.
 
-| Scenario                                                | Run                                                                                                                                                                   |
-| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PR review, including a rerun without duplicate comments | [PR #3](https://github.com/Lixiaoyiao/deepseek-harness-action/pull/3) · [Actions run](https://github.com/Lixiaoyiao/deepseek-harness-action/actions/runs/31760570162) |
-| Diagnosis based on failed checks and logs               | [Actions run](https://github.com/Lixiaoyiao/deepseek-harness-action/actions/runs/31760603284)                                                                         |
-| Fix and validation in trusted write mode                | [Actions run](https://github.com/Lixiaoyiao/deepseek-harness-action/actions/runs/31761793492)                                                                         |
-| Issue implementation followed by a pull request         | [Issue #4](https://github.com/Lixiaoyiao/deepseek-harness-action/issues/4) → [PR #5](https://github.com/Lixiaoyiao/deepseek-harness-action/pull/5)                    |
+| Scenario                                                | Run                                                                                                                                         |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| PR review, including a rerun without duplicate comments | [PR #3](https://github.com/Lixiaoyiao/DSH-action/pull/3) · [Actions run](https://github.com/Lixiaoyiao/DSH-action/actions/runs/31760570162) |
+| Diagnosis based on failed checks and logs               | [Actions run](https://github.com/Lixiaoyiao/DSH-action/actions/runs/31760603284)                                                            |
+| Fix and validation in trusted write mode                | [Actions run](https://github.com/Lixiaoyiao/DSH-action/actions/runs/31761793492)                                                            |
+| Issue implementation followed by a pull request         | [Issue #4](https://github.com/Lixiaoyiao/DSH-action/issues/4) → [PR #5](https://github.com/Lixiaoyiao/DSH-action/pull/5)                    |
 
 ## Natural requests and existing `@dsh` commands
 

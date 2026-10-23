@@ -1,8 +1,10 @@
-# DeepSeek Harness for GitHub
+# DSH-action
 
-[![CI](https://github.com/Lixiaoyiao/deepseek-harness-action/actions/workflows/ci.yml/badge.svg)](https://github.com/Lixiaoyiao/deepseek-harness-action/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Lixiaoyiao/deepseek-harness-action?display_name=tag)](https://github.com/Lixiaoyiao/deepseek-harness-action/releases/latest)
-[![MIT](https://img.shields.io/github/license/Lixiaoyiao/deepseek-harness-action)](LICENSE)
+现有工作流请将 Action 的 uses 地址更新为 Lixiaoyiao/DSH-action@原提交SHA，保留原有 SHA 固定版本。安装器现在使用 npm create dsh-action。
+
+[![CI](https://github.com/Lixiaoyiao/DSH-action/actions/workflows/ci.yml/badge.svg)](https://github.com/Lixiaoyiao/DSH-action/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Lixiaoyiao/DSH-action?display_name=tag)](https://github.com/Lixiaoyiao/DSH-action/releases/latest)
+[![MIT](https://img.shields.io/github/license/Lixiaoyiao/DSH-action)](LICENSE)
 
 [English](README.md)
 
@@ -46,12 +48,12 @@ gh auth login
 ### 3. 安装工作流并配置密钥
 
 ```powershell
-npm.cmd create deepseek-harness-action@latest
+npm.cmd create dsh-action@latest
 ```
 
-默认打开本地浏览器配置界面，配置**只读 `@dsh` 对话和自动 PR Review**。选择工作流，调整模型、思考强度和权限，审查 YAML 差异后保存到本地。再次运行同一命令即可编辑现有工作流；保存后的文件由你自行提交和推送。
+安装器先在终端询问要安装的工作流，默认选择**只读 `@dsh` 对话和自动 PR Review**，再询问 DSH composition，默认 controlled。它生成本地工作流文件，保留已有文件；通过日常 Git 流程审查、提交并推送生成的文件。
 
-安装器 `0.7.3` 提供本地 GUI，生成的工作流绑定正式 Action `v0.12.2`。
+安装器 `0.7.4` 生成的工作流绑定正式 Action `v0.12.2`。
 
 在 GitHub 仓库打开 **Settings → Secrets and variables → Actions → New repository secret**，名称填 `DEEPSEEK_API_KEY`，值填你的密钥。只在本地 DSH 中配置密钥，云端 Action 仍然无法使用它。
 
@@ -71,21 +73,21 @@ npm.cmd create deepseek-harness-action@latest
 
 ### 可选：导入本地插件或安装其他功能
 
-在 GUI 中选择只读对话与 Review、Coding Commands、两者一起安装或自动 Session。`--gui` 显式打开界面；`--no-open` 只打印本地私有地址，不自动打开浏览器。已有本地 DSH 插件时，可用 `--import-plugins` 直接进入插件选择页：
+终端中可选择只读对话与 Review、Coding Commands、两者一起安装或自动 Session。`--advanced` 显式进入这些问答。已有本地 DSH 插件时，可用 `--import-plugins` 在终端列出插件、选择并确认：
 
 ```powershell
-npm.cmd create deepseek-harness-action@latest -- --gui --import-plugins
+npm.cmd create dsh-action@latest -- --import-plugins
 ```
 
-Native 模式可直接使用 DSH Bundle。Controlled 模式还需要插件实际提供的只读工具名（`plugin__owner__tool`）。GitHub 会重新安装选中的精确版本，本地密钥和设置不会被复制。仅存在本地、已停用或不兼容的包会显示状态。DSH 使用其他目录时，可加 `--dsh-home "C:\你的路径\.dsh"`。`--advanced` 保留为 GUI 别名。
+Native 模式可直接使用 DSH Bundle。Controlled 模式还需要插件实际提供的只读工具名（`plugin__owner__tool`）。GitHub 会重新安装选中的精确版本，本地密钥和设置不会被复制。仅存在本地、已停用或不兼容的包会显示状态。DSH 使用其他目录时，可加 `--dsh-home "C:\你的路径\.dsh"`。插件导入需要交互式终端。
 
-只生成文件或在 CI 中运行，可以明确指定选项：
+非交互式运行或在 CI 中运行时，明确指定工作流与 composition：
 
 ```powershell
-npm.cmd create deepseek-harness-action@latest -- --mode both --dsh-mode native
+npm.cmd create dsh-action@latest -- --mode both --dsh-mode native
 ```
 
-默认仍为 Controlled。自然语言写入需要在支持写入的工作流中同时配置 `natural-language-write: "true"`、`allow-write: "true"`，提供适合项目的验证命令，并明确要求修改代码，例如 `@dsh 修复这个 Bug 并提交 PR`。高级 Commands 模板默认关闭自然语言写入这一独立开关；旧的 `fix`、`implement` 和 `task --write` 保留原有写入请求语义。安装器 `0.7.3` 对应 Action `v0.12.2` 和 DSH `0.2.1-rc.2`；打包通过 `DSH_ACTION_RELEASE_SHA` 绑定已验证的 Action commit，源码 Tag 为 `create-deepseek-harness-action-v0.7.3`。手工安装和故障恢复见[安装指南](docs/setup.zh-CN.md)。
+默认仍为 Controlled。自然语言写入需要在支持写入的工作流中同时配置 `natural-language-write: "true"`、`allow-write: "true"`，提供适合项目的验证命令，并明确要求修改代码，例如 `@dsh 修复这个 Bug 并提交 PR`。Commands 模板默认关闭自然语言写入这一独立开关；旧的 `fix`、`implement` 和 `task --write` 保留原有写入请求语义。安装器 `0.7.4` 对应 Action `v0.12.2` 和 DSH `0.2.1-rc.2`；打包通过 `DSH_ACTION_RELEASE_SHA` 绑定已验证的 Action commit，源码 Tag 为 `create-dsh-action-v0.7.4`。模型、思考强度和其他输入直接在工作流 YAML 中调整。配置检查、手工安装和故障恢复见[安装指南](docs/setup.zh-CN.md)。
 
 ### 手工安装
 
@@ -128,7 +130,7 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
           persist-credentials: false
           fetch-depth: 1
-      - uses: Lixiaoyiao/deepseek-harness-action@v0.12.2
+      - uses: Lixiaoyiao/DSH-action@v0.12.2
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           dsh-version: 0.2.1-rc.2
@@ -173,12 +175,12 @@ Action 支持[按 key 自动创建或续接 Session](docs/zh-CN/session.md)，�
 
 以下是本仓库的公开运行记录，可以直接查看评论和 Actions 日志。
 
-| 场景                            | 运行记录                                                                                                                                                              |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PR 审查，以及复跑时不重复发评论 | [PR #3](https://github.com/Lixiaoyiao/deepseek-harness-action/pull/3) · [Actions run](https://github.com/Lixiaoyiao/deepseek-harness-action/actions/runs/31760570162) |
-| 根据失败的检查和日志进行诊断    | [Actions run](https://github.com/Lixiaoyiao/deepseek-harness-action/actions/runs/31760603284)                                                                         |
-| 在受信任写模式下修复并验证      | [Actions run](https://github.com/Lixiaoyiao/deepseek-harness-action/actions/runs/31761793492)                                                                         |
-| 实现 Issue 后创建 PR            | [Issue #4](https://github.com/Lixiaoyiao/deepseek-harness-action/issues/4) → [PR #5](https://github.com/Lixiaoyiao/deepseek-harness-action/pull/5)                    |
+| 场景                            | 运行记录                                                                                                                                    |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| PR 审查，以及复跑时不重复发评论 | [PR #3](https://github.com/Lixiaoyiao/DSH-action/pull/3) · [Actions run](https://github.com/Lixiaoyiao/DSH-action/actions/runs/31760570162) |
+| 根据失败的检查和日志进行诊断    | [Actions run](https://github.com/Lixiaoyiao/DSH-action/actions/runs/31760603284)                                                            |
+| 在受信任写模式下修复并验证      | [Actions run](https://github.com/Lixiaoyiao/DSH-action/actions/runs/31761793492)                                                            |
+| 实现 Issue 后创建 PR            | [Issue #4](https://github.com/Lixiaoyiao/DSH-action/issues/4) → [PR #5](https://github.com/Lixiaoyiao/DSH-action/pull/5)                    |
 
 ## 自然语言与原有 `@dsh` 命令
 

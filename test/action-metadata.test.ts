@@ -12,7 +12,7 @@ const RELEASE_REFERENCE = ACTION_TAG;
 describe("Marketplace action metadata", () => {
   it("uses the supported Node 24 runtime and ships the declared bundle", async () => {
     const metadata = await readFile(new URL("../action.yml", import.meta.url), "utf8");
-    expect(metadata).toContain('name: "DeepSeek Harness for GitHub"');
+    expect(metadata).toContain('name: "DSH-action"');
     expect(metadata).toContain('author: "Lixiaoyiao"');
     expect(metadata).toContain('using: "node24"');
     expect(metadata).toContain('main: "dist/index.js"');
@@ -204,7 +204,7 @@ describe("Marketplace action metadata", () => {
       "../examples/github-integration.yml",
     ]) {
       const example = await readFile(new URL(relativePath, import.meta.url), "utf8");
-      expect(example).toContain(`uses: Lixiaoyiao/deepseek-harness-action@${RELEASE_REFERENCE}`);
+      expect(example).toContain(`uses: Lixiaoyiao/DSH-action@${RELEASE_REFERENCE}`);
     }
   });
 
@@ -231,7 +231,7 @@ describe("Marketplace action metadata", () => {
       new URL("../examples/task-automation.yml", import.meta.url),
       "utf8",
     );
-    expect(example).toContain(`deepseek-harness-action@${RELEASE_REFERENCE}`);
+    expect(example).toContain(`DSH-action@${RELEASE_REFERENCE}`);
     expect(example).not.toMatch(/planned|@v0\.3(?:\s|$)/iu);
     expect(example).toContain("task-access:");
     expect(example).toContain("max-turns:");
@@ -245,7 +245,7 @@ describe("Marketplace action metadata", () => {
       new URL("../examples/github-integration.yml", import.meta.url),
       "utf8",
     );
-    expect(example).toContain(`deepseek-harness-action@${RELEASE_REFERENCE}`);
+    expect(example).toContain(`DSH-action@${RELEASE_REFERENCE}`);
     expect(example).toContain("trigger-phrase: /deepseek");
     expect(example).toContain("label-trigger: dsh-ready");
     expect(example).toContain("allowed-actors: REPLACE_WITH_MAINTAINER_LOGIN");
