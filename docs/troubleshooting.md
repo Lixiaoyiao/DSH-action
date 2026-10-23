@@ -50,8 +50,7 @@ source.
 
 ## The local configuration GUI does not open
 
-The GUI ships with installer 0.7.3 after Action v0.12.1 qualification; published
-0.7.2 uses the previous terminal guide. With the GUI-capable installer, run
+Installer 0.7.3 includes the local GUI and targets formal Action v0.12.1. Run
 `npm create deepseek-harness-action@latest -- --no-open` and open the full private
 URL printed by the terminal. Keep that terminal running. A stopped or restarted
 server invalidates the previous session URL.

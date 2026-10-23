@@ -13,8 +13,8 @@ npm create deepseek-harness-action@latest
 ```
 
 在交互式终端中不传选项时，安装器打开本地浏览器 GUI，默认配置只读对话与
-PR Review，也可以读取现有 DSH 工作流继续编辑。GUI 随安装器 `0.7.3` 在正式
-Action `v0.12.1` 验证后发布；此前已发布的 `0.7.2` 仍使用原终端引导。
+PR Review，也可以读取现有 DSH 工作流继续编辑。安装器 `0.7.3` 提供此 GUI，
+生成的工作流绑定正式 Action `v0.12.1`。
 
 选择预设或已有工作流，再选择 controlled/native、模型、思考强度和其它 Action
 选项。预览显示 YAML 差异，并调用 Action 自身的静态配置检查器。确认保存后只写入
@@ -69,11 +69,11 @@ Automatic Session 生成只读 starter，绑定相同的 key/run-name/concurrenc
 npm create deepseek-harness-action@latest -- --mode session
 ```
 
-安装器 `0.7.2` 面向正式 Action `v0.12.0`，两种 composition 都保持精确
+安装器 `0.7.3` 面向正式 Action `v0.12.1`，两种 composition 都保持精确
 DSH `0.2.1-rc.2`。只有 Action Tag、
 GitHub Release 和 canary 身份一致后，打包才通过 `DSH_ACTION_RELEASE_SHA`
 接收核验出的完整 commit。独立审查的安装器源码使用
-`create-deepseek-harness-action-v0.7.2` Tag。源码模板保留受控 build token，
+`create-deepseek-harness-action-v0.7.3` Tag。源码模板保留受控 build token，
 生成的 workflow 不包含该 token、candidate SHA、浮动 Tag 或分支。
 源码 commit 不能提供自身尚未确定的未来身份。
 
@@ -112,7 +112,7 @@ Action 的公开输入和扩展 schema，检查缺少凭据、DSH 精确版本�
 有时间上限、无 Controller 凭据的 `docker info` 预检会在安装 runtime 前
 报告 CLI/daemon 不可用。这些检查不授予权限，也不替代 Controller 的真实验证。
 
-安装器 0.7.2 为 `commands` / `both` 提供显式 `--test-commands` JSON argv
+安装器 0.7.3 为 `commands` / `both` 提供显式 `--test-commands` JSON argv
 和 `--container-image name@sha256:<64 位小写十六进制>`。维护者必须自行选择来源可信、经过审核、无凭据的验证命令。
 安装器不会自动发现或执行脚本；省略选项仍保留安全失败的验证占位符。
 
@@ -146,11 +146,11 @@ DEEPSEEK_API_KEY
 为了便于阅读，示例使用当前发布 Tag：
 
 ```yaml
-uses: Lixiaoyiao/deepseek-harness-action@v0.12.0
+uses: Lixiaoyiao/deepseek-harness-action@v0.12.1
 ```
 
-生产环境应把 Tag 替换为从正式 `v0.12.0` 解析出的完整、不可变 commit SHA。
-安装器 `0.7.2` 对应该 Action 身份，独立审查的 installer 源码 commit 是另一个身份。
+生产环境应把 Tag 替换为从正式 `v0.12.1` 解析出的完整、不可变 commit SHA。
+安装器 `0.7.3` 对应该 Action 身份，独立审查的 installer 源码 commit 是另一个身份。
 生成的 workflow 使用核验后的正式 commit，源码模板通过发布构建接收该值。
 
 必须分别核验 installer 源码 Tag 与 `DSH_ACTION_RELEASE_SHA` 打包输入；源码中的

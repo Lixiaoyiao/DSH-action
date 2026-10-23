@@ -5,6 +5,17 @@ versioning for published action releases.
 
 ## Unreleased
 
+## Installer 0.7.3
+
+- Binds installer `0.7.3` to formal Action `v0.12.1` through
+  `DSH_ACTION_RELEASE_SHA`, with exact DSH `0.2.1-rc.2` and source tag
+  `create-deepseek-harness-action-v0.7.3`.
+- Delivers the local browser GUI for existing-workflow edits, presets, model and
+  thinking controls, plugin selection, diff preview, static validation and
+  explicit local YAML saves. The installer performs no commit or push.
+- Retains the explicit browser-free workflow modes and separate installer source,
+  qualified archive, npm publication and fresh anonymous public-consumer gates.
+
 ## [0.12.1] - 2026-10-23
 
 - Accepts a `queued` current Session run when its exact attempt has one verified
