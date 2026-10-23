@@ -2,7 +2,6 @@ import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, parse, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
 
 const RELEASE_TOKEN = "__DSH_ACTION_RELEASE_SHA__";
 const DSH_MODE_TOKEN = "__DSH_MODE_INPUT__";
@@ -61,24 +60,8 @@ const runtimeFiles = [
   "action-inputs.generated.mjs",
   "cli.mjs",
   "installer.mjs",
-  "process.mjs",
+  "workflow-files.mjs",
   "workflow-text.mjs",
-  "local-plugins.mjs",
-  "gui/contract.generated.mjs",
-  "gui/files.mjs",
-  "gui/workflows.mjs",
-  "gui/plugins.mjs",
-  "gui/server.mjs",
-  ...[
-    "index.html",
-    "app.mjs",
-    "api.mjs",
-    "state.mjs",
-    "components.mjs",
-    "views.mjs",
-    "tokens.css",
-    "styles.css",
-  ].map((file) => `gui/ui/${file}`),
 ];
 const sourceTemplateFiles = ["dsh-review.yml", "dsh-commands.yml", "dsh-session.yml"];
 const runtime = new Map();
@@ -136,32 +119,6 @@ for (const file of sourceTemplateFiles) {
   const source = await readFile(join(packageRoot, "src", "templates", file), "utf8");
   templates.set(file, renderTemplate(source, file, "controlled"));
   templates.set(nativeTemplateName(file), renderTemplate(source, file, "native"));
-}
-
-// Ship the Action's existing offline validator, never a second input schema.
-// This build dependency remains in the repository; npm consumers run the bundle.
-const require = createRequire(import.meta.url);
-const ncc = require("@vercel/ncc");
-const buildCwd = process.cwd();
-let validation;
-try {
-  process.chdir(resolve(packageRoot, "../.."));
-  validation = await ncc(resolve(packageRoot, "../../scripts/installer-validation.ts"), {
-    minify: true,
-    sourceMap: false,
-    cache: false,
-    quiet: true,
-    license: "THIRD_PARTY_NOTICES.txt",
-  });
-} catch (error) {
-  process.stderr.write(`Could not build Action configuration validator: ${error.message}\n`);
-  process.exit(1);
-} finally {
-  process.chdir(buildCwd);
-}
-runtime.set("gui/config-validation.mjs", validation.code);
-for (const [file, asset] of Object.entries(validation.assets)) {
-  if (file !== "package.json") runtime.set(`gui/${file}`, asset.source);
 }
 
 await rm(destination, { force: true, recursive: true });
