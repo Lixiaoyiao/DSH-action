@@ -208,6 +208,7 @@ describe.each(["controlled", "native"] as const)("%s model settings through pinn
               SystemRoot: process.env.SystemRoot,
               HOME: dshHome,
               DSH_HOME: dshHome,
+              ...(project ? { DSH_ACTION_DIAGNOSTICS: "basic" } : {}),
               DSH_TELEMETRY_DISABLED: "1",
               DSH_TOOLS_MODE: "native",
               DEEPSEEK_API_KEY: "model-settings-fixture-key",
@@ -217,7 +218,11 @@ describe.each(["controlled", "native"] as const)("%s model settings through pinn
             maxBuffer: 2 * 1024 * 1024,
           },
         );
-        expect(result.stderr).toBe("");
+        if (project) {
+          expect(result.stderr).toContain("loader.entry-active");
+          expect(result.stderr).toContain("agent-default-model");
+          expect(result.stderr).not.toContain("PROJECT_PROMPT_PRESERVED");
+        } else expect(result.stderr).toBe("");
         expect(result.stdout).toContain("MODEL_SETTINGS_OK");
         // Native also generates a session title; the Agent request carries its
         // tool schemas, while that auxiliary provider request does not.

@@ -166,3 +166,24 @@ export function requireAdmittedExtensions(host, selectors) {
     { prepend: true },
   );
 }
+
+/** Observe the locked Cordis lifecycle; never read plugin configuration or error payloads. */
+export function observeProfileStartup(host) {
+  if (!process.env.DSH_ACTION_DIAGNOSTICS || process.env.DSH_ACTION_DIAGNOSTICS === "off") return;
+  // Public FiberState values from the pinned Cordis runtime.
+  const states = ["pending", "loading", "active", "failed", "disposed", "unloading"];
+  host.on(
+    "internal/status",
+    (fiber) => {
+      const id = fiber.entry?.options.id;
+      const state = states[fiber.state];
+      if (typeof id !== "string" || state === undefined) return;
+      process.stderr.write(
+        "DSH_DIAGNOSTIC " +
+          JSON.stringify({ phase: "loader.entry-" + state, name: id.slice(0, 128) }) +
+          "\n",
+      );
+    },
+    { global: true },
+  );
+}

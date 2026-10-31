@@ -184,6 +184,32 @@ describe("official rc.2 Profile package extension boot", () => {
           "- id: official-profile-bundle-fixture\n  disabled: false\n",
         );
       }
+      if (multiple) {
+        const importer = pathToFileURL(
+          join(process.cwd(), "packages/create-dsh-action/src/local-plugins.mjs"),
+        ).href;
+        const script =
+          "import {discoverLocalPlugins} from " +
+          JSON.stringify(importer) +
+          ";console.log(JSON.stringify(await discoverLocalPlugins({home:" +
+          JSON.stringify(dshHome) +
+          "})));";
+        const discovery = await execFileAsync(
+          process.execPath,
+          ["--input-type=module", "-e", script],
+          { timeout: 10000, windowsHide: true },
+        );
+        const imported = z
+          .array(
+            z.looseObject({ name: z.string(), version: z.string(), reason: z.string().optional() }),
+          )
+          .parse(JSON.parse(discovery.stdout));
+        expect(imported.find((item) => item.name === PACKAGE_NAME)).toMatchObject({
+          name: PACKAGE_NAME,
+          version: PACKAGE_VERSION,
+        });
+        expect(imported.find((item) => item.name === PACKAGE_NAME)?.reason).toBeUndefined();
+      }
       if (kind === "plugin") {
         const pluginModuleSpecifiers = await resolveInstalledPluginModuleSpecifiers({
           packageRoot: profile.profileDir,

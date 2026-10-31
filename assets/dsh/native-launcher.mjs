@@ -1,5 +1,6 @@
 import {
   composeActionProfile,
+  observeProfileStartup,
   admittedExtensionSelectors,
   requireAdmittedExtensions,
 } from "./profile-runtime.mjs";
@@ -167,6 +168,7 @@ async function main() {
       globalThis.structuredClone(patches),
       async (host) => {
         root = host;
+        observeProfileStartup(host);
         if (sessionPlan !== undefined)
           sessionModule.installSessionAdmission(host, sessionPlan, {
             auditPath: join(dshHome, "action-state", "session-admission.json"),

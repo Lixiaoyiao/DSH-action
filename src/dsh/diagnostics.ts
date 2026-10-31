@@ -103,13 +103,12 @@ export class RunDiagnostics {
         try {
           const row: unknown = JSON.parse(line.slice(15));
           if (
-            row &&
-            typeof row === "object" &&
+            isRecord(row) &&
             "phase" in row &&
             typeof row.phase === "string" &&
             /^(?:profile|loader)\.[a-z-]+$/.test(row.phase)
           )
-            this.event(row.phase, {}, "worker");
+            this.event(row.phase, typeof row.name === "string" ? { name: row.name } : {}, "worker");
         } catch {
           /* Ignore malformed diagnostics. */
         }
