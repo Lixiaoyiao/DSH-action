@@ -12,6 +12,7 @@ import {
 import { inspectStoredSession } from "../session/checkpoint.js";
 import { collectWorkerSession } from "../session/worker.js";
 import { dockerWorkerSpec } from "./docker-policy.js";
+import { workerFailureDetail } from "./diagnostics.js";
 import {
   DshConfigurationError,
   DshError,
@@ -145,7 +146,7 @@ export class DshWorker {
       throw new DshProcessError(
         processResult.exitCode,
         processResult.signal,
-        redactKnownSecrets(processResult.stderr.trim(), secrets),
+        redactKnownSecrets(workerFailureDetail(processResult.stderr), secrets),
       );
     }
     const terminal = decoder.result();

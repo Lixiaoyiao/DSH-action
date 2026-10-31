@@ -21,6 +21,7 @@ async function runWithHeadlessOutput(
   stdout: string,
   exitCode = 0,
   resultRepairFetch?: DshRunDependencies["resultRepairFetch"],
+  stderr = "",
 ) {
   const fixture = await fixtures();
   return await runDsh(
@@ -38,7 +39,7 @@ async function runWithHeadlessOutput(
         Promise.resolve(
           networkInspectResult(spec) ?? {
             stdout: spec.args.includes(CONTAINER_LAUNCHER) ? stdout : "",
-            stderr: "",
+            stderr: spec.args.includes(CONTAINER_LAUNCHER) ? stderr : "",
             exitCode: spec.args.includes(CONTAINER_LAUNCHER) ? exitCode : 0,
             signal: null,
           },
@@ -76,6 +77,22 @@ const usageStream = (...events: unknown[]) =>
   events.map((event) => JSON.stringify(event)).join("\n") + "\n";
 
 describe("runDsh evidence", () => {
+  it("keeps the actual worker error ahead of verbose startup diagnostics", async () => {
+    const startup = 'DSH_DIAGNOSTIC {"phase":"loader.entry-active","name":"agent"}\n'.repeat(100);
+    await expect(
+      runWithHeadlessOutput(
+        usageStream(usageSession),
+        1,
+        undefined,
+        startup + "dsh: model request returned HTTP 503\n",
+      ),
+    ).rejects.toMatchObject({
+      code: "DSH_PROCESS_FAILED",
+      message: "DSH failed with exit code 1: dsh: model request returned HTTP 503",
+      stderr: "dsh: model request returned HTTP 503",
+    });
+  });
+
   it("preserves disjoint official token buckets through the public worker result", async () => {
     const result = await runWithHeadlessOutput(usageStream(usageSession, reportedStep, usageFinal));
     expect(result.usage).toEqual({
