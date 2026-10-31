@@ -1,8 +1,12 @@
 # DSH 0.2.1-rc.2 migration notes
 
-These notes identify the upstream changes relevant to Action v0.10.3. They are
-source research, not a claim that the Action's build, integration tests, or CI
-have passed. The implementation and its test results remain authoritative.
+These are historical migration notes for Action v0.10.3. For current Profile
+and network behavior, see [native configuration](native-profile.md); current
+dependency overrides and residual findings are recorded in the
+[v0.13.0 release notes](../CHANGELOG.md#0130---2026-10-31).
+
+They are source research, not evidence that the Action's build, integration tests
+or CI have passed. The implementation and its test results remain authoritative.
 
 The comparison uses the existing local `0.2.0-rc.2` source snapshot and the
 official `dsh-v0.2.1-rc.2` source archive. The new release was published on
