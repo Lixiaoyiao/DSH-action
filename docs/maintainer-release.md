@@ -210,9 +210,14 @@ For pre-merge qualification, set the candidate variable and dispatch the trusted
 gh variable set DSH_E2E_CANDIDATE_SHA --body "$candidate_sha"
 gh workflow run e2e.yml --ref main \
   -f candidate_mode=pull-request \
+  -f profile_defaults=true \
   -f candidate_sha="$candidate_sha" \
   -f pull_request="$pr_number"
 ```
+
+For v0.13.0, `profile_defaults=true` selects assertions for the default Worker
+egress and web tools. Use `false` only when qualifying an older Action with
+legacy defaults. This harness selector does not change the candidate runtime.
 
 Harness files and fixtures are checked out at the trusted default-branch SHA. Candidate Action code is checked out separately at the bound candidate SHA. Every checkout sets `persist-credentials: false`, and the workflow verifies that no checkout Git credential remains.
 
@@ -367,6 +372,7 @@ After candidate CI and pre-merge Core E2E pass:
    gh variable set DSH_E2E_CANDIDATE_SHA --body "$release_sha"
    gh workflow run e2e.yml --ref main \
      -f candidate_mode=main \
+     -f profile_defaults=true \
      -f candidate_sha="$release_sha"
    ```
 

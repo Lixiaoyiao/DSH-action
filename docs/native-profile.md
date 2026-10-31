@@ -2,20 +2,22 @@
 
 The Action controls GitHub events, credentials, Docker, network access, deadlines,
 validation and publication. DSH controls its model, Agent, plugins, MCP, prompts,
-tools and subagents through its native Profile. These changes are unreleased.
+tools and subagents through its native Profile. Available in Action v0.13.0.
 
 ## Files and source trust
 
 Commit `.dsh/package.json` and `.dsh/cordis.patch.yml`. The optional `dsh-profile`
 input selects another repository-relative Profile directory; `auto` discovers
-`.dsh`. A missing auto-discovered directory retains legacy workflow support. A
-present invalid Profile, or a missing explicitly selected directory, is an error.
+`.dsh`. A missing auto-discovered directory, or one without either Profile file
+(for example, a legacy `.dsh/skills` directory), retains legacy workflow support.
+A partial or invalid Profile, or a missing explicitly selected directory, is an error.
 
 The Controller reads immutable Git objects from the verified PR **base** commit,
 or the repository default branch for other events. PR-head configuration is never
 executed. Files must be ordinary Git files: no symlinks, submodules or traversal.
 Profiles are bounded to 256 files and 8 MiB. The selected directory and its digest
-appear in `result-json.configuration`.
+appear in `result-json.configuration`. The Controller refuses to publish Agent
+changes to `.dsh/` or the selected custom Profile directory.
 
 The run copies that source into a disposable Profile. It uses DSH 0.2.1-rc.2's
 `loadProfileDirectory`, ordered Bundle patches and official Cordis composition.
