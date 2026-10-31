@@ -1,5 +1,7 @@
 # DSH-action
 
+Unreleased: native project Profiles, independent network access (on by default), per-run reply history and live diagnostics. See [configuration and migration](docs/native-profile.md).
+
 For existing workflows, update the Action reference to Lixiaoyiao/DSH-action@the-existing-commit-SHA and keep its immutable commit pin. Use npm create dsh-action for the installer.
 
 [![CI](https://github.com/Lixiaoyiao/DSH-action/actions/workflows/ci.yml/badge.svg)](https://github.com/Lixiaoyiao/DSH-action/actions/workflows/ci.yml)

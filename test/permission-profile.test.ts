@@ -15,7 +15,7 @@ function sorted(values: readonly AllowedToolId[]): AllowedToolId[] {
 }
 
 describe("permission profile presets", () => {
-  it("preserves the v0.4 workspace preset in strict without adding autonomy tools", () => {
+  it("keeps strict repository access while enabling native web tools by default", () => {
     const resolution = resolvePermissionRequest("strict", [], []);
 
     expect(resolution).toEqual({
@@ -24,7 +24,10 @@ describe("permission profile presets", () => {
       disallowedTools: [],
       deniedTools: [],
     });
-    expect(resolution.requestedTools.some((id) => id.startsWith("native."))).toBe(false);
+    expect(resolution.requestedTools).toContain("native.web-search");
+    expect(resolution.requestedTools).toContain("native.web-fetch");
+    expect(resolution.requestedTools).not.toContain("native.bash");
+    expect(resolution.requestedTools).not.toContain("native.subagent");
   });
 
   it("adds the audited coding conveniences in standard", () => {

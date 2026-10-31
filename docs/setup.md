@@ -1,5 +1,7 @@
 # Setup
 
+Unreleased: native project Profiles, independent network access (on by default), per-run reply history and live diagnostics. See [configuration and migration](native-profile.md).
+
 [中文](setup.zh-CN.md) · [README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md)
 
 This guide takes you from installation to read-only `@dsh` conversation and automatic PR Review. Add code-write capabilities when the repository needs them.

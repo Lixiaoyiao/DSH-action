@@ -240,7 +240,7 @@ describe("runDsh native", () => {
       expect(result.isolationReport.limitations.join(" ")).toMatch(
         /entire native worker.*share that egress path/iu,
       );
-      expect(captured?.args).toContain("bridge");
+      expect(captured?.args.find(arg => /^dsh-action-[0-9a-f]/u.test(arg))).toBeDefined();
       expect(captured?.args).toContain(`${fixture.workspace}:/workspace:ro`);
       const launch = [captured?.command ?? "", ...(captured?.args ?? [])].join("\0");
       expect(launch).not.toContain(realGitHubToken);
@@ -351,7 +351,7 @@ describe("runDsh native", () => {
       );
 
       expect(result.isolationReport).toMatchObject({
-        networkIsolated: true,
+        networkIsolated: false,
         workspaceAccess: "read-write",
         extensionProfile: "headless-native",
       });

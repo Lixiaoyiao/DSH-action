@@ -376,7 +376,18 @@ export class NativeComposition implements DshComposition {
         command: "node",
         args: launcher.args,
         workdir: CONTAINER_WORKSPACE,
-        mounts: launcher.mounts,
+        mounts: [
+          ...launcher.mounts,
+          ...(options.projectProfile === undefined
+            ? []
+            : [
+                {
+                  sourcePath: options.runtime.packageRoot,
+                  destinationPath: `/workspace/${options.projectProfile.audit.path}`,
+                  readOnly: true,
+                },
+              ]),
+        ],
       },
       observedTools: {
         collect: async () => await collectObservedTools(observationPath, observationOffset),

@@ -41,7 +41,8 @@ async function projectPath(root, name) {
   if (!name.startsWith(".dsh/")) return workflowPath(root, name);
   if (
     name.length > 240 ||
-    /[\\:\x00-\x1f]/u.test(name) ||
+    /[\\:]/u.test(name) ||
+    Array.from(name).some((character) => character.charCodeAt(0) < 32) ||
     name
       .split("/")
       .some(

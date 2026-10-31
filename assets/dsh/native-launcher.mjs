@@ -142,7 +142,9 @@ async function main() {
 
   const profile = loadProfileDirectory(NAME, join(dshHome, "profiles", PROFILE), INSTALL_ANCHOR);
   if (profile.skippedBundles.length !== 0) {
-    throw new Error("an admitted DSH Profile Bundle failed compatibility or resolution");
+    throw new Error(
+      `Profile Bundle compatibility/resolution failed: ${profile.skippedBundles.map((bundle) => `${bundle.packageName}: ${bundle.reason}`).join("; ")}`,
+    );
   }
   const resolution = await createRuntimeResolution({
     installAnchor: INSTALL_ANCHOR,
@@ -151,7 +153,7 @@ async function main() {
   });
   const observationPath = join(dshHome, "action-state", "native-observed-tools.jsonl");
   const patches = [
-    ...composeActionProfile(profile, "native"),
+    ...composeActionProfile(profile, "native", process.env, task),
     ...(sessionPlan === undefined
       ? []
       : [
@@ -226,6 +228,7 @@ async function main() {
           sessionModule.installSessionAdmission(host, sessionPlan, {
             auditPath: join(dshHome, "action-state", "session-admission.json"),
           });
+        host.provide("profileContext", Object.freeze({name:PROFILE,dir:profile.dir,patchPath:profile.patchPath,installAnchor:INSTALL_ANCHOR,cwd:process.env.DSH_ACTION_WORKSPACE ?? process.cwd(),home:dshHome,startedBundles:profile.layers.map(layer=>layer.packageName),overlays:[],telemetryDisabledEnv:"1"}));
         await host.plugin(PluginPackages, { resolution });
         requireAdmittedExtensions(host, admittedExtensionSelectors(profile));
         host.on(

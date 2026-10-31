@@ -116,7 +116,13 @@ export function admitDshRun(
     nativeTools,
     environment,
     platform: dependencies.platform ?? process.platform,
-    secrets: [...new Set([...controllerSecrets, ...extensionSecrets(extensions)])],
+    secrets: [
+      ...new Set([
+        ...controllerSecrets,
+        ...extensionSecrets(extensions),
+        ...Object.values(request.workerEnv ?? {}),
+      ]),
+    ],
     webSearchEnabled:
       request.workerNetwork !== false && composition.requiresWebSearchProxy(nativeTools),
     workspaceWrite: workerWorkspaceWrite(request, composition),

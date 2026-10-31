@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -5,10 +6,6 @@ import { Readable, Writable } from "node:stream";
 import { afterEach, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { runInstaller } from "../packages/create-dsh-action/src/installer.mjs";
-import {
-  parseNativePluginConfiguration,
-  parsePluginConfiguration,
-} from "../src/extensions/schema.js";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -39,7 +36,10 @@ async function fixture() {
     }),
   );
   await writeFile(join(home, ".credentials.yaml"), "PRIVATE_LOCAL_KEY_MUST_STAY_LOCAL");
-  await writeFile(join(profile, "cordis.patch.yml"), "PRIVATE_PROFILE_CONFIG_MUST_STAY_LOCAL");
+  await writeFile(
+    join(profile, "cordis.patch.yml"),
+    "- id: system-prompt\n  config: {personaPrefix: IMPORTED_PROFILE_PROMPT}\n",
+  );
   const templates = join(root, "templates");
   await mkdir(templates);
   const source = await readFile(
@@ -84,117 +84,103 @@ async function fixture() {
   };
 }
 
-describe("local plugin import through the installer", () => {
-  it("preserves coding command permissions when importing read-only Controlled plugins into both workflows", async () => {
-    const f = await fixture();
-    await runInstaller({
-      argv: ["--mode", "both", "--import-plugins", "--dsh-home", f.home],
+describe("native Profile import through the installer", () => {
+  async function install(
+    f: Awaited<ReturnType<typeof fixture>>,
+    dshMode: "controlled" | "native",
+    answer = "1\ny\n",
+    mode = "review",
+  ) {
+    return runInstaller({
+      argv: ["--mode", mode, "--dsh-mode", dshMode, "--import-plugins", "--dsh-home", f.home],
       cwd: f.root,
       isTTY: true,
       env: {},
-      input: Readable.from(["1\nplugin__audit__scan\ny\n"]),
+      input: Readable.from([answer]),
       output: f.output,
       templateDirectory: f.templates,
     });
-    expect(await readFile(join(f.root, ".github/workflows/dsh-review.yml"), "utf8")).toContain(
-      "plugin.audit.scan",
+  }
+  it("moves dependencies and native configuration together while preserving Controller write gates", async () => {
+    const f = await fixture();
+    await install(f, "controlled", "1\ny\n", "both");
+    const manifest = z
+      .object({
+        dependencies: z.record(z.string(), z.string()),
+        dsh: z.object({ profile: z.object({ bundles: z.array(z.string()) }) }),
+      })
+      .parse(JSON.parse(await readFile(join(f.root, ".dsh/package.json"), "utf8")));
+    expect(manifest.dependencies).toEqual({ "example-bundle": "1.2.3" });
+    expect(manifest.dsh.profile.bundles).toEqual([
+      "@deepseek-ai/dsh-base",
+      "@deepseek-ai/dsh-headless",
+      "example-bundle",
+    ]);
+    expect(await readFile(join(f.root, ".dsh/cordis.patch.yml"), "utf8")).toContain(
+      "IMPORTED_PROFILE_PROMPT",
     );
     const commands = await readFile(join(f.root, ".github/workflows/dsh-commands.yml"), "utf8");
-    expect(commands).not.toContain("plugin-config");
     expect(commands).toContain('allow-write: "true"');
     expect(commands).toContain('run-tests: "true"');
-    expect(f.text()).toContain("configure command plugins manually");
+    expect(commands).not.toContain("plugin-config");
   });
-  it("keeps import optional and writes no plugin configuration when declined", async () => {
+  it("creates a fresh Profile when local import is declined", async () => {
     const f = await fixture();
-    await runInstaller({
-      argv: ["--mode", "review", "--dsh-mode", "native", "--import-plugins", "--dsh-home", f.home],
-      cwd: f.root,
-      isTTY: true,
-      env: {},
-      input: Readable.from(["1\nn\n"]),
-      output: f.output,
-      templateDirectory: f.templates,
-    });
-    expect(await readFile(join(f.root, ".github/workflows/dsh-review.yml"), "utf8")).not.toContain(
-      "plugin-config",
+    await install(f, "native", "1\nn\n");
+    expect(await readFile(join(f.root, ".dsh/package.json"), "utf8")).not.toContain(
+      "example-bundle",
     );
   });
-  it("requires explicit read-only names for compatible Controlled tools", async () => {
+  it("retains Controlled policy in the native patch rather than workflow JSON", async () => {
     const f = await fixture();
-    await runInstaller({
-      argv: ["--mode", "review", "--import-plugins", "--dsh-home", f.home],
-      cwd: f.root,
-      isTTY: true,
-      env: {},
-      input: Readable.from(["1\nplugin__audit__scan\ny\n"]),
-      output: f.output,
-      templateDirectory: f.templates,
-    });
-    const text = await readFile(join(f.root, ".github/workflows/dsh-review.yml"), "utf8");
-    const config = /\{"schemaVersion":1,"bundles":\[.*?\],"plugins":\[\]\}/u.exec(text)?.[0];
-    expect(parsePluginConfiguration(config ?? "").bundles[0]).toMatchObject({
-      id: "audit",
-      network: false,
-      tools: [{ id: "scan", name: "plugin__audit__scan", permissions: ["read"] }],
-    });
-    expect(text).toContain("plugin.audit.scan");
-    expect(text).toContain("permission-profile: strict");
-    expect(text).not.toContain("PRIVATE_");
+    await writeFile(
+      join(f.home, "profiles/default/cordis.patch.yml"),
+      JSON.stringify([
+        {
+          id: "dsh-action-policy",
+          config: {
+            allowedTools: ["plugin.audit.scan"],
+            rules: [
+              {
+                id: "plugin.audit.scan",
+                runtimeName: "plugin__audit__scan",
+                permissions: ["read"],
+              },
+            ],
+          },
+        },
+      ]),
+    );
+    await install(f, "controlled");
+    expect(await readFile(join(f.root, ".dsh/cordis.patch.yml"), "utf8")).toContain(
+      "plugin.audit.scan",
+    );
+    expect(await readFile(join(f.root, ".github/workflows/dsh-review.yml"), "utf8")).not.toContain(
+      "allowed-tools",
+    );
   });
-  it("reports incompatible local plugins and rejects their selection without creating workflows", async () => {
+  it("reports incompatible dependencies without creating workflow or Profile", async () => {
     const f = await fixture();
     await writeFile(
       join(f.installed, "package.json"),
-      JSON.stringify({
-        name: "example-bundle",
-        version: "1.2.3",
-        engines: { dsh: "<0.2.0" },
-        dsh: { bundle: { patch: "./cordis.patch.yml" } },
-      }),
+      JSON.stringify({ name: "example-bundle", version: "1.2.3", engines: { dsh: "<0.2.0" } }),
     );
-    await expect(
-      runInstaller({
-        argv: ["--mode", "review", "--import-plugins", "--dsh-home", f.home],
-        cwd: f.root,
-        isTTY: true,
-        env: {},
-        input: Readable.from(["1\n"]),
-        output: f.output,
-        templateDirectory: f.templates,
-      }),
-    ).rejects.toThrow("importable plugins");
-    expect(f.text()).toContain("incompatible with DSH");
-    await expect(readFile(join(f.root, ".github/workflows/dsh-review.yml"))).rejects.toMatchObject({
-      code: "ENOENT",
-    });
+    await expect(install(f, "controlled", "1\n")).rejects.toThrow("blocked fields");
+    expect(f.text()).toContain("Incompatible");
+    await expect(readFile(join(f.root, ".dsh/package.json"))).rejects.toThrow();
+    await expect(readFile(join(f.root, ".github/workflows/dsh-review.yml"))).rejects.toThrow();
   });
-  it("shows installed versions, confirms selection, and emits pinned Native config without local secrets", async () => {
+  it("imports native configuration without copying local credentials or running plugins", async () => {
     const f = await fixture();
-    await runInstaller({
-      argv: ["--mode", "review", "--dsh-mode", "native", "--import-plugins", "--dsh-home", f.home],
-      cwd: f.root,
-      isTTY: true,
-      env: {},
-      input: Readable.from(["1\ny\n"]),
-      output: f.output,
-      templateDirectory: f.templates,
-    });
-    const text = await readFile(join(f.root, ".github/workflows/dsh-review.yml"), "utf8");
-    expect(f.text()).toContain("example-bundle@1.2.3");
-    expect(f.text()).toContain("compatible");
-    expect(text).not.toContain("PRIVATE_");
-    expect(text).toContain('"source":"1.2.3"');
-    expect(text).toContain("head.repo.full_name == github.repository");
-    expect(text).toContain('allow-write: "false"');
-    expect(text).toContain("permission-profile: strict");
-    const config = /\{"schemaVersion":1,"bundles":\[.*?\],"plugins":\[\]\}/u.exec(text)?.[0];
-    expect(parseNativePluginConfiguration(config ?? "").bundles[0]).toMatchObject({
-      package: "example-bundle",
-      source: "1.2.3",
-      network: false,
-      workspaceWrite: false,
-    });
-    expect(parse(text)).toBeDefined();
+    await install(f, "native");
+    const profile = await readFile(join(f.root, ".dsh/cordis.patch.yml"), "utf8");
+    expect(profile).toContain("IMPORTED_PROFILE_PROMPT");
+    expect(profile + f.text()).not.toContain("PRIVATE_LOCAL_KEY");
+    expect(await readFile(join(f.home, ".credentials.yaml"), "utf8")).toBe(
+      "PRIVATE_LOCAL_KEY_MUST_STAY_LOCAL",
+    );
+    expect(
+      parse(await readFile(join(f.root, ".github/workflows/dsh-review.yml"), "utf8")),
+    ).toBeDefined();
   });
 });

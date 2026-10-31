@@ -22,6 +22,7 @@ import {
   auditReusedExtensionInstallation,
   captureExtensionInstallBaseline,
   prepareLockedRuntimeFiles,
+  verifyProjectDependencyLock,
 } from "./install.js";
 import {
   dockerNetworkInspectSpec,
@@ -106,7 +107,7 @@ function setupExecutor(context: DshRunContext, scope: DshRunScope, execute: DshP
       : spec.args.includes("install")
         ? "extension.install"
         : spec.args[0] === "network"
-          ? `network.${spec.args[1]}`
+          ? `network.${spec.args[1] ?? "unknown"}`
           : "docker.preflight";
     scope.diagnostics?.event(`${phase}.start`);
     let result: DshProcessResult;
@@ -294,6 +295,7 @@ export async function prepareWorkerRuntime(
   if (prepared.isolation !== "docker") {
     throw new DshConfigurationError("DSH composition was not prepared for Docker isolation");
   }
+  await scope.setup(() => verifyProjectDependencyLock(request.projectProfile, runtime));
   if (prepared.finalizeAfterInstall !== undefined) {
     prepared = await prepared.finalizeAfterInstall(async (run) => scope.setup(run));
   }

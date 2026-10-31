@@ -376,6 +376,7 @@ export function renderControlledProfilePatch(options: PrepareControlledProfileOp
       name: loaderModuleSpecifier(options.policyPluginPath),
       config: {
         expectedOperation: options.expectedOperation,
+        ...(options.projectProfile === undefined ? {} : { profileInventory: true }),
         allowedRuntimeTools: rules.map((rule) => rule.runtimeName),
         knownRuntimeTools: [
           ...new Set([

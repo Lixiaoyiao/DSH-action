@@ -454,9 +454,8 @@ bounded log message.
   visibility to the official DSH graph and reports the actual names only in
   `observedTools`.
 - Controlled tools and co-hosted owners must have compatible process modes.
-  Native owner flags request outer authority: one `network: true` owner gives
-  the whole worker bridge egress, while any actual RW mount is likewise shared
-  by the complete native worker.
+  Worker egress is selected only by `worker-network`, independently of owner
+  flags. Any actual RW mount remains shared by the complete native worker.
 - A native extension's arbitrary-name credential belongs in `credentialEnv`,
   `credentialHeaders`, or direct-Plugin `credentialConfig`; these values are
   merged into that extension and masked/audited without values or hashes.
@@ -584,3 +583,20 @@ credentials.
 - [Configuration](configuration.md)
 - [Extension contracts](extension-contracts.md)
 - [Security policy](../SECURITY.md)
+
+## Locating a stalled run
+
+The default basic diagnostics report preparation, model transport, tool and exit
+activity. A waiting heartbeat states the last observed event and its age; it is
+not proof that a particular upstream service caused the stall. Use
+`diagnostics: detailed` for a bounded metadata artifact. An Action-successful
+run can still return a blocked/neutral business result; inspect result-json.
+
+The historical classviva run 41100583886 hit the former fixed 600000ms Worker
+limit. It had no retained model/tool trace, so its deeper stall cause remains
+unconfirmed. Raising the workflow job limit alone did not remove that cap.
+Agent execution now uses the Action-wide deadline. Errors identify the phase;
+installation/validation/cleanup still have their own bounds.
+
+For native configuration, migration conflicts and independent network settings,
+see [project Profiles](native-profile.md).

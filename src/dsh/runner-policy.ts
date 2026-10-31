@@ -187,7 +187,11 @@ export function runtimeExtensionAudit(
   if (!composition.actionManagedExtensionProfile && extensions.audit.entries.length === 0) {
     return undefined;
   }
+  const audit =
+    extensions.audit.profile === "github-action"
+      ? { ...extensions.audit, network: request.workerNetwork !== false }
+      : { ...extensions.audit, workerNetwork: request.workerNetwork !== false };
   return runtime.installedExtensionRuntimeLock === undefined
-    ? extensions.audit
-    : { ...extensions.audit, runtimeLock: runtime.installedExtensionRuntimeLock };
+    ? audit
+    : { ...audit, runtimeLock: runtime.installedExtensionRuntimeLock };
 }

@@ -10,7 +10,7 @@ const noUploads = [
 ];
 
 /** Official patch application, with a narrow final overlay for Action-owned fields. */
-export function composeActionProfile(profile, mode, environment = process.env) {
+export function composeActionProfile(profile, mode, environment = process.env, task) {
   const runtimeFile = join(profile.dir, ".action-runtime.patch.yml");
   const project = existsSync(runtimeFile);
   const base = profile.layers.flatMap((layer) => layer.patches);
@@ -20,7 +20,14 @@ export function composeActionProfile(profile, mode, environment = process.env) {
     ? profile.patches.filter((patch) => patch.id !== "dsh-action-policy")
     : profile.patches;
   const layers = [base, ...(insertions.length ? [[{ insert: insertions }]] : []), user];
-  let entries = composeEntries(layers);
+  let entries = composeEntries(
+    layers,
+    project
+      ? (message) => {
+          throw new Error(`Project Profile patch did not apply: ${message}`);
+        }
+      : undefined,
+  );
   const patches = [...layers.flat()];
   const lookup = (id, rows = entries) => {
     for (const row of rows) {
@@ -61,6 +68,19 @@ export function composeActionProfile(profile, mode, environment = process.env) {
   }
   if (!project && mode === "native" && lookup("mcp-resources"))
     apply({ id: "mcp-resources", disabled: true });
+  if (typeof task === "string") {
+    managed(
+      "headless-runner",
+      { task, json: true, sessionId: undefined },
+      {
+        disabled: false,
+        inject:
+          mode === "controlled" ? ["headlessStartup", "actionWorkspace"] : ["headlessStartup"],
+      },
+    );
+    if (lookup("headless-startup"))
+      apply({ id: "headless-startup", disabled: false, inject: ["cmdlineArgs"] });
+  }
   const online = environment.DSH_ACTION_WORKER_NETWORK !== "false";
   managed("web-search-deepseek", {
     apiKeyEnv: "DEEPSEEK_API_KEY",

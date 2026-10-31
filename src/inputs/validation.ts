@@ -29,6 +29,8 @@ function assertControllerSecretsAbsentFromWorkerInputs(inputs: ActionInputs): vo
     inputs.branchPrefix,
     inputs.branchNameTemplate,
     inputs.promptFile,
+    inputs.dshProfile,
+    ...inputs.dshEnv,
     inputs.sessionKey,
     ...inputs.contextFiles,
   ];

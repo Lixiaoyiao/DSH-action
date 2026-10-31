@@ -1,3 +1,4 @@
+import type { ProjectProfile } from "./project-profile.js";
 import { copyFile, readFile, readdir, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
@@ -83,17 +84,24 @@ export async function verifyInstalledExtensions(
         isJsonObject(manifest.dsh) && isJsonObject(manifest.dsh.bundle)
           ? manifest.dsh.bundle
           : undefined;
-      const patch = bundle?.patch;
-      if (typeof patch !== "string" || patch.trim() === "") {
+      const patches = typeof bundle?.patch === "string" ? [bundle.patch] : bundle?.patch;
+      if (
+        !Array.isArray(patches) ||
+        patches.length === 0 ||
+        !patches.every((patch) => typeof patch === "string" && patch.trim() !== "")
+      )
         throw new DshConfigurationError(
           `Bundle ${extension.definition.package} has no dsh.bundle.patch`,
         );
-      }
-      const patchReal = await realpath(resolve(packageReal, patch));
-      if (!insideDirectory(packageReal, patchReal)) {
-        throw new DshConfigurationError(
-          `Bundle ${extension.definition.package} patch escapes the installed package`,
-        );
+      const paths: string[] = patches.filter(
+        (patch: unknown): patch is string => typeof patch === "string",
+      );
+      for (const patch of paths) {
+        const patchReal = await realpath(resolve(packageReal, patch));
+        if (!insideDirectory(packageReal, patchReal))
+          throw new DshConfigurationError(
+            `Bundle ${extension.definition.package} patch escapes the installed package`,
+          );
       }
     }
   }
@@ -241,5 +249,58 @@ export async function auditReusedExtensionInstallation(
   });
   if (currentLock.digest !== installedLock.digest) {
     throw new DshConfigurationError("Reused extension runtime package-lock digest changed");
+  }
+}
+
+/** A supplied native npm lock constrains additions without replacing the Action runtime lock. */
+export async function verifyProjectDependencyLock(
+  profile: ProjectProfile | undefined,
+  runtime: DshRuntime,
+): Promise<void> {
+  if (
+    profile?.files["package-lock.json"] === undefined ||
+    Object.keys(profile.dependencies).every((name) => name.startsWith("@deepseek-ai/"))
+  )
+    return;
+  const source = JSON.parse(
+    Buffer.from(profile.files["package-lock.json"], "base64").toString("utf8"),
+  ) as unknown;
+  if (!isJsonObject(source) || source.lockfileVersion !== 3 || !isJsonObject(source.packages))
+    throw new DshConfigurationError("Project Profile requires an npm lockfileVersion 3 lock");
+  const installed = await readDshManifest(join(runtime.packageRoot, "package-lock.json"));
+  if (!isJsonObject(installed.packages))
+    throw new DshConfigurationError("Installed Profile lock is missing packages");
+  const identity = (path: string, node: unknown): string => {
+    if (!isJsonObject(node) || typeof node.version !== "string")
+      throw new DshConfigurationError("Profile lock contains an invalid package");
+    return JSON.stringify([
+      path.slice(path.lastIndexOf("node_modules/") + 13),
+      node.version,
+      node.integrity ?? node.resolved ?? null,
+    ]);
+  };
+  const accepted = new Set(
+    Object.entries(source.packages)
+      .filter(([path]) => path.includes("node_modules/"))
+      .map(([path, node]) => identity(path, node)),
+  );
+  for (const [path, node] of Object.entries(installed.packages)) {
+    if (
+      !path.includes("node_modules/") ||
+      runtime.installedPackageLockBaseline?.packageEntries[path] !== undefined
+    )
+      continue;
+    if (!accepted.has(identity(path, node)))
+      throw new DshConfigurationError(
+        "Installed dependencies differ from .dsh/package-lock.json; regenerate the native lock for the declared exact dependencies before running",
+      );
+  }
+  for (const [name, version] of Object.entries(profile.dependencies)) {
+    if (name.startsWith("@deepseek-ai/")) continue;
+    const entry = source.packages["node_modules/" + name];
+    if (!isJsonObject(entry) || (/^\d/u.test(version) && entry.version !== version))
+      throw new DshConfigurationError(
+        "Project package.json and package-lock.json disagree on a direct dependency",
+      );
   }
 }

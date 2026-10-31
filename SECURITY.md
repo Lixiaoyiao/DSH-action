@@ -541,15 +541,16 @@ cleanup, output bounds, and redaction.
 
 Native admission still fails closed unless configuration comes from an eligible
 trusted workflow and the outer extension, network, and write capabilities are
-available. An owner's `network: true` enables Docker bridge egress for the
-entire native worker, including every other DSH capability in that process; it
-is not a destination or per-extension allowlist. A read/write repository mount
+available. The Action's independent `worker-network` switch defaults to true
+for the entire Worker, including fork contexts. Plugin network flags do not
+select its network. This is not a destination or per-extension allowlist. A read/write repository mount
 is likewise a whole-worker boundary selected by Action trust/write policy, not
 a per-tool sandbox. An owner that requests `workspaceWrite` cannot expand a
 trusted-read run into trusted-write authority.
 
 Configured Bundle and Plugin packages require an exact npm semver or immutable
-GitHub commit and the independent `allow-plugin-install=true` gate. Acquisition
+GitHub commit. Legacy workflow configuration uses `allow-plugin-install=true`;
+a trusted project Profile is the explicit package declaration for the native path. Acquisition
 continues to disable lifecycle scripts. Before startup, the Controller verifies
 the installed identity and pin, lock provenance, and preservation of the full
 pre-existing top-level runtime package inventory. This does not make package

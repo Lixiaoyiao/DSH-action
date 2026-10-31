@@ -9,6 +9,7 @@ import type { DshComposition } from "../dsh/composition.js";
 import { PolicyDeniedError } from "../errors.js";
 import {
   resolveExtensionPlan,
+  bindWorkerNetwork,
   resolveNativeExtensionPlan,
   type ExtensionPlan,
 } from "../extensions/plan.js";
@@ -142,7 +143,7 @@ export class ExecutionPreparation {
     const extensionAllowedTools = resolvedTools.permission.requestedTools.filter(
       (id) => !deniedTools.has(id),
     );
-    const extensions =
+    const unboundExtensions =
       inputs.projectProfile === undefined
         ? inputs.dshMode === "native"
           ? resolveNativeExtensionPlan({
@@ -159,6 +160,7 @@ export class ExecutionPreparation {
               policy,
             })
         : projectExtensionPlan(inputs.projectProfile, inputs, policy);
+    const extensions = bindWorkerNetwork(unboundExtensions, inputs.workerNetwork);
     const extensionManifests =
       extensions.profileName === "github-action" ? extensions.manifests : [];
     const tools = {

@@ -23,11 +23,11 @@ it.each([true, false])(
       {
         assetsDirectory: fixture.assets,
         temporaryDirectory: fixture.root,
-        startProxy: async () => fakeProxy(),
-        executeProcess: async (spec) => {
+        startProxy: () => Promise.resolve(fakeProxy()),
+        executeProcess: (spec) => {
           if (spec.args[0] === "network" && spec.args[1] === "create")
             networks.push([...spec.args]);
-          return (
+          return Promise.resolve(
             networkInspectResult(spec) ?? {
               stdout: JSON.stringify({
                 protocolVersion: 1,
@@ -39,7 +39,7 @@ it.each([true, false])(
               stderr: "",
               exitCode: 0,
               signal: null,
-            }
+            },
           );
         },
       },
@@ -63,13 +63,13 @@ it("allows a twelve-minute Worker within a twenty-minute overall deadline", asyn
       now: () => clock,
       assetsDirectory: fixture.assets,
       temporaryDirectory: fixture.root,
-      startProxy: async () => fakeProxy(),
-      executeProcess: async (spec, limits) => {
+      startProxy: () => Promise.resolve(fakeProxy()),
+      executeProcess: (spec, limits) => {
         if (spec.args.some((arg) => arg.endsWith("action-launcher.mjs"))) {
           expect(limits.timeoutMs).toBeGreaterThan(720000);
           clock += 720000;
         }
-        return (
+        return Promise.resolve(
           networkInspectResult(spec) ?? {
             stdout: JSON.stringify({
               protocolVersion: 1,
@@ -81,7 +81,7 @@ it("allows a twelve-minute Worker within a twenty-minute overall deadline", asyn
             stderr: "",
             exitCode: 0,
             signal: null,
-          }
+          },
         );
       },
     },

@@ -126,8 +126,11 @@ export async function runAction(options: RunActionOptions = {}): Promise<RunOutc
         signal,
         onFailureBeforeCleanup: startFailure,
       });
-      const profileBranch = authorized.context.repository.defaultBranch ?? authorized.baseBranch;
-      if (profileBranch === undefined && authorized.snapshot?.kind !== "pull_request")
+      const profileBranch =
+        authorized.context.repository.defaultBranch ??
+        authorized.baseBranch ??
+        (authorized.snapshot?.kind === "pull_request" ? authorized.snapshot.baseRef : undefined);
+      if (profileBranch === undefined)
         throw new Error("Cannot resolve trusted Profile source branch");
       const profileDirectory = join(workspace.tempRoot, "trusted-profile");
       const sourceSha =
@@ -137,7 +140,7 @@ export async function runAction(options: RunActionOptions = {}): Promise<RunOutc
               authorized.client,
               authorized.context.repository.owner,
               authorized.context.repository.repo,
-              profileBranch!,
+              profileBranch,
             );
       const profile = await lifecycle.diagnostics.phase("profile.load", () =>
         loadRepositoryProfile({
@@ -146,6 +149,7 @@ export async function runAction(options: RunActionOptions = {}): Promise<RunOutc
           repo: authorized.context.repository.repo,
           sourceSha,
           selection: inputs.dshProfile,
+          knownSecrets: [inputs.deepseekApiKey, inputs.githubToken],
           directory: profileDirectory,
         }),
       );

@@ -1,5 +1,7 @@
 # DSH-action
 
+未发布变更：Action 管运行环境，项目原生 Profile 管 Harness。默认联网、按运行保留回复；安装器支持一次性导入本地 Profile。详见[原生配置与迁移](docs/native-profile.md)。
+
 现有工作流请将 Action 的 uses 地址更新为 Lixiaoyiao/DSH-action@原提交SHA，保留原有 SHA 固定版本。安装器现在使用 npm create dsh-action。
 
 [![CI](https://github.com/Lixiaoyiao/DSH-action/actions/workflows/ci.yml/badge.svg)](https://github.com/Lixiaoyiao/DSH-action/actions/workflows/ci.yml)

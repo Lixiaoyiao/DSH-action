@@ -267,6 +267,15 @@ export class ControlledComposition implements DshComposition {
         workdir: "/tmp",
         mounts: [
           ...launcher.mounts,
+          ...(options.projectProfile === undefined
+            ? []
+            : [
+                {
+                  sourcePath: options.runtime.packageRoot,
+                  destinationPath: `/workspace/${options.projectProfile.audit.path}`,
+                  readOnly: true,
+                },
+              ]),
           {
             sourcePath: options.runtime.packageRoot,
             destinationPath: CONTAINER_PROFILE_ROOT,

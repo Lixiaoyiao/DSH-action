@@ -30,7 +30,7 @@ export async function publishDiagnosticArtifact(result: RunOutcome): Promise<Run
   }
   await writeFile(path, content, { mode: 0o600 });
   const name =
-    `dsh-diagnostics-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT ?? "1"}-${process.env.GITHUB_JOB ?? "job"}-${process.env.GITHUB_ACTION ?? "action"}`
+    `dsh-diagnostics-${process.env.GITHUB_RUN_ID ?? "local"}-${process.env.GITHUB_RUN_ATTEMPT ?? "1"}-${process.env.GITHUB_JOB ?? "job"}-${process.env.GITHUB_ACTION ?? "action"}`
       .replace(/[^A-Za-z0-9_-]/gu, "_")
       .slice(0, 240);
   const upload = new DefaultArtifactClient().uploadArtifact(name, [path], root, {

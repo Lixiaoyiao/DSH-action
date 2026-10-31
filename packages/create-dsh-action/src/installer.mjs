@@ -1,10 +1,3 @@
-import {
-  defaultProjectFiles,
-  previewProfileImport,
-  printProfilePreview,
-  selectProfileImport,
-  workflowWithProfile,
-} from "./profile-import.mjs";
 import { access, lstat, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { join, resolve } from "node:path";
@@ -369,12 +362,12 @@ async function promptForMissingSelections({
   output,
   mode,
   dshMode,
-  importPlugins,
   dshHome,
   importProfile,
   noImportProfile,
   env,
 }) {
+  const { selectProfileImport } = await import("./profile-import.mjs");
   const readline = createInterface({ input, output, terminal: false });
   const answers = readline[Symbol.asyncIterator]();
   const prompt = {
@@ -445,6 +438,7 @@ async function installWorkflows({
   dryRun = false,
   output,
 }) {
+  const { defaultProjectFiles, workflowWithProfile } = await import("./profile-import.mjs");
   const definitions = workflowDefinitions(mode, dshMode).map((definition) => ({
     ...definition,
     absoluteTarget: join(cwd, ...definition.target.split("/")),
@@ -648,7 +642,7 @@ export async function runInstaller(options = {}) {
     (mode === undefined ||
       (parsed.advanced && dshMode === undefined) ||
       parsed.importPlugins ||
-      !parsed.noImportProfile)
+      parsed.importProfile)
   ) {
     ({ mode, dshMode, profileImport } = await promptForMissingSelections({
       input,
@@ -663,6 +657,7 @@ export async function runInstaller(options = {}) {
     }));
   }
   if (!interactive && parsed.importProfile) {
+    const { previewProfileImport, printProfilePreview } = await import("./profile-import.mjs");
     profileImport = await previewProfileImport({
       home: parsed.dshHome,
       env: environment,

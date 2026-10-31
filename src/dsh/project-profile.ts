@@ -1,3 +1,5 @@
+import { LOCKED_RUNTIME_PACKAGES } from "./runtime-packages.generated.js";
+import { assertNoSecretOutput } from "../security/env.js";
 import { createHash } from "node:crypto";
 import { lstat, readdir, readFile, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -7,7 +9,12 @@ import type { GitHubClient } from "../github/client.js";
 import type { ActionInputs } from "../inputs.js";
 import type { SecurityPolicy } from "../security/policy.js";
 import { canonicalJson } from "../security/canonical-json.js";
-import { allowedToolIdSchema, type AllowedToolId } from "../tools/schema.js";
+import {
+  allowedToolIdSchema,
+  mcpToolId,
+  pluginToolId,
+  type AllowedToolId,
+} from "../tools/schema.js";
 import type { ExtensionPlan, ExtensionToolGrant } from "../extensions/plan.js";
 import { resolveExtensionPlan, emptyNativeExtensionPlan } from "../extensions/plan.js";
 import { DshConfigurationError } from "./errors.js";
@@ -29,7 +36,15 @@ const policySchema = z.strictObject({
   rules: z
     .array(
       z.strictObject({
-        id: z.string().regex(/^(?:mcp|plugin)\.[a-z][a-z0-9-]{0,31}\.[a-z][a-z0-9_-]{0,63}$/u),
+        id: z
+          .string()
+          .regex(/^(?:mcp|plugin)\.[a-z][a-z0-9-]{0,31}\.[a-z][a-z0-9_-]{0,63}$/u)
+          .transform((value) => {
+            const [provider, owner, tool] = value.split(".");
+            return provider === "mcp"
+              ? mcpToolId(owner ?? "", tool ?? "")
+              : pluginToolId(owner ?? "", tool ?? "");
+          }),
         runtimeName: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/u),
         permissions: z.array(z.enum(["read", "workspace-write", "network"])).min(1),
         timeoutMs: z.number().int().min(100).max(1800000).default(60000),
@@ -61,7 +76,8 @@ export function profilePath(path: string): string {
   if (
     path.length > 240 ||
     !path ||
-    /[\\:\x00-\x1f]/u.test(path) ||
+    /[\\:]/u.test(path) ||
+    Array.from(path).some((character) => character.charCodeAt(0) < 32) ||
     path
       .split("/")
       .some((p) => !p || p === "." || p === ".." || p === ".git" || p === "node_modules")
@@ -77,7 +93,7 @@ function admittedFile(path: string): void {
     path
       .split("/")
       .some((p) =>
-        /^\.env(?:\.|$)|^\.credentials|^\.npmrc$|^compatibility\.json$|^action-.*\.mjs$|^action-.*\.yml$|^native-launcher\.mjs$|^\.action-/u.test(
+        /^\.env(?:\.|$)|^\.credentials|^\.npmrc$|^compatibility\.json$|^action-.*\.mjs$|^action-.*\.yml$|^native-launcher\.mjs$|^profile-runtime\.mjs$|^\.action-/u.test(
           p,
         ),
       )
@@ -126,6 +142,7 @@ export async function readProjectProfile(
     .record(z.string().regex(PACKAGE), z.string())
     .parse(manifest.dependencies ?? {});
   for (const [name, version] of Object.entries(dependencies)) {
+    if(/^@deepseek-ai\/dsh(?:-|$)/u.test(name) && version!==DSH_VERSION) throw new DshConfigurationError("Profile cannot mix DSH package-family versions");
     if (
       !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(version) &&
       !/^git\+https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\.git)?#[a-f0-9]{40}$/u.test(
@@ -135,9 +152,9 @@ export async function readProjectProfile(
       throw new DshConfigurationError(
         `Profile dependency ${name} requires an exact version or immutable Git source`,
       );
-    if (/^@deepseek-ai\/dsh(?:-|$)/u.test(name) && version !== DSH_VERSION)
+    if (LOCKED_RUNTIME_PACKAGES[name] !== undefined && version !== LOCKED_RUNTIME_PACKAGES[name])
       throw new DshConfigurationError(
-        `Profile dependency ${name} conflicts with locked DSH ${DSH_VERSION}`,
+        `Profile dependency ${name} conflicts with its Action-provided version ${LOCKED_RUNTIME_PACKAGES[name] ?? DSH_VERSION}`,
       );
   }
   if (
@@ -163,7 +180,13 @@ export async function readProjectProfile(
       Object.keys(item).some((k) => k !== "id" && k !== "config")
     )
       throw new DshConfigurationError("The Action policy entry accepts only user policy config");
-    if (item.insert?.some((row) => String(row.id ?? "").startsWith("dsh-action-")))
+    if (
+      item.insert?.some(
+        (row) =>
+          row.id?.startsWith("dsh-action-") ||
+          ["headless-runner", "headless-startup"].includes(row.id),
+      )
+    )
       throw new DshConfigurationError("Profile cannot replace Action-owned plugins");
   }
   const policyPatches = patches.filter((p) => p.id === "dsh-action-policy");
@@ -172,9 +195,53 @@ export async function readProjectProfile(
     policyPatches,
   ]);
   const policy = policySchema.parse(entries[0]?.config ?? {});
+  const selectionRows = [
+    { id: "tool-web", name: "@deepseek-ai/dsh-tool-web", config: { search: true, fetch: true } },
+    { id: "web", name: "@deepseek-ai/dsh-web" },
+    { id: "tool-bash", name: "@deepseek-ai/dsh-tool-bash" },
+    { id: "tool-subagent", name: "@deepseek-ai/dsh-tool-subagent" },
+    { id: "tool-fs", name: "@deepseek-ai/dsh-tool-fs" },
+    { id: "tool-fs-search", name: "@deepseek-ai/dsh-tool-fs-search" },
+  ];
+  const selected = composeEntries([
+    [{ insert: selectionRows }],
+    patches.filter((p) => selectionRows.some((row) => row.id === p.id)),
+  ]);
+  const disabled = new Set<AllowedToolId>(policy.deniedTools);
+  for (const row of selected) {
+    if (row.id === "tool-web" || row.id === "web") {
+      const config = z.record(z.string(), z.unknown()).safeParse(row.config ?? {});
+      if (
+        row.disabled === true ||
+        (row.id === "tool-web" && config.success && config.data.search === false)
+      )
+        disabled.add("native.web-search");
+      if (
+        row.disabled === true ||
+        (row.id === "tool-web" && config.success && config.data.fetch === false)
+      )
+        disabled.add("native.web-fetch");
+    }
+    if (row.disabled === true) {
+      if (row.id === "tool-bash") disabled.add("native.bash");
+      if (row.id === "tool-subagent") disabled.add("native.subagent");
+      if (row.id === "tool-fs") {
+        disabled.add("workspace.read");
+        disabled.add("workspace.edit");
+      }
+      if (row.id === "tool-fs-search") disabled.add("workspace.search");
+    }
+  }
+  policy.deniedTools = [...disabled];
   const ids = new Set<string>();
   const names = new Set<string>();
   for (const rule of policy.rules) {
+    const [provider, owner] = rule.id.split(".");
+    const namespace = `${provider ?? ""}__${(owner ?? "").replaceAll("-", "_")}__`;
+    if (!rule.runtimeName.startsWith(namespace))
+      throw new DshConfigurationError(
+        `Profile extension ${rule.id} must use its own runtime namespace; builtins require their canonical grants`,
+      );
     if (ids.has(rule.id) || names.has(rule.runtimeName) || !rule.permissions.includes("read"))
       throw new DshConfigurationError(
         "Profile tool rules require distinct IDs/names and read permission",
@@ -204,6 +271,7 @@ export async function loadRepositoryProfile(options: {
   sourceSha: string;
   selection: string;
   directory: string;
+  knownSecrets?: readonly string[];
 }): Promise<ProjectProfile | undefined> {
   const path = profilePath(options.selection === "auto" ? ".dsh" : options.selection);
   const target = { owner: options.owner, repo: options.repo };
@@ -242,7 +310,7 @@ export async function loadRepositoryProfile(options: {
         await materialize(entry.sha, file);
         continue;
       }
-      if (entry.type !== "blob" || !["100644", "100755"].includes(entry.mode ?? ""))
+      if (entry.type !== "blob" || !["100644", "100755"].includes(entry.mode))
         throw new DshConfigurationError("Profile symlinks and submodules are forbidden");
       if (++count > 256 || (entry.size ?? 0) > 8 * 1024 * 1024)
         throw new DshConfigurationError("Profile resource limit exceeded");
@@ -250,6 +318,7 @@ export async function loadRepositoryProfile(options: {
       if (blob.data.sha !== entry.sha || blob.data.encoding !== "base64")
         throw new DshConfigurationError("Profile blob identity mismatch");
       const data = Buffer.from(blob.data.content, "base64");
+      assertNoSecretOutput("environment", data.toString("utf8"), options.knownSecrets ?? []);
       bytes += data.length;
       if (bytes > 8 * 1024 * 1024) throw new DshConfigurationError("Profile exceeds 8 MiB");
       const destination = join(options.directory, file);
@@ -326,19 +395,21 @@ export function projectExtensionPlan(
   const tools: ExtensionToolGrant[] = profile.policy.rules
     .filter(
       (rule) =>
-        allowed.has(rule.id as AllowedToolId) &&
-        !denied.has(rule.id as AllowedToolId) &&
+        allowed.has(rule.id) &&
+        !denied.has(rule.id) &&
         (!rule.permissions.includes("workspace-write") || authority.capabilities.modifyWorkspace) &&
         (!rule.permissions.includes("network") || inputs.workerNetwork),
     )
     .map((rule) => {
-      const [provider, ownerId] = rule.id.split(".");
+      const provider = rule.id.startsWith("mcp.") ? "mcp" : "plugin";
+      const ownerId = rule.id.split(".")[1];
+      if (ownerId === undefined) throw new DshConfigurationError("Invalid tool owner");
       return {
         ...rule,
-        id: rule.id as ExtensionToolGrant["id"],
-        provider: provider as "mcp" | "plugin",
-        ownerId: ownerId!,
-        ownerKind: provider as "mcp" | "plugin",
+        id: rule.id,
+        provider,
+        ownerId,
+        ownerKind: provider,
         description: `Profile tool ${rule.runtimeName}`,
       };
     });
@@ -377,6 +448,7 @@ export async function stageProjectProfile(
     return bundles;
   }
   for (const [path, content] of Object.entries(profile.files)) {
+    admittedFile(path);
     if (
       [
         "package.json",

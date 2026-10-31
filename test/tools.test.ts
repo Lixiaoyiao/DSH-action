@@ -141,6 +141,7 @@ describe("maintainer-defined command tools", () => {
       "workspace.search",
       "workspace.edit",
       "native.web-search",
+      "native.web-fetch",
       "native.subagent",
     ]);
     expect(effective.manifests.map(({ id }) => id)).not.toContain("native.bash");
@@ -182,6 +183,11 @@ describe("maintainer-defined command tools", () => {
           reason: "Bash requires trusted-write repository-code execution in Docker",
         },
         {
+          id: "native.web-fetch",
+          reasonCode: "CAPABILITY_NOT_GRANTED",
+          reason: "Web fetch requires a trusted same-repository actor and Docker",
+        },
+        {
           id: "native.web-search",
           reasonCode: "CAPABILITY_NOT_GRANTED",
           reason: "Web search requires a trusted same-repository actor and Docker",
@@ -204,6 +210,7 @@ describe("maintainer-defined command tools", () => {
       requestedTools: [
         "native.bash",
         "native.subagent",
+        "native.web-fetch",
         "native.web-search",
         "workspace.edit",
         "workspace.read",
@@ -220,6 +227,11 @@ describe("maintainer-defined command tools", () => {
           id: "native.subagent",
           reasonCode: "TRUST_REQUIRED",
           reason: "Subagent delegation requires trusted-write policy in Docker",
+        },
+        {
+          id: "native.web-fetch",
+          reasonCode: "CAPABILITY_NOT_GRANTED",
+          reason: "Web fetch requires a trusted same-repository actor and Docker",
         },
         {
           id: "native.web-search",

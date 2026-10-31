@@ -641,7 +641,7 @@ describe("runDsh lifecycle", () => {
         isolation: "docker",
         workspacePath: fixture.workspace,
         deadlineMs: clock + 20 * 60_000,
-        timeoutMs: PHASE_TIMEOUTS.agentTurnMs,
+        timeoutMs: 10 * 60_000,
         signal: controller.signal,
       }),
       {
@@ -689,7 +689,7 @@ describe("runDsh lifecycle", () => {
     expect(runtimeInstall?.limits.timeoutMs).toBe(PHASE_TIMEOUTS.runtimeInstallMs);
     expect(networkCreate?.limits.timeoutMs).toBe(PHASE_TIMEOUTS.setupMs);
     expect(networkInspect?.limits.timeoutMs).toBe(PHASE_TIMEOUTS.setupMs);
-    expect(worker?.limits.timeoutMs).toBe(PHASE_TIMEOUTS.agentTurnMs);
+    expect(worker?.limits.timeoutMs).toBe(10 * 60_000);
     for (const phase of [runtimeInstall, networkCreate, networkInspect, worker]) {
       expect(phase?.limits.signal).toBe(controller.signal);
     }

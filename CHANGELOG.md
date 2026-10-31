@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Load trusted native project Profiles through the official DSH loader in both modes.
+- Default Worker egress and native web tools on, with one independent network switch.
+- Preserve replies per run/attempt and retain safe live diagnostic metadata on failure.
+- Remove the hidden ten-minute Agent cap; keep the immutable overall deadline.
+- Import local native Profiles with preview, Secret references and transactional file writes.
+
+
 Notable user-facing changes are recorded here. This project follows semantic
 versioning for published action releases.
 

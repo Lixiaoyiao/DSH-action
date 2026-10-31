@@ -8,22 +8,21 @@ describe("per-run comment history", () => {
       { id: 1, user: { id: 42 }, body: "<!-- dsh-action:v1 kind=task -->\nold answer" },
     ];
     const api = githubClientFixture({
-      paginate: vi.fn(async () => comments),
+      paginate: vi.fn(() => Promise.resolve(comments)),
       rest: {
         issues: {
           listComments: vi.fn(),
-          createComment: vi.fn(async ({ body }: { body: string }) => {
+          createComment: vi.fn(({ body }: { body: string }) => {
             const row = { id: comments.length + 1, user: { id: 42 }, body };
             comments.push(row);
-            return { data: row };
+            return Promise.resolve({ data: row });
           }),
-          updateComment: vi.fn(
-            async ({ comment_id, body }: { comment_id: number; body: string }) => {
-              const row = comments.find((entry) => entry.id === comment_id)!;
-              row.body = body;
-              return { data: row };
-            },
-          ),
+          updateComment: vi.fn(({ comment_id, body }: { comment_id: number; body: string }) => {
+            const row = comments.find((entry) => entry.id === comment_id);
+            if (row === undefined) throw new Error("Comment not found");
+            row.body = body;
+            return Promise.resolve({ data: row });
+          }),
         },
       },
     });

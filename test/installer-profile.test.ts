@@ -70,4 +70,27 @@ it("previews a full native Profile without writes, then imports settings and Sec
   expect(await readFile(join(project, ".github/workflows/dsh-review.yml"), "utf8")).toContain(
     "secrets.HARNESS_",
   );
+  const blockedProject = join(root, "blocked-repo");
+  await mkdir(blockedProject);
+  await writeFile(
+    join(profile, "prompt.txt"),
+    "A referenced resource with local-secret-never-copy",
+  );
+  const original = await readFile(join(profile, "cordis.patch.yml"), "utf8");
+  await writeFile(
+    join(profile, "cordis.patch.yml"),
+    original + "- id: custom-prompt\n  config: {promptFile: ./prompt.txt}\n",
+  );
+  await expect(
+    runInstaller({
+      cwd: blockedProject,
+      templateDirectory: templates,
+      argv,
+      output: sink,
+      isTTY: false,
+      env: {},
+    }),
+  ).rejects.toThrow(/blocked fields/);
+  expect(await readdir(blockedProject)).toEqual([]);
+  expect(output).not.toContain("local-secret-never-copy");
 });

@@ -1,3 +1,4 @@
+import { isRecord } from "../security/record.js";
 import { createHash } from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
 import { redactKnownSecrets } from "../security/env.js";
@@ -71,7 +72,7 @@ export class RunDiagnostics {
     this.events.push(event);
     try {
       this.log(
-        `[dsh] ${source} ${event.phase}${event.name ? ` ${event.name}` : ""} +${event.elapsedMs}ms`,
+        `[dsh] ${source} ${event.phase}${event.name ? ` ${event.name}` : ""} +${String(event.elapsedMs)}ms`,
       );
     } catch {
       /* Diagnostics cannot replace business results. */
@@ -80,7 +81,7 @@ export class RunDiagnostics {
   public heartbeat(): void {
     if (this.level !== "off")
       this.log(
-        `[dsh] waiting at ${this.events.at(-1)?.phase ?? "startup"}; last activity ${Date.now() - this.lastActivity}ms ago; elapsed ${Date.now() - this.started}ms`,
+        `[dsh] waiting at ${this.events.at(-1)?.phase ?? "startup"}; last activity ${String(Date.now() - this.lastActivity)}ms ago; elapsed ${String(Date.now() - this.started)}ms`,
       );
   }
   public async phase<T>(name: string, run: () => Promise<T>): Promise<T> {
@@ -140,8 +141,8 @@ export class RunDiagnostics {
     let row: Record<string, unknown>;
     try {
       const value: unknown = JSON.parse(line);
-      if (!value || typeof value !== "object" || Array.isArray(value)) return;
-      row = value as Record<string, unknown>;
+      if (!isRecord(value)) return;
+      row = value;
     } catch {
       return;
     }

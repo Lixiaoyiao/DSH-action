@@ -1,5 +1,7 @@
 # DSH-action installer
 
+Unreleased: native project Profiles, independent network access (on by default), per-run reply history and live diagnostics. See [configuration and migration](../../docs/native-profile.md).
+
 Configure GitHub workflows for
 [DeepSeek Harness Action](https://github.com/Lixiaoyiao/DSH-action).
 

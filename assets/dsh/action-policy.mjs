@@ -33,6 +33,7 @@ const POLICY_ID = /^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*){1,2}$/u;
 const OPERATIONS = new Set(["task", "review", "diagnose", "fix", "implement"]);
 const CONFIG_KEYS = new Set([
   "expectedOperation",
+  "profileInventory",
   "allowedRuntimeTools",
   "knownRuntimeTools",
   "rules",
@@ -152,6 +153,7 @@ function validateConfig(config) {
   if (rules.size !== allowed.size) fail("every allowed runtime tool must have exactly one rule");
   return {
     expectedOperation: config.expectedOperation,
+    profileInventory: config.profileInventory === true,
     allowed: Object.freeze([...allowed]),
     known: Object.freeze([...known]),
     rules,
@@ -322,7 +324,8 @@ export function apply(ctx, rawConfig) {
       // hide global tools, but intentionally do not erase agent-scoped tools.
       // The strict post-check therefore also detects scoped tools that an
       // approved plugin attempted to expose outside the Controller allowlist.
-      assertAgentInventory(agent, config.known, "agent inventory contains unaudited tool");
+      if (!config.profileInventory)
+        assertAgentInventory(agent, config.known, "agent inventory contains unaudited tool");
       const globalTools = ctx.tools.schemas().map((schema) => schema.name);
       if (globalTools.length > 0) {
         const allowedGlobals = globalTools.filter((toolName) => config.allowed.includes(toolName));

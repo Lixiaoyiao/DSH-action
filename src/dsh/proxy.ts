@@ -292,6 +292,35 @@ async function handleRequest(
     return;
   }
 
+  if (
+    (routed.kind === "messages" || routed.kind === "chat") &&
+    (!runtime.allowWebSearch || !runtime.allowWebFetch)
+  ) {
+    let payload: unknown;
+    try {
+      payload = JSON.parse(body.toString("utf8"));
+    } catch {
+      /* Upstream owns non-JSON protocol errors. */
+    }
+    if (
+      payload &&
+      typeof payload === "object" &&
+      "tools" in payload &&
+      Array.isArray(payload.tools) &&
+      payload.tools.some(
+        (tool: unknown) =>
+          tool &&
+          typeof tool === "object" &&
+          "type" in tool &&
+          typeof tool.type === "string" &&
+          ((!runtime.allowWebSearch && /^web_search(?:_|$)/u.test(tool.type)) ||
+            (!runtime.allowWebFetch && /^web_fetch(?:_|$)/u.test(tool.type))),
+      )
+    ) {
+      replyJson(response, 403, "web_access_disabled");
+      return;
+    }
+  }
   const controller = new AbortController();
   runtime.activeRequests.add(controller);
   runtime.diagnostics?.event("model.request", { name: routed.kind });

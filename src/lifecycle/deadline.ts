@@ -3,7 +3,6 @@ export const PHASE_TIMEOUTS = {
   runtimeInstallMs: 5 * 60_000,
   extensionInstallMs: 5 * 60_000,
   setupMs: 60_000,
-  agentTurnMs: 10 * 60_000,
   validationMs: 10 * 60_000,
   cleanupMs: 5_000,
   cancellationFinalizationMs: 5_000,

@@ -129,6 +129,7 @@ function containerEnvironment(
     HOME: CONTAINER_DSH_HOME,
     npm_config_cache: "/tmp/npm-cache",
     DSH_HOME: CONTAINER_DSH_HOME,
+    DSH_ACTION_WORKSPACE: CONTAINER_WORKSPACE,
     DSH_PERMISSION_MODE: workspaceWrite ? "workspace-write" : "read-only",
     DSH_TELEMETRY_DISABLED: "1",
     DSH_TOOLS_MODE: "native",

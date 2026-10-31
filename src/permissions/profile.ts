@@ -25,7 +25,6 @@ export const STRICT_PERMISSION_TOOLS = [
 export const STANDARD_PERMISSION_TOOLS = [
   ...STRICT_PERMISSION_TOOLS,
   "native.bash",
-  "native.web-search",
   "native.subagent",
 ] as const satisfies readonly AllowedToolId[];
 
@@ -130,7 +129,10 @@ export function assertPermissionProfileConfiguration(
 ): void {
   if (profile !== "strict") return;
   const autonomy = allowedTools.find(
-    (id): id is AutonomyToolId => autonomyToolSchema.safeParse(id).success,
+    (id): id is AutonomyToolId =>
+      autonomyToolSchema.safeParse(id).success &&
+      id !== "native.web-search" &&
+      id !== "native.web-fetch",
   );
   if (autonomy !== undefined) {
     throw new Error(

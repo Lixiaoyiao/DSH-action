@@ -30,6 +30,7 @@ import {
   assertWorkerLaunchHasNoControllerCredentials,
   isolationReport,
   runtimeExtensionAudit,
+  withheldControllerSecrets,
 } from "./runner-policy.js";
 import type { DshRunDependencies, DshRunResult } from "./runner-types.js";
 import type { DshRunScope } from "./run-scope.js";
@@ -265,7 +266,10 @@ export class DshWorker {
           extraEnvironmentNames: Object.keys(request.workerEnv ?? {}),
         });
       } else spec = { ...composition.launchPlan, env: workerEnvironment };
-      assertWorkerLaunchHasNoControllerCredentials(spec, context.secrets);
+      assertWorkerLaunchHasNoControllerCredentials(
+        spec,
+        withheldControllerSecrets(request, context.environment),
+      );
       const remainingMs = scope.remaining(request.timeoutMs);
       let processResult: DshProcessResult | undefined;
       let output: DshOutput | undefined;

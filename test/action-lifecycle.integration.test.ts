@@ -1180,8 +1180,20 @@ it.each(["controlled", "native"] as const)(
       expect(outcome.toolPolicy).toMatchObject({
         schemaVersion: 1,
         policyOwner: "controller",
-        requestedTools: ["workspace.edit", "workspace.read", "workspace.search"],
-        effectiveTools: ["workspace.edit", "workspace.read", "workspace.search"],
+        requestedTools: [
+          "native.web-fetch",
+          "native.web-search",
+          "workspace.edit",
+          "workspace.read",
+          "workspace.search",
+        ],
+        effectiveTools: [
+          "native.web-fetch",
+          "native.web-search",
+          "workspace.edit",
+          "workspace.read",
+          "workspace.search",
+        ],
         deniedTools: [],
       });
     }

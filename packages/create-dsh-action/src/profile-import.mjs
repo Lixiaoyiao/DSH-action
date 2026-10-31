@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 import { readFile, readdir, lstat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import YAML from "yaml";
 import semver from "semver";
-import { INSTALLER_ACTION_INPUTS } from "./action-inputs.generated.mjs";
+import { INSTALLER_ACTION_INPUTS, INSTALLER_RUNTIME_DEPENDENCIES } from "./action-inputs.generated.mjs";
 
 // Cordis' native !!js representation. Parsing/import never evaluates expressions.
 const jsTag = {
@@ -18,12 +18,16 @@ const TARGET = INSTALLER_ACTION_INPUTS.dshVersion.defaultValue;
 const packageName = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/u;
 const secretName =
   /(?:api[-_]?key|secret|password|token|authorization|cookie|credential|private[-_]?key)/iu;
+function credentialField(parts) {
+ const key=parts.at(-1)??"";const owner=parts.at(-2);
+ return (secretName.test(key)&&!/(?:Env|EnvName)$/u.test(key)) || owner === "env" || (owner === "headers" && !["accept","content-type","user-agent"].includes(key.toLowerCase()));
+}
 const machineFile =
   /^(?:\.env(?:\..*)?|\.credentials.*|\.npmrc|compatibility\.json|settings\.yaml|sessions|storages|attachments|logs|cache|node_modules|\.git|\.anonymous-user-id)$/u;
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 
 export function resolveProfileHome(home, env = process.env) {
-  const chosen = home ?? env.DSH_HOME?.trim() ?? join(homedir(), ".dsh");
+  const chosen = home ?? (env.DSH_HOME?.trim() || join(homedir(), ".dsh"));
   return resolve(
     chosen === "~"
       ? homedir()
@@ -125,6 +129,9 @@ export async function previewProfileImport({ home, env, profile }) {
     sourceHashes = new Map();
   let totalBytes = 0;
   async function read(path) {
+    const metadata = await lstat(path);
+    if (metadata.size > 8 * 1024 * 1024 - totalBytes)
+      throw new Error("Profile migration exceeds 8 MiB");
     const data = await readFile(path);
     totalBytes += data.length;
     if (totalBytes > 8 * 1024 * 1024) throw new Error("Profile migration exceeds 8 MiB");
@@ -178,6 +185,17 @@ export async function previewProfileImport({ home, env, profile }) {
       continue;
     }
     const requirements = installed?.engines?.dsh;
+    if (requirements === undefined)
+      for (const [peer, range] of Object.entries(installed?.peerDependencies ?? {}))
+        if (
+          /^@deepseek-ai\/dsh(?:-|$)/u.test(peer) &&
+          !semver.satisfies(TARGET, range, { includePrerelease: true })
+        )
+          reports.push({
+            kind: "blocked",
+            field: name,
+            reason: `Peer ${peer} is incompatible with cloud DSH ${TARGET}`,
+          });
     if (requirements && !semver.satisfies(TARGET, requirements, { includePrerelease: true }))
       reports.push({
         kind: "blocked",
@@ -189,12 +207,13 @@ export async function previewProfileImport({ home, env, profile }) {
       (installed?.os?.some((v) => !v.startsWith("!")) && !installed.os.includes("linux"))
     )
       reports.push({ kind: "blocked", field: name, reason: "Package does not support Linux" });
-    if (/^@deepseek-ai\/dsh(?:-|$)/u.test(name)) {
-      if (version !== TARGET)
+    if(/^@deepseek-ai\/dsh(?:-|$)/u.test(name)&&version!==TARGET)reports.push({kind:"blocked",field:name,reason:`Cannot mix DSH versions; Action requires ${TARGET}`});
+    if (INSTALLER_RUNTIME_DEPENDENCIES[name] !== undefined) {
+      if (version !== INSTALLER_RUNTIME_DEPENDENCIES[name])
         reports.push({
           kind: "blocked",
           field: name,
-          reason: `Requires DSH ${version}; Action locks ${TARGET}`,
+          reason: `Requires ${name}@${version}; Action locks ${INSTALLER_RUNTIME_DEPENDENCIES[name]}`,
         });
       else reports.push({ kind: "reused", field: name, reason: "Provided by the pinned runtime" });
     } else dependencies[name] = version;
@@ -222,7 +241,7 @@ export async function previewProfileImport({ home, env, profile }) {
       throw new Error("Could not parse the native Profile/Home patch", { cause: error });
     }
   }
-  async function resource(relativePath) {
+  async function resource(relativePath, moduleName=false) {
     const normalized = relativePath.replaceAll("\\", "/").replace(/^\.\//u, "");
     if (
       !normalized ||
@@ -244,7 +263,7 @@ export async function previewProfileImport({ home, env, profile }) {
         throw new Error("Binary local resources require explicit repository management");
       resources.set(normalized, data.toString("utf8"));
     }
-    return `./${normalized}`;
+    return moduleName ? `./${normalized}` : {__jsExpr:`ctx.profileContext.dir + ${JSON.stringify("/"+normalized)}`};
   }
   const fieldName = (parts) => parts.join(".");
   function reference(parts, prefix = "") {
@@ -256,7 +275,7 @@ export async function previewProfileImport({ home, env, profile }) {
     reports.push({
       kind: "credential-reference",
       field: fieldName(parts),
-      reason: `Set GitHub Secret ${name}; credential value is not copied`,
+      reason: `Set GitHub Secret ${name}${prefix ? "; store the token without its Bearer prefix" : ""}; credential value is not copied`,
     });
     return {
       __jsExpr: prefix ? `${JSON.stringify(prefix)} + process.env.${name}` : `process.env.${name}`,
@@ -289,7 +308,7 @@ export async function previewProfileImport({ home, env, profile }) {
     }
     if (typeof value !== "string") return value;
     const key = parts.at(-1) ?? "";
-    if (secretName.test(key) && !/(?:Env|EnvName)$/u.test(key) && value !== "")
+    if (credentialField(parts) && value !== "")
       return reference(parts, /^Bearer\s/iu.test(value) ? "Bearer " : "");
     if (/(?:^https?:\/\/[^/]*@|[?&](?:token|key|secret|signature|api_key)=)/iu.test(value)) {
       reports.push({
@@ -303,7 +322,7 @@ export async function previewProfileImport({ home, env, profile }) {
       const rel = relative(directory, resolve(value));
       if (!rel.startsWith("..") && !isAbsolute(rel)) {
         try {
-          return await resource(rel);
+          return await resource(rel,key === "name");
         } catch {
           /* Report the source field without exposing the local path. */
         }
@@ -317,7 +336,7 @@ export async function previewProfileImport({ home, env, profile }) {
     }
     if (value.startsWith("./") && ["name", "path", "cwd", "file", "promptFile"].includes(key)) {
       try {
-        return await resource(value);
+        return await resource(value,key === "name");
       } catch {
         reports.push({
           kind: "blocked",
@@ -337,7 +356,48 @@ export async function previewProfileImport({ home, env, profile }) {
       });
     return value;
   }
+  const secretValues = [];
+  function collectSecrets(value,parts=[]) {
+    if (Array.isArray(value)) {
+      value.forEach((child,index)=>collectSecrets(child,[...parts,String(index)]));
+      return;
+    }
+    if (!value || typeof value !== "object") return;
+    for (const [key, child] of Object.entries(value)) {
+      if (
+        typeof child === "string" &&
+        secretName.test(key) &&
+        !/(?:Env|EnvName)$/.test(key) &&
+        child.length >= 4
+      )
+        secretValues.push(child, child.replace(/^Bearer\s+/iu, ""));
+      else collectSecrets(child,[...parts,key]);
+    }
+  }
+  collectSecrets(patches);
   patches = await sanitize(patches);
+  for (const [path, content] of resources) {
+    const secret =
+      secretValues.some((value) => value.length >= 4 && content.includes(value)) ||
+      /(?:api[_-]?key|password|token|secret|authorization|cookie)["']?\s*[:=]\s*["']?(?!process\.env|\$\{)[A-Za-z0-9_+/-]{4}/iu.test(
+        content,
+      ) ||
+      /-----BEGIN .*PRIVATE KEY-----/u.test(content);
+    const credentialUrl=/(?:https?:\/\/[^/\s]+@|[?&](?:token|key|secret|signature|api_key)=)/iu.test(content);
+    const local = /\b[A-Za-z]:[\\/]|(?:["'\s])\/(?:home|Users)\/|~[\\/]/u.test(content);
+    if (secret || local || /^(?:profile-runtime|action-.*|native-launcher)\.mjs$/u.test(path)) {
+      resources.delete(path);
+      reports.push({
+        kind: "blocked",
+        field: path,
+        reason: secret || credentialUrl
+          ? "Referenced resource contains credentials; replace them with a native environment reference"
+          : local
+            ? "Referenced resource contains machine-specific paths"
+            : "Reserved Action runtime resource name",
+      });
+    }
+  }
   for (const name of requiredEnv)
     if (/^(?:GITHUB_|GH_|ACTIONS_|INPUT_|DEEPSEEK_|DSH_|NODE_|NPM_|LD_|DYLD_)/iu.test(name))
       reports.push({
@@ -345,6 +405,18 @@ export async function previewProfileImport({ home, env, profile }) {
         field: name,
         reason: "Reserved Controller or runtime environment variable",
       });
+  try {
+    const legacy = await lstat(join(root, "settings.yaml"));
+    if (legacy.isFile() && legacy.size > 0)
+      reports.push({
+        kind: "blocked",
+        field: "settings.yaml",
+        reason:
+          "Legacy settings must first be migrated by official DSH into the selected Profile; they are not machine state and were not silently discarded",
+      });
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
   for (const file of await readdir(root))
     if (machineFile.test(file))
       reports.push({
@@ -352,6 +424,19 @@ export async function previewProfileImport({ home, env, profile }) {
         field: file,
         reason: "Machine state or credentials are not migrated",
       });
+  for (const filename of ["package-lock.json", "pnpm-lock.yaml"]) {
+    try {
+      await lstat(join(directory, filename));
+      reports.push({
+        kind: "omitted",
+        field: filename,
+        reason:
+          "Source lock describes the local installation. Generate the project lock with npm after reviewing the pinned project dependencies; locks are never hand-merged with the Action runtime.",
+      });
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+  }
   const selectedBundles = [
     ...new Set([
       "@deepseek-ai/dsh-base",
@@ -367,6 +452,7 @@ export async function previewProfileImport({ home, env, profile }) {
       field: "dsh.profile.bundles",
       reason: "Use the official base + headless entrypoint in Actions",
     });
+  reports.push({kind:"not_checked",field:"runtime activation",reason:"Headless plugin activation and provider availability are verified by the Action; preview does not execute imported code"});
   const files = [
     {
       path: ".dsh/package.json",
@@ -480,5 +566,5 @@ export function workflowWithProfile(source, requiredEnv = []) {
       }
     }
   }
-  return doc.toString();
+  return doc.toString({ lineWidth: 0 });
 }

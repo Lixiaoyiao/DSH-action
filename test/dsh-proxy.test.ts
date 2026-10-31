@@ -67,7 +67,7 @@ describe("DeepSeek credential proxy", () => {
       fetchImplementation: upstream,
     });
     handles.push(handle);
-    expect(handle.workerWebSearchProvider).toBe("deepseek-search-api");
+    expect(handle.workerWebSearchProvider).toBe("deepseek-official");
     for (const operation of ["search", "fetch"]) {
       const response = await fetch(`${handle.workerBaseUrl}/v1/tools/${operation}`, {
         method: "POST",
@@ -448,4 +448,26 @@ describe("DeepSeek credential proxy", () => {
     });
     expect(response.status).toBe(413);
   });
+});
+
+it("blocks server-side web tools on the model route when Worker networking is disabled", async () => {
+  const upstream = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ ok: true }));
+  const handle = await startDeepSeekProxy({
+    apiKey: "controller-key",
+    baseUrl: "https://api.deepseek.com",
+    allowWebSearch: false,
+    allowWebFetch: false,
+    fetchImplementation: upstream,
+  });
+  handles.push(handle);
+  const response = await fetch(handle.workerBaseUrl + "/v1/messages", {
+    method: "POST",
+    headers: { "x-api-key": handle.workerToken },
+    body: JSON.stringify({
+      tools: [{ type: "web_search_20250305", name: "web_search" }],
+      messages: [],
+    }),
+  });
+  expect(response.status).toBe(403);
+  expect(upstream).not.toHaveBeenCalled();
 });

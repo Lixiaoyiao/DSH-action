@@ -211,17 +211,17 @@ export function formatStepSummary(outcome: RunOutcome): string {
       "",
       "### Runtime diagnostics",
       "",
-      `Last activity: ${outcome.diagnostics.lastActivityMs}ms ago. Worker events are observations, not authority.`,
+      `Last activity: ${String(outcome.diagnostics.lastActivityMs)}ms ago. Worker events are observations, not authority.`,
       "",
       "| Source | Event | Elapsed ms |",
       "| --- | --- | --- |",
     );
     for (const event of outcome.diagnostics.events.slice(-30))
       lines.push(
-        `| ${event.source} | ${safeInline(event.phase)}${event.name ? " " + safeInline(event.name) : ""} | ${event.elapsedMs} |`,
+        `| ${event.source} | ${safeInline(event.phase)}${event.name ? " " + safeInline(event.name) : ""} | ${String(event.elapsedMs)} |`,
       );
     if (outcome.diagnostics.artifactId !== undefined)
-      lines.push("", `Diagnostic artifact: ${outcome.diagnostics.artifactId}.`);
+      lines.push("", `Diagnostic artifact: ${String(outcome.diagnostics.artifactId)}.`);
   }
   if (outcome.error !== undefined) {
     lines.push(
