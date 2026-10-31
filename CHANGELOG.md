@@ -5,6 +5,10 @@ versioning for published action releases.
 
 ## Unreleased
 
+- Patch Zod 4, Undici, HTTP middleware and archive consumers without changing the pinned DSH family or Action/installer versions. Compatibility overrides are limited to their affected major or exact parent package.
+- Patch Vitest and Vite development dependencies; add real HTTP-provider and malformed-ZIP regression coverage.
+- Retain the seven production moderate audit entries in the Artifact SDK archive chain pending an upstream compatible upgrade; do not downgrade the SDK or force cross-major overrides.
+
 ## [0.12.2] - 2026-10-23
 
 - Resolves the official DSH MCP bridge to patched

@@ -23,7 +23,17 @@
   "overrides": {
     "@deepseek-ai/dsh-mcp-client@0.2.1-rc.2": {
       "@modelcontextprotocol/client": "2.3.0"
-    }
+    },
+    "@deepseek-ai/dsh-http-proxy@0.2.1-rc.2": {
+      "undici": "8.12.2"
+    },
+    "@deepseek-ai/dsh-web-fetch-http@0.2.1-rc.2": {
+      "undici": "8.12.2"
+    },
+    "@deepseek-ai/libreoffice-kit@0.1.5": {
+      "fflate": "0.8.3"
+    },
+    "zod@>=4 <5": "$zod"
   },
   "scripts": {
     "prebuild": "node scripts/clean-dist.mjs",
@@ -85,7 +95,7 @@
     "@deepseek-ai/dsh-web-search-deepseek": "0.2.1-rc.2",
     "@deepseek-ai/dsh-workflow": "0.2.1-rc.2",
     "yaml": "2.9.0",
-    "zod": "4.4.3"
+    "zod": "4.6.6"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-agent": "0.2.1-rc.2",
@@ -104,13 +114,13 @@
     "@modelcontextprotocol/sdk": "1.32.1",
     "@types/node": "26.2.0",
     "@vercel/ncc": "0.45.0",
-    "@vitest/coverage-v8": "4.1.11",
+    "@vitest/coverage-v8": "4.1.12",
     "eslint": "10.8.1",
     "fflate": "0.8.3",
     "prettier": "3.9.6",
     "semver": "7.8.5",
     "typescript": "6.0.3",
     "typescript-eslint": "8.67.0",
-    "vitest": "4.1.11"
+    "vitest": "4.1.12"
   }
 }
