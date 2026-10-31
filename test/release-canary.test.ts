@@ -75,6 +75,55 @@ describe("independent release canary evidence", () => {
     );
   });
 
+  it.skipIf(process.platform === "win32").each([
+    { name: "current defaults", network: "bridge", webTools: true, status: 0 },
+    { name: "legacy network", network: "host-gateway", webTools: true, status: 1 },
+    { name: "missing web tools", network: "bridge", webTools: false, status: 1 },
+  ])("executes the controlled release assertion for $name", ({ network, webTools, status }) => {
+    const assertion = steps.find((step) => step.id === "controlled_assert")?.run;
+    if (assertion === undefined) throw new Error("Missing controlled release assertion");
+    const effectiveTools = [
+      ...(webTools ? ["native.web-fetch", "native.web-search"] : []),
+      "workspace.read",
+      "workspace.search",
+    ];
+    const result = spawnSync("bash", ["-c", assertion], {
+      encoding: "utf8",
+      timeout: 5_000,
+      env: {
+        ...process.env,
+        DSH_MODE: "controlled",
+        DSH_COMPOSITION: "github-action-controlled",
+        DSH_PERMISSION_PROFILE: "strict",
+        DSH_NETWORK_ACCESS: network,
+        DSH_WORKSPACE_WRITE: "false",
+        DSH_EFFECTIVE_TOOLS: JSON.stringify(effectiveTools),
+        DSH_RESULT_JSON: JSON.stringify({
+          schemaVersion: 1,
+          conclusion: "success",
+          operation: "task",
+          textSources: {
+            instruction: { path: "examples/prompts/repository-summary.md" },
+            contexts: [{ path: "examples/context/release-checklist.txt" }],
+          },
+          githubRequests: { clientRole: "main-controller", cacheHits: 1 },
+          dsh: { mode: "controlled", composition: "github-action-controlled" },
+          permissions: { profile: "strict", workspaceWrite: false, effectiveTools },
+          toolPolicy: {
+            schemaVersion: 1,
+            policyOwner: "controller",
+            effectiveTools,
+            requestedTools: effectiveTools,
+            deniedTools: [],
+          },
+        }),
+      },
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(status);
+  });
+
   it.each([
     { name: "both valid", field: "", value: "", expectedStatus: 0 },
     {

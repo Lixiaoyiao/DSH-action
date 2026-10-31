@@ -4,6 +4,15 @@ import { RunDiagnostics } from "../src/dsh/diagnostics.js";
 import { executeBoundedDshProcess } from "../src/dsh/process.js";
 
 describe("live Worker diagnostics", () => {
+  it("shows the observed HTTP status without logging a response body", () => {
+    const messages: string[] = [];
+    const trace = new RunDiagnostics("basic", (message) => messages.push(message));
+    trace.event("model.headers", { name: "messages", status: 503 });
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toContain("status=503");
+    expect(trace.snapshot().events[0]?.status).toBe(503);
+  });
+
   it("retains the last tool and step on timeout without exposing tool input or model text", async () => {
     const trace = new RunDiagnostics("basic", () => undefined, ["private-key"]);
     const decoder = new HeadlessOutputDecoder([], (event) => trace.observeHeadless(event));

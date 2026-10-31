@@ -3584,7 +3584,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-## fast-uri@3.1.8
+## fast-uri@3.1.9
 
 License: BSD-3-Clause
 Source: git+https://github.com/fastify/fast-uri.git
@@ -5612,7 +5612,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-## undici@6.29.0
+## undici@6.29.1
 
 License: MIT
 Source: git+https://github.com/nodejs/undici.git
@@ -5797,7 +5797,7 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-## zod@4.4.3
+## zod@4.6.6
 
 License: MIT
 Source: git+https://github.com/colinhacks/zod.git

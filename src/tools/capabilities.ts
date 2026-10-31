@@ -101,7 +101,8 @@ export const CONTROLLER_BUILTIN_CAPABILITY_CONTRACTS = Object.freeze([
   {
     manifest: {
       id: "native.web-fetch",
-      description: "Read a public web page through the Controller-mediated DeepSeek Fetch API.",
+      description:
+        "Read public web content with the DSH Profile's provider; the default HTTP provider connects directly from the Worker.",
       provider: "builtin",
       permissions: ["network"],
       inputSchema: { type: "object", additionalProperties: false },

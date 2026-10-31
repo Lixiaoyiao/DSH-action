@@ -29,7 +29,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      - uses: Lixiaoyiao/DSH-action@v0.12.2
+      - uses: Lixiaoyiao/DSH-action@v0.13.0
         id: dsh
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}

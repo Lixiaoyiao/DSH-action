@@ -1,18 +1,20 @@
 # Changelog
 
-## Unreleased
-
-- Load trusted native project Profiles through the official DSH loader in both modes.
-- Default Worker egress and native web tools on, with one independent network switch.
-- Preserve replies per run/attempt and retain safe live diagnostic metadata on failure.
-- Remove the hidden ten-minute Agent cap; keep the immutable overall deadline.
-- Accept ordered Bundle patch arrays and validate each resolved file, including native Profiles.
-- Match full test discovery paths before exempting an identical-content rename.
-- Share extension activation/source checks, decode Headless events once, and test parsed workflow values.
-- Installer migration and version updates are deferred.
-
 Notable user-facing changes are recorded here. This project follows semantic
 versioning for published action releases.
+
+## [0.13.0] - 2026-10-31
+
+- Load trusted project Profiles through the official DSH Profile, Bundle and Cordis mechanisms in both Controlled and Native modes. Keep Harness settings in native YAML and Action responsibilities in the workflow. Explicitly reject mixed project and legacy Harness configuration.
+- Allow Worker public egress by default. `worker-network` alone controls Worker networking, independently of mode, trust and legacy plugin declarations. Restore official web search and HTTP fetch while retaining credential isolation and Controller authorization.
+- Preserve replies across runs and attempts by default; progress and final results update the same run's known comment. Keep `comment-mode: update` for the previous behavior.
+- Remove the hidden ten-minute Agent cap and enforce the overall absolute deadline. Add bounded, redacted stage diagnostics and incremental Headless decoding that retains partial evidence on failure.
+- Protect custom Profile directories from Agent publication, and retain legacy discovery for repositories containing only `.dsh/skills`.
+- Accept ordered Bundle patch arrays with a boundary check for every file. Require full-path test discovery evidence before treating an identical-content test rename as harmless.
+- Share extension activation and source checks, and verify parsed workflow behavior.
+- Patch Zod 4, Undici, HTTP middleware and archive consumers with major-scoped or exact-parent overrides, retaining the pinned DSH `0.2.1-rc.2` family. Patch Vitest and Vite, and cover the real HTTP provider and malformed ZIP handling.
+- Reduce production audit entries from 208 to seven moderate entries in the Artifact SDK archive chain, with no high or critical entries. The remaining chain requires a compatible upstream update.
+- Publish only the Action. `create-dsh-action` remains `0.7.4`, bound to `v0.12.2` through `DSH_ACTION_RELEASE_SHA`; installer migration and publication are deferred.
 
 ## [0.12.2] - 2026-10-23
 

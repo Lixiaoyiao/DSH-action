@@ -157,7 +157,7 @@ for (const expected of [
   '.toolPolicy.policyOwner == "controller"',
   '.dsh.mode == "controlled"',
   '.dsh.composition == "github-action-controlled"',
-  '.permissions.effectiveTools == ["workspace.read","workspace.search"]',
+  '.permissions.effectiveTools == ["native.web-fetch","native.web-search","workspace.read","workspace.search"]',
 ]) {
   assert.ok(controlledAssertion.includes(expected), `controlled canary is missing: ${expected}`);
 }

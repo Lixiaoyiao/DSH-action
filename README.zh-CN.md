@@ -1,6 +1,6 @@
 # DSH-action
 
-未发布变更：Action 管运行环境，项目原生 Profile 管 Harness。默认联网、按运行保留回复；安装器迁移暂缓，本次先完成 Action 运行时。详见[原生配置与迁移](docs/native-profile.md)。
+Action v0.13.0：Action 管运行环境，项目原生 Profile 管 Harness。默认联网、按运行保留回复；安装器迁移和发布另行处理。详见[原生配置与迁移](docs/native-profile.md)。
 
 现有工作流请将 Action 的 uses 地址更新为 Lixiaoyiao/DSH-action@原提交SHA，保留原有 SHA 固定版本。安装器现在使用 npm create dsh-action。
 
@@ -132,7 +132,7 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
           persist-credentials: false
           fetch-depth: 1
-      - uses: Lixiaoyiao/DSH-action@v0.12.2
+      - uses: Lixiaoyiao/DSH-action@v0.13.0
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           dsh-version: 0.2.1-rc.2
