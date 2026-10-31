@@ -21,7 +21,7 @@ import {
   DshProxyError,
   DshSpawnError,
 } from "./errors.js";
-import { decodeHeadlessResult, headlessModelUsage } from "./headless-output.js";
+import { HeadlessOutputDecoder } from "./headless-output.js";
 import { repairDshOutput } from "./output-repair.js";
 import { executeBoundedDshProcess, type DshProcessResult, type DshProcessSpec } from "./process.js";
 import { startDeepSeekProxy, type DeepSeekProxyHandle } from "./proxy.js";
@@ -30,6 +30,7 @@ import {
   assertWorkerLaunchHasNoControllerCredentials,
   isolationReport,
   runtimeExtensionAudit,
+  withheldControllerSecrets,
 } from "./runner-policy.js";
 import type { DshRunDependencies, DshRunResult } from "./runner-types.js";
 import type { DshRunScope } from "./run-scope.js";
@@ -40,7 +41,6 @@ import {
   type PreparedWorkerRuntime,
 } from "./runtime-preparation.js";
 import { parseDshOutput, type DshOutput } from "./schema.js";
-import { PHASE_TIMEOUTS } from "./timeouts.js";
 import { DshTurnEvidence } from "./turn-evidence.js";
 
 /** Own worker preparation and terminal/evidence processing behind one run interface. */
@@ -87,7 +87,11 @@ export class DshWorker {
                 context.nativeTools.includes("native.web-fetch")),
             bindHost: proxyAddress,
             workerHost: proxyAddress,
-            requestTimeoutMs: request.timeoutMs,
+            requestTimeoutMs: Math.max(1, scope.deadlineMs - scope.now()),
+            deadlineMs: scope.deadlineMs,
+            ...(dependencies.diagnostics === undefined
+              ? {}
+              : { diagnostics: dependencies.diagnostics }),
             maxResponseBytes: request.maxOutputBytes,
           });
         } catch (error: unknown) {
@@ -127,13 +131,16 @@ export class DshWorker {
     processResult: DshProcessResult,
     proxy: DeepSeekProxyHandle,
     secrets: readonly string[],
+    decoder: HeadlessOutputDecoder,
   ): Promise<DshOutput> {
     const { context, scope, dependencies } = this;
     assertNoSecretOutput("stdout", processResult.stdout, secrets);
     assertNoSecretOutput("stderr", processResult.stderr, secrets);
     // Retain safe completed-step samples even when exit/terminal validation
     // fails. This read-only projection also checks decoded secret escapes.
-    this.usage = headlessModelUsage(processResult.stdout, secrets);
+    decoder.end(processResult.stdout);
+    decoder.assertSafe();
+    this.usage = decoder.partialUsage();
     if (processResult.exitCode !== 0 || processResult.signal !== null) {
       throw new DshProcessError(
         processResult.exitCode,
@@ -141,7 +148,7 @@ export class DshWorker {
         redactKnownSecrets(processResult.stderr.trim(), secrets),
       );
     }
-    const terminal = decodeHeadlessResult(processResult.stdout, secrets);
+    const terminal = decoder.result();
     this.usage = terminal.usage;
     const resultText = terminal.text;
     const { request } = context;
@@ -214,11 +221,19 @@ export class DshWorker {
     const execute: DshProcessExecutor =
       dependencies.executeProcess ??
       ((spec, limits) => executeBoundedDshProcess(spec, limits, context.platform));
+    const trace = dependencies.diagnostics;
+    trace?.resetStream();
     const prepared = await prepareWorkerRuntime(context, runtime, scope, execute);
     const proxy = await this.acquireProxy(prepared);
-    const secrets = [...context.secrets, proxy.workerToken];
+    const secrets = [
+      ...context.secrets,
+      proxy.workerToken,
+      ...Object.values(context.request.workerEnv ?? {}),
+    ];
+    trace?.addSecrets(secrets);
     for (const secret of secrets) runtime.session?.knownSecrets.add(secret);
     const { request } = context;
+    const decoder = new HeadlessOutputDecoder(secrets, (event) => trace?.observeHeadless(event));
     const evidence = new DshTurnEvidence(prepared.composition, scope, secrets);
     try {
       const workerEnvironment = buildDshWorkerEnvironment({
@@ -229,6 +244,7 @@ export class DshWorker {
         proxyToken: proxy.workerToken,
         realDeepSeekApiKey: request.apiKey,
       });
+      Object.assign(workerEnvironment, request.workerEnv ?? {});
       assertSecretAbsent(workerEnvironment, request.apiKey, "real DeepSeek API key");
       await evidence.begin();
       const composition = prepared.composition;
@@ -249,29 +265,51 @@ export class DshWorker {
           workerEnvironment,
           proxy,
           workspaceWrite: context.workspaceWrite,
+          workerNetwork: request.workerNetwork !== false,
+          diagnosticLevel: trace?.level ?? "off",
+          extraEnvironmentNames: Object.keys(request.workerEnv ?? {}),
         });
       } else spec = { ...composition.launchPlan, env: workerEnvironment };
-      assertWorkerLaunchHasNoControllerCredentials(spec, context.secrets);
-      const remainingMs = scope.remaining(Math.min(request.timeoutMs, PHASE_TIMEOUTS.agentTurnMs));
+      assertWorkerLaunchHasNoControllerCredentials(
+        spec,
+        withheldControllerSecrets(request, context.environment),
+      );
+      const remainingMs = scope.remaining(request.timeoutMs);
       let processResult: DshProcessResult | undefined;
       let output: DshOutput | undefined;
       let failure: unknown;
       try {
+        trace?.event("worker.start");
         processResult = await withDshRuntimeActivity(runtime, async () =>
           execute(spec, {
             timeoutMs: remainingMs,
+            phase: "worker",
+            onStdout: (chunk: Buffer) => decoder.write(chunk),
+            onStderr: (chunk: Buffer) => trace?.stderr(chunk),
             maxStdoutBytes: request.maxOutputBytes,
             maxStderrBytes: Math.min(request.maxOutputBytes, 2 * 1024 * 1024),
             maxCombinedBytes: request.maxOutputBytes,
             ...(scope.signal === undefined ? {} : { signal: scope.signal }),
           }),
         );
-        output = await this.validateResult(processResult, proxy, secrets);
+        trace?.event("worker.exit");
+        output = await this.validateResult(processResult, proxy, secrets, decoder);
+        trace?.event("output.validated");
       } catch (error: unknown) {
         failure =
           request.isolation === "docker" && error instanceof DshSpawnError
             ? new DshIsolationUnavailableError("Docker could not be started", { cause: error })
             : error;
+      }
+      if (failure !== undefined) {
+        trace?.event("worker.error");
+        decoder.end();
+        try {
+          decoder.assertSafe();
+        } catch (error) {
+          failure = error;
+        }
+        this.usage = decoder.partialUsage();
       }
       failure = await evidence.collect(failure);
       if (failure !== undefined)

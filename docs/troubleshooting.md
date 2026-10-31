@@ -136,12 +136,14 @@ Common causes:
 - The event/actor trust profile can remove a requested tool. Forks receive no
   repository tools. Trusted-read work denies edit, Bash, and subagent.
 - `native.bash` and `native.subagent` require eligible trusted-write Docker
-  policy. `native.bash` cannot share a worker with a bridge-networked extension.
+  policy. Bash authorization is independent of `worker-network`.
 - `native.web-search` uses a separate Controller-mediated endpoint. It is not
-  arbitrary web fetch and does not grant general bridge egress.
+  arbitrary web fetch and does not select Worker egress. `worker-network` is
+  the independent public-egress switch.
 - Extension tools require `permission-profile: custom` (with `strict` retained
   only for older v0.4 compatibility), Docker isolation, matching declared
-  permissions, and a consistent process-level network/workspace mode.
+  permissions and compatible workspace-write declarations. Legacy network
+  declarations remain separate from `worker-network`.
 
 Those canonical-tool checks describe controlled mode. In native mode, DSH owns
 the internal capability graph. `toolPolicy.policyOwner` is `dsh`, and
@@ -245,11 +247,14 @@ Typical code: `DSH_PROXY`.
 - `native.web-search` supports the configured DeepSeek Anthropic Messages route;
   it does not enable arbitrary `web_fetch` requests or general network access.
 
-When extensions declare `network: false`, the DSH worker still reaches the
-Controller proxy through an inspected Docker host gateway. That route is not a
-port allowlist. Runner firewall policy must protect other host services. When an
-approved extension requests network, the co-hosted worker uses bridge egress,
-which is not destination-restricted.
+Check `worker-network` first: its default `true` allows ordinary Worker
+public egress; explicit `false` blocks it through an internal Docker network and
+disables web tools/proxy routes. The necessary model proxy still uses an inspected
+host gateway, which is not a port allowlist. Runner firewall policy protects other
+host services. Plugin `network: false` does not disable an online Worker, and
+`network: true` cannot override the switch. Official HTTP `web_fetch` needs both
+an enabled tool/provider and Worker egress; model/search API credentials stay
+behind the Controller proxy.
 
 ## The Action times out
 
@@ -454,9 +459,8 @@ bounded log message.
   visibility to the official DSH graph and reports the actual names only in
   `observedTools`.
 - Controlled tools and co-hosted owners must have compatible process modes.
-  Native owner flags request outer authority: one `network: true` owner gives
-  the whole worker bridge egress, while any actual RW mount is likewise shared
-  by the complete native worker.
+  Worker egress is selected only by `worker-network`, independently of owner
+  flags. Any actual RW mount remains shared by the complete native worker.
 - A native extension's arbitrary-name credential belongs in `credentialEnv`,
   `credentialHeaders`, or direct-Plugin `credentialConfig`; these values are
   merged into that extension and masked/audited without values or hashes.
@@ -584,3 +588,20 @@ credentials.
 - [Configuration](configuration.md)
 - [Extension contracts](extension-contracts.md)
 - [Security policy](../SECURITY.md)
+
+## Locating a stalled run
+
+The default basic diagnostics report preparation, model transport, tool and exit
+activity. A waiting heartbeat states the last observed event and its age; it is
+not proof that a particular upstream service caused the stall. Use
+`diagnostics: detailed` for a bounded metadata artifact. An Action-successful
+run can still return a blocked/neutral business result; inspect result-json.
+
+The historical classviva run 41100583886 hit the former fixed 600000ms Worker
+limit. It had no retained model/tool trace, so its deeper stall cause remains
+unconfirmed. Raising the workflow job limit alone did not remove that cap.
+Agent execution now uses the Action-wide deadline. Errors identify the phase;
+installation/validation/cleanup still have their own bounds.
+
+For native configuration, migration conflicts and independent network settings,
+see [project Profiles](native-profile.md).

@@ -6,7 +6,7 @@ import type { AgentLoopStats } from "../agent/loop-contracts.js";
 import { publishTaskAnswer } from "../commands/task.js";
 import { DshAgentEngine } from "../dsh/engine.js";
 import type { DshFailureTelemetry } from "../dsh/errors.js";
-import type { ActionInputs } from "../inputs.js";
+import type { ResolvedActionInputs as ActionInputs } from "../inputs.js";
 import { buildDshToolPolicyAudit } from "../permissions/profile.js";
 import type { RunOutcome, AgentRunSummary, ValidationSummary } from "../result.js";
 import { createControllerSession, type ControllerSession } from "../session/controller.js";
@@ -269,7 +269,14 @@ export class AgentPhase {
       },
       {
         createEngine: (runtime) =>
-          new DshAgentEngine(inputs, policy, runtime, extensions, selectedComposition),
+          new DshAgentEngine(
+            inputs,
+            policy,
+            runtime,
+            extensions,
+            selectedComposition,
+            lifecycle.diagnostics,
+          ),
       },
     );
 

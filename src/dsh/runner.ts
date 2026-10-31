@@ -54,6 +54,7 @@ export async function runDsh(
     request.signal,
     now,
     dependencies.warning ?? core.warning,
+    dependencies.diagnostics,
   );
   const context = await prepareDshContext(admission, dependencies, scope);
   const ownsRuntime = dependencies.runtime === undefined;

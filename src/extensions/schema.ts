@@ -472,21 +472,12 @@ const pluginConfigurationSchema = z
   })
   .superRefine((configuration, context) => {
     validateUniqueIds([...configuration.bundles, ...configuration.plugins], context, "extension");
-    const packages = new Map<string, string>();
+    validatePackageSources(configuration, context);
     for (const [kind, extensions] of [
       ["bundles", configuration.bundles],
       ["plugins", configuration.plugins],
     ] as const) {
       for (const [index, extension] of extensions.entries()) {
-        const existing = packages.get(extension.package);
-        if (existing !== undefined && existing !== extension.source) {
-          context.addIssue({
-            code: "custom",
-            path: [kind, index, "source"],
-            message: `package ${extension.package} is already pinned to a different source`,
-          });
-        }
-        packages.set(extension.package, extension.source);
         validateToolSet(extension.tools, context, [kind, index, "tools"]);
         validateConsistentWorkspacePermission(extension.tools, context, [kind, index, "tools"]);
         for (const [toolIndex, tool] of extension.tools.entries()) {
@@ -540,23 +531,7 @@ const nativePluginConfigurationSchema = z
   })
   .superRefine((configuration, context) => {
     validateUniqueIds([...configuration.bundles, ...configuration.plugins], context, "extension");
-    const packages = new Map<string, string>();
-    for (const [kind, extensions] of [
-      ["bundles", configuration.bundles],
-      ["plugins", configuration.plugins],
-    ] as const) {
-      for (const [index, extension] of extensions.entries()) {
-        const existing = packages.get(extension.package);
-        if (existing !== undefined && existing !== extension.source) {
-          context.addIssue({
-            code: "custom",
-            path: [kind, index, "source"],
-            message: `package ${extension.package} is already pinned to a different source`,
-          });
-        }
-        packages.set(extension.package, extension.source);
-      }
-    }
+    validatePackageSources(configuration, context);
   });
 
 function validateConsistentWorkspacePermission(
@@ -689,5 +664,31 @@ function validateToolSetOrThrow(
     }
     ids.add(tool.id);
     names.add(tool.name);
+  }
+}
+
+function validatePackageSources(
+  configuration: {
+    readonly bundles: readonly { readonly package: string; readonly source: string }[];
+    readonly plugins: readonly { readonly package: string; readonly source: string }[];
+  },
+  context: z.RefinementCtx,
+): void {
+  const packages = new Map<string, string>();
+  for (const [kind, extensions] of [
+    ["bundles", configuration.bundles],
+    ["plugins", configuration.plugins],
+  ] as const) {
+    for (const [index, extension] of extensions.entries()) {
+      const existing = packages.get(extension.package);
+      if (existing !== undefined && existing !== extension.source) {
+        context.addIssue({
+          code: "custom",
+          path: [kind, index, "source"],
+          message: `package ${extension.package} is already pinned to a different source`,
+        });
+      }
+      packages.set(extension.package, extension.source);
+    }
   }
 }

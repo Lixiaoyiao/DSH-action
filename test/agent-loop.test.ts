@@ -412,7 +412,7 @@ describe("Controller Session lifecycle hooks", () => {
       );
       await vi.advanceTimersByTimeAsync(13 * 60_000);
       expect(await outcome).toMatchObject({ finalization: "done" });
-      expect(requests[0]?.timeoutMs).toBe(10 * 60_000);
+      expect(requests[0]?.timeoutMs).toBe(20 * 60_000);
       expect(vi.getTimerCount()).toBe(0);
     } finally {
       vi.useRealTimers();
@@ -701,7 +701,7 @@ describe("controller-owned agent loop", () => {
     ).rejects.toBeInstanceOf(DshMalformedOutputError);
   });
 
-  it("caps an Agent turn independently and forwards the run cancellation signal", async () => {
+  it("uses the overall remaining deadline and forwards the run cancellation signal", async () => {
     const controller = new AbortController();
     const requests: AgentTurnRequest[] = [];
     const result = await runAgentLoop(
@@ -723,7 +723,7 @@ describe("controller-owned agent loop", () => {
 
     expect(result.finalization).toBe("done");
     expect(requests[0]?.deadlineMs).toBe(2_000_000);
-    expect(requests[0]?.timeoutMs).toBe(10 * 60_000);
+    expect(requests[0]?.timeoutMs).toBe(1_999_000);
     expect(requests[0]?.signal?.aborted).toBe(false);
     controller.abort();
     expect(requests[0]?.signal?.aborted).toBe(true);

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { execFile } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -71,8 +71,22 @@ afterEach(async () => {
 
 describe("official rc.2 Profile package extension boot", () => {
   it.each([
-    { kind: "bundle", label: "Bundle", planKey: "bundles", groupId: "bundle.fixture" },
     {
+      kind: "bundle",
+      label: "Bundle",
+      planKey: "bundles",
+      groupId: "bundle.fixture",
+      multiple: false,
+    },
+    {
+      kind: "bundle",
+      label: "ordered two-file Bundle",
+      planKey: "bundles",
+      groupId: "bundle.fixture",
+      multiple: true,
+    },
+    {
+      multiple: false,
       kind: "plugin",
       label: "direct Cordis plugin",
       planKey: "plugins",
@@ -80,7 +94,7 @@ describe("official rc.2 Profile package extension boot", () => {
     },
   ] as const)(
     "loads a pinned allowed $label into ToolRuntime and hides its unauthorized tool",
-    async ({ kind, planKey, groupId }) => {
+    async ({ kind, planKey, groupId, multiple }) => {
       const root = await mkdtemp(join(tmpdir(), "dsh-profile-bundle-boot-test-"));
       temporary.push(root);
       const dshHome = join(root, "home");
@@ -151,6 +165,51 @@ describe("official rc.2 Profile package extension boot", () => {
       const installedFixture = join(profile.profileDir, "node_modules", ...PACKAGE_NAME.split("/"));
       await mkdir(join(installedFixture, ".."), { recursive: true });
       await cp(fixtureSource, installedFixture, { recursive: true });
+      if (multiple) {
+        const manifest = z
+          .record(z.string(), z.unknown())
+          .parse(JSON.parse(await readFile(join(installedFixture, "package.json"), "utf8")));
+        manifest.dsh = { bundle: { patch: ["./cordis.patch.yml", "./enable.patch.yml"] } };
+        await writeFile(join(installedFixture, "package.json"), JSON.stringify(manifest));
+        const first = await readFile(join(installedFixture, "cordis.patch.yml"), "utf8");
+        await writeFile(
+          join(installedFixture, "cordis.patch.yml"),
+          first.replace(
+            "id: official-profile-bundle-fixture",
+            "id: official-profile-bundle-fixture\n      disabled: true",
+          ),
+        );
+        await writeFile(
+          join(installedFixture, "enable.patch.yml"),
+          "- id: official-profile-bundle-fixture\n  disabled: false\n",
+        );
+      }
+      if (multiple) {
+        const importer = pathToFileURL(
+          join(process.cwd(), "packages/create-dsh-action/src/local-plugins.mjs"),
+        ).href;
+        const script =
+          "import {discoverLocalPlugins} from " +
+          JSON.stringify(importer) +
+          ";console.log(JSON.stringify(await discoverLocalPlugins({home:" +
+          JSON.stringify(dshHome) +
+          "})));";
+        const discovery = await execFileAsync(
+          process.execPath,
+          ["--input-type=module", "-e", script],
+          { timeout: 10000, windowsHide: true },
+        );
+        const imported = z
+          .array(
+            z.looseObject({ name: z.string(), version: z.string(), reason: z.string().optional() }),
+          )
+          .parse(JSON.parse(discovery.stdout));
+        expect(imported.find((item) => item.name === PACKAGE_NAME)).toMatchObject({
+          name: PACKAGE_NAME,
+          version: PACKAGE_VERSION,
+        });
+        expect(imported.find((item) => item.name === PACKAGE_NAME)?.reason).toBeUndefined();
+      }
       if (kind === "plugin") {
         const pluginModuleSpecifiers = await resolveInstalledPluginModuleSpecifiers({
           packageRoot: profile.profileDir,

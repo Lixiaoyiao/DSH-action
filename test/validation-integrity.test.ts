@@ -547,6 +547,72 @@ describe("validation definition integrity", () => {
     );
   });
 
+  it.each([
+    {
+      label: "directory boundary",
+      patterns: ["tests/live/**/*.test.ts"],
+      next: "tests/archive/auth.test.ts",
+      safe: false,
+    },
+    {
+      label: "nested matching directory",
+      patterns: ["tests/live/**/*.test.ts"],
+      next: "tests/live/nested/auth.test.ts",
+      safe: true,
+    },
+    {
+      label: "brace pattern",
+      patterns: ["tests/live/**/*.{test,spec}.ts"],
+      next: "tests/live/auth.spec.ts",
+      safe: true,
+    },
+    {
+      label: "case-sensitive directory",
+      patterns: ["tests/{live,live2}/**/*.test.ts"],
+      next: "tests/LIVE2/renamed.test.ts",
+      safe: false,
+    },
+    { label: "empty discovery", patterns: [], next: "tests/live/renamed.test.ts", safe: false },
+    {
+      label: "negation is not a positive proof",
+      patterns: ["tests/**/*.test.ts", "!tests/archive/**"],
+      next: "tests/archive/auth.test.ts",
+      safe: false,
+    },
+  ])("classifies identical test moves by the full $label", async ({ patterns, next, safe }) => {
+    const before = "tests/live/auth.test.ts";
+    const content = "test('authorization', () => expect(true).toBe(true));\n";
+    const { snapshot } = await fixture({
+      "package.json": JSON.stringify({ scripts: { test: "jest" }, jest: { testMatch: patterns } }),
+      [before]: content,
+    });
+    await rm(join(snapshot.workerRoot, before));
+    await write(snapshot.workerRoot, next, content);
+    const result = await audit(snapshot, "strict", [["npm", "test"]]);
+    expect(result.status).toBe(safe ? "changed" : "blocked");
+    expect(result.changes.some((change) => change.change === "renamed")).toBe(safe);
+  });
+
+  it.each([
+    {
+      label: "external config",
+      files: { "jest.config.mjs": "export default { testMatch: ['tests/live/**/*.test.ts'] };" },
+      jest: {},
+    },
+    { label: "unsupported testRegex", files: {}, jest: { testRegex: "tests/live/.*" } },
+    { label: "project selectors", files: {}, jest: { projects: ["./tests/live"] } },
+  ])("does not infer default discovery for $label", async ({ files, jest }) => {
+    const content = "test('authorization', () => {});\n";
+    const { snapshot } = await fixture({
+      ...files,
+      "package.json": JSON.stringify({ scripts: { test: "jest" }, jest }),
+      "tests/live/auth.test.ts": content,
+    });
+    await rm(join(snapshot.workerRoot, "tests/live/auth.test.ts"));
+    await write(snapshot.workerRoot, "tests/archive/auth.test.ts", content);
+    expect((await audit(snapshot, "strict", [["npm", "test"]])).status).toBe("blocked");
+  });
+
   it("preserves informational rename handling when the target remains executable", async () => {
     const content = "test('critical authorization', () => expect(false).toBe(false));\n";
     const { snapshot } = await fixture({ "test/critical.test.ts": content });
@@ -785,4 +851,18 @@ describe("validation definition integrity", () => {
     expect(result).toMatchObject({ changeCount: 2, truncated: true });
     expect(result.changes).toHaveLength(1);
   });
+});
+
+it("does not exempt a rename outside a positional Vitest filter", async () => {
+  const content = "test('authorization', () => {});\n";
+  const { snapshot } = await fixture({
+    "package.json": JSON.stringify({
+      scripts: { test: "vitest run tests/live" },
+      vitest: { include: ["tests/**/*.test.ts"] },
+    }),
+    "tests/live/auth.test.ts": content,
+  });
+  await rm(join(snapshot.workerRoot, "tests/live/auth.test.ts"));
+  await write(snapshot.workerRoot, "tests/archive/auth.test.ts", content);
+  expect((await audit(snapshot, "strict", [["npm", "test"]])).status).toBe("blocked");
 });

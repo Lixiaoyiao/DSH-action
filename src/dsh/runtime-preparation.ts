@@ -14,13 +14,16 @@ import {
   DshIsolationUnavailableError,
   DshProcessError,
   DshSpawnError,
+  DshTimeoutError,
 } from "./errors.js";
 import {
   assertExtensionInstallBaseline,
   auditFreshExtensionInstallation,
+  verifyInstalledExtensions,
   auditReusedExtensionInstallation,
   captureExtensionInstallBaseline,
   prepareLockedRuntimeFiles,
+  verifyProjectDependencyLock,
 } from "./install.js";
 import {
   dockerNetworkInspectSpec,
@@ -68,7 +71,7 @@ async function bindRuntime(
     extensionConfigurationDigest: extensions.configurationDigest,
     nativeRuntimeTools: composition.runtimeToolNames(context.nativeTools),
     workspaceWrite: context.workspaceWrite,
-    network: extensions.network,
+    network: request.workerNetwork !== false,
     profileSchemaVersion: composition.profileSchemaVersion,
   });
   if (runtime.installedVersion !== undefined && runtime.installedVersion !== request.dshVersion) {
@@ -100,11 +103,20 @@ function setupExecutor(context: DshRunContext, scope: DshRunScope, execute: DshP
     cleanup?: BestEffortCleanupTask,
   ): Promise<DshProcessResult> => {
     const timeoutMs = scope.remaining(capMs);
+    const phase = spec.args.includes("ci")
+      ? "runtime.install"
+      : spec.args.includes("install")
+        ? "extension.install"
+        : spec.args[0] === "network"
+          ? `network.${spec.args[1] ?? "unknown"}`
+          : "docker.preflight";
+    scope.diagnostics?.event(`${phase}.start`);
     let result: DshProcessResult;
     try {
       const run = async () =>
         execute(spec, {
           timeoutMs,
+          phase,
           maxStdoutBytes: context.request.maxOutputBytes,
           maxStderrBytes: Math.min(context.request.maxOutputBytes, 2 * 1024 * 1024),
           maxCombinedBytes: context.request.maxOutputBytes,
@@ -115,12 +127,15 @@ function setupExecutor(context: DshRunContext, scope: DshRunScope, execute: DshP
           ? await scope.phase(run, capMs)
           : await scope.effect(run, capMs, cleanup);
     } catch (error: unknown) {
+      scope.diagnostics?.event(`${phase}.error`);
+      if (error instanceof DshTimeoutError) throw new DshTimeoutError(error.timeoutMs, phase);
       if (context.request.isolation === "docker" && error instanceof DshSpawnError) {
         throw new DshIsolationUnavailableError("Docker could not be started", { cause: error });
       }
       throw error;
     }
     assertSuccessfulProcess(result, context.secrets);
+    scope.diagnostics?.event(`${phase}.end`);
     return result;
   };
 }
@@ -130,8 +145,8 @@ async function prepareWorkerNetwork(
   execute: DshProcessExecutor,
   executeSetup: ReturnType<typeof setupExecutor>,
 ): Promise<{ readonly name: string; readonly gateway: string }> {
-  const name = context.extensions.network ? "bridge" : `dsh-action-internal-${randomUUID()}`;
-  if (!context.extensions.network) {
+  const name = `dsh-action-${context.request.workerNetwork === false ? "internal-" : ""}${randomUUID()}`;
+  {
     const cleanup: BestEffortCleanupTask = {
       label: "Docker network",
       // The caller may have removed its workspace before a late create settles.
@@ -149,7 +164,13 @@ async function prepareWorkerNetwork(
       },
     };
     await executeSetup(
-      dockerNetworkSpec("create", name, context.workspace, context.environment),
+      dockerNetworkSpec(
+        "create",
+        name,
+        context.workspace,
+        context.environment,
+        context.request.workerNetwork === false,
+      ),
       PHASE_TIMEOUTS.setupMs,
       cleanup,
     );
@@ -229,6 +250,7 @@ export async function prepareWorkerRuntime(
       assetsDirectory: context.assetsDirectory,
       runtime,
       plan: extensions,
+      ...(request.projectProfile === undefined ? {} : { projectProfile: request.projectProfile }),
       nativeTools: context.nativeTools,
       trust: request.trust,
       workspaceWrite: context.workspaceWrite,
@@ -274,6 +296,10 @@ export async function prepareWorkerRuntime(
   if (prepared.isolation !== "docker") {
     throw new DshConfigurationError("DSH composition was not prepared for Docker isolation");
   }
+  await scope.setup(() =>
+    verifyInstalledExtensions(runtime.packageRoot, extensions, request.projectProfile),
+  );
+  await scope.setup(() => verifyProjectDependencyLock(request.projectProfile, runtime));
   if (prepared.finalizeAfterInstall !== undefined) {
     prepared = await prepared.finalizeAfterInstall(async (run) => scope.setup(run));
   }

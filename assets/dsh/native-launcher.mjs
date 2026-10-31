@@ -1,3 +1,9 @@
+import {
+  composeActionProfile,
+  observeProfileStartup,
+  admittedExtensionSelectors,
+  requireAdmittedExtensions,
+} from "./profile-runtime.mjs";
 import { appendFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
@@ -6,7 +12,7 @@ import {
   boot,
   createRuntimeResolution,
   installFailLoud,
-  loadProfile,
+  loadProfileDirectory,
   PluginPackages,
 } from "@deepseek-ai/dsh-app-boot";
 import { provideCmdline } from "@deepseek-ai/dsh-cmdline";
@@ -23,67 +29,6 @@ const PROFILE = "github-action";
 const PROFILE_ROOT_FILENAME = "action-native-root.yml";
 const INSTALL_ANCHOR = createRequire(import.meta.url).resolve("@deepseek-ai/dsh/package.json");
 const TOOL_NAME = /^[A-Za-z0-9_-]{1,128}$/u;
-
-function admittedExtensionSelectors(profile) {
-  const selectors = [];
-  const addRow = (row) => {
-    if (typeof row.id === "string") selectors.push({ id: row.id });
-    else if (typeof row.name === "string") selectors.push({ name: row.name });
-    if (Array.isArray(row.insert)) row.insert.forEach(addRow);
-  };
-  for (const layer of profile.layers) {
-    if (
-      layer.packageName === "@deepseek-ai/dsh-base" ||
-      layer.packageName === "@deepseek-ai/dsh-headless"
-    )
-      continue;
-    layer.patches.forEach(addRow);
-  }
-  for (const patch of profile.patches) {
-    for (const row of patch.insert ?? []) {
-      if (/^dsh-action-(?:native-)?(?:mcp|plugin)-/u.test(row.id ?? "")) addRow(row);
-    }
-  }
-  return selectors;
-}
-
-function requireAdmittedExtensions(host, selectors) {
-  if (selectors.length === 0) return;
-  // The official Headless driver settles Loader before creating its Agent.
-  // Check only explicitly admitted extension entries, including their nested
-  // groups/includes; DSH's unrelated optional entries retain their semantics.
-  host.on(
-    "agent/created",
-    () => {
-      const loader = host.get("loader");
-      if (loader === undefined) throw new Error("admitted extension startup requires Loader");
-      const entries = [...loader.entries()];
-      const required = new Set();
-      for (const selector of selectors) {
-        const matched = entries.filter((entry) =>
-          selector.id === undefined
-            ? entry.options.name === selector.name
-            : entry.options.id === selector.id,
-        );
-        if (matched.length === 0) throw new Error("an admitted extension entry was not composed");
-        matched.forEach((entry) => required.add(entry));
-      }
-      for (const entry of required) {
-        if (entry.subtree !== undefined) {
-          for (const child of entry.subtree.entries()) required.add(child);
-        }
-        if (entry.subgroup !== undefined) {
-          for (const child of entries) if (child.parent === entry.subgroup) required.add(child);
-        }
-        // ACTIVE=2 is the exact locked Cordis FiberState public enum.
-        if (!entry.disabled && entry.fiber?.state !== 2) {
-          throw new Error(`admitted extension ${entry.options.id} failed to activate`);
-        }
-      }
-    },
-    { prepend: true },
-  );
-}
 
 function inheritedEnvironment() {
   return Object.fromEntries(
@@ -139,9 +84,11 @@ async function main() {
     dshHome,
   );
 
-  const profile = loadProfile(NAME, PROFILE, INSTALL_ANCHOR, dshHome);
+  const profile = loadProfileDirectory(NAME, join(dshHome, "profiles", PROFILE), INSTALL_ANCHOR);
   if (profile.skippedBundles.length !== 0) {
-    throw new Error("an admitted DSH Profile Bundle failed compatibility or resolution");
+    throw new Error(
+      `Profile Bundle compatibility/resolution failed: ${profile.skippedBundles.map((bundle) => `${bundle.packageName}: ${bundle.reason}`).join("; ")}`,
+    );
   }
   const resolution = await createRuntimeResolution({
     installAnchor: INSTALL_ANCHOR,
@@ -150,35 +97,7 @@ async function main() {
   });
   const observationPath = join(dshHome, "action-state", "native-observed-tools.jsonl");
   const patches = [
-    ...profile.layers.flatMap((layer) => layer.patches),
-    ...profile.patches,
-    // Both web tools use the Controller's fixed DeepSeek API routes.
-    { id: "web-fetch-http", disabled: true },
-    { id: "mcp-resources", disabled: true },
-    {
-      id: "web",
-      config: {
-        searchProvider:
-          process.env.DSH_ACTION_SEARCH_PROVIDER === "deepseek-official"
-            ? "deepseek-official"
-            : "deepseek-search-api",
-        fetchProvider: "deepseek-fetch-api",
-      },
-    },
-    {
-      id: "web-deepseek-api",
-      config: {
-        apiKeyEnv: "DEEPSEEK_API_KEY",
-        baseURL: `${process.env.DEEPSEEK_BASE_URL}/v1/tools`,
-      },
-    },
-    { id: "tool-web", config: { search: true, fetch: true, searchTimeoutMs: 60_000 } },
-    // Session-log and package-inventory uploads are independent of telemetry.
-    { id: "session-log-deepseek", disabled: true },
-    { id: "plugin-package-inventory-deepseek", disabled: true },
-    // The programmatic launcher intentionally skips the product CLI switch,
-    // so preserve the Action's default-off telemetry boundary explicitly.
-    { id: "session-telemetry-otel", disabled: true },
+    ...composeActionProfile(profile, "native", process.env, task),
     ...(sessionPlan === undefined
       ? []
       : [
@@ -249,12 +168,35 @@ async function main() {
       globalThis.structuredClone(patches),
       async (host) => {
         root = host;
+        observeProfileStartup(host);
         if (sessionPlan !== undefined)
           sessionModule.installSessionAdmission(host, sessionPlan, {
             auditPath: join(dshHome, "action-state", "session-admission.json"),
           });
+        host.provide(
+          "profileContext",
+          Object.freeze({
+            name: PROFILE,
+            dir: profile.dir,
+            patchPath: profile.patchPath,
+            installAnchor: INSTALL_ANCHOR,
+            cwd: process.env.DSH_ACTION_WORKSPACE ?? process.cwd(),
+            home: dshHome,
+            startedBundles: profile.layers.map((layer) => layer.packageName),
+            overlays: [],
+            telemetryDisabledEnv: "1",
+          }),
+        );
         await host.plugin(PluginPackages, { resolution });
         requireAdmittedExtensions(host, admittedExtensionSelectors(profile));
+        host.on(
+          "agent/created",
+          () => {
+            if (process.env.DSH_ACTION_DIAGNOSTICS && process.env.DSH_ACTION_DIAGNOSTICS !== "off")
+              process.stderr.write('DSH_DIAGNOSTIC {"phase":"loader.ready"}\n');
+          },
+          { prepend: true },
+        );
         observeRootAgent(host, observationPath);
         const signal = (code) => {
           if (exitStarted) process.exit(code);

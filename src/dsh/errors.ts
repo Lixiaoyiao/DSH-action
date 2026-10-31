@@ -98,9 +98,11 @@ export class DshSpawnError extends DshError {
 export class DshTimeoutError extends DshError {
   public readonly timeoutMs: number;
 
-  public constructor(timeoutMs: number) {
-    super("DSH_TIMEOUT", `DSH exceeded its ${String(timeoutMs)} ms overall timeout`);
+  public readonly phase: string;
+  public constructor(timeoutMs: number, phase = "run") {
+    super("DSH_TIMEOUT", `DSH ${phase} exceeded its ${String(timeoutMs)} ms deadline`);
     this.timeoutMs = timeoutMs;
+    this.phase = phase;
   }
 }
 

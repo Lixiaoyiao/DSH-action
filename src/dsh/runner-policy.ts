@@ -69,7 +69,11 @@ function defaultNativeTools(request: DshRunRequest): readonly NativeToolId[] {
 }
 
 export function effectiveNativeTools(request: DshRunRequest): readonly NativeToolId[] {
-  const requested = request.nativeTools ?? defaultNativeTools(request);
+  const requested = (request.nativeTools ?? defaultNativeTools(request)).filter(
+    (tool) =>
+      request.workerNetwork !== false ||
+      (tool !== "native.web-search" && tool !== "native.web-fetch"),
+  );
   if (request.trust === "untrusted") return [];
   if (request.trust === "trusted-read" && request.isolation !== "docker") return [];
   return requested.filter(
@@ -103,7 +107,7 @@ export function isolationReport(
   const metadata = composition.isolationMetadata({
     isolation: request.isolation,
     nativeTools,
-    extensionNetwork: plan.network,
+    extensionNetwork: request.workerNetwork !== false,
     extensionsConfigured: plan.mcpServers.length + plan.bundles.length + plan.plugins.length > 0,
   });
   if (request.isolation === "docker") {
@@ -112,7 +116,7 @@ export function isolationReport(
       credentialMediated: true,
       repoToolsEnabled: metadata.repoToolsEnabled,
       processIsolated: true,
-      networkIsolated: !plan.network,
+      networkIsolated: request.workerNetwork === false,
       workspaceAccess: workerWorkspaceWrite(request, composition) ? "read-write" : "read-only",
       extensionProfile: metadata.extensionProfile,
       ...(composition.actionManagedExtensionProfile || plan.audit.entries.length > 0
@@ -183,7 +187,11 @@ export function runtimeExtensionAudit(
   if (!composition.actionManagedExtensionProfile && extensions.audit.entries.length === 0) {
     return undefined;
   }
+  const audit =
+    extensions.audit.profile === "github-action"
+      ? { ...extensions.audit, network: request.workerNetwork !== false }
+      : { ...extensions.audit, workerNetwork: request.workerNetwork !== false };
   return runtime.installedExtensionRuntimeLock === undefined
-    ? extensions.audit
-    : { ...extensions.audit, runtimeLock: runtime.installedExtensionRuntimeLock };
+    ? audit
+    : { ...audit, runtimeLock: runtime.installedExtensionRuntimeLock };
 }

@@ -1,3 +1,4 @@
+import { projectExtensionPlan } from "../dsh/project-profile.js";
 import * as core from "@actions/core";
 import { join } from "node:path";
 import type { AgentToolManifest } from "../agent/contracts.js";
@@ -8,11 +9,12 @@ import type { DshComposition } from "../dsh/composition.js";
 import { PolicyDeniedError } from "../errors.js";
 import {
   resolveExtensionPlan,
+  bindWorkerNetwork,
   resolveNativeExtensionPlan,
   type ExtensionPlan,
 } from "../extensions/plan.js";
 import { createOctokitGitHubToolBackend } from "../github/octokit-tool-backend.js";
-import type { ActionInputs } from "../inputs.js";
+import type { ResolvedActionInputs as ActionInputs } from "../inputs.js";
 import { throwIfCancelled } from "../lifecycle/cancellation.js";
 import { buildControllerToolPolicyAudit, buildPermissionAudit } from "../permissions/profile.js";
 import { buildAuthorityAudit } from "../security/authority.js";
@@ -108,6 +110,7 @@ export class ExecutionPreparation {
     const trustedGitHubBinding = createGitHubToolBinding(context, snapshot);
     const resolvedTools = resolveEffectiveTools(inputs.allowedTools, inputs.toolConfig, policy, {
       permissionProfile: inputs.permissionProfile,
+      workerNetwork: inputs.workerNetwork,
       disallowedTools: inputs.disallowedTools,
       isolation: inputs.isolation,
       ...(trustedGitHubBinding === undefined ? {} : { githubBinding: trustedGitHubBinding }),
@@ -140,21 +143,24 @@ export class ExecutionPreparation {
     const extensionAllowedTools = resolvedTools.permission.requestedTools.filter(
       (id) => !deniedTools.has(id),
     );
-    const extensions =
-      inputs.dshMode === "native"
-        ? resolveNativeExtensionPlan({
-            mcp: inputs.mcpConfig,
-            plugins: inputs.pluginConfig,
-            allowPluginInstall: inputs.allowPluginInstall,
-            policy,
-          })
-        : resolveExtensionPlan({
-            allowedTools: extensionAllowedTools,
-            mcp: inputs.mcpConfig,
-            plugins: inputs.pluginConfig,
-            allowPluginInstall: inputs.allowPluginInstall,
-            policy,
-          });
+    const unboundExtensions =
+      inputs.projectProfile === undefined
+        ? inputs.dshMode === "native"
+          ? resolveNativeExtensionPlan({
+              mcp: inputs.mcpConfig,
+              plugins: inputs.pluginConfig,
+              allowPluginInstall: inputs.allowPluginInstall,
+              policy,
+            })
+          : resolveExtensionPlan({
+              allowedTools: extensionAllowedTools,
+              mcp: inputs.mcpConfig,
+              plugins: inputs.pluginConfig,
+              allowPluginInstall: inputs.allowPluginInstall,
+              policy,
+            })
+        : projectExtensionPlan(inputs.projectProfile, inputs, policy);
+    const extensions = bindWorkerNetwork(unboundExtensions, inputs.workerNetwork);
     const extensionManifests =
       extensions.profileName === "github-action" ? extensions.manifests : [];
     const tools = {
@@ -162,15 +168,6 @@ export class ExecutionPreparation {
       extensions,
       manifests: [...resolvedTools.manifests, ...extensionManifests],
     };
-    if (
-      extensions.profileName === "github-action" &&
-      extensions.network &&
-      tools.native.includes("native.bash")
-    ) {
-      throw new PolicyDeniedError(
-        "native.bash cannot share a worker with a bridge-networked extension; use mediated web-search or remove Bash",
-      );
-    }
     if (command.requestedAccess === "write" && !tools.workspace.includes("workspace.edit")) {
       throw new PolicyDeniedError(
         "Write tasks require effective workspace.edit permission; select standard or allow it in custom after all trust gates pass",
@@ -255,7 +252,8 @@ export class ExecutionPreparation {
       ...(composition.actionManagedExtensionProfile || extensions.audit.entries.length > 0
         ? { extensions: extensions.audit }
         : {}),
-      mediatedWeb: composition.requiresWebSearchProxy(tools.native),
+      mediatedWeb: inputs.workerNetwork && composition.requiresWebSearchProxy(tools.native),
+      workerNetwork: inputs.workerNetwork,
     });
     state.permission = permission;
     if (composition.toolPolicyOwner === "controller") {

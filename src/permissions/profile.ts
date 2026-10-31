@@ -18,12 +18,13 @@ export const STRICT_PERMISSION_TOOLS = [
   "workspace.read",
   "workspace.search",
   "workspace.edit",
+  "native.web-search",
+  "native.web-fetch",
 ] as const satisfies readonly AllowedToolId[];
 
 export const STANDARD_PERMISSION_TOOLS = [
   ...STRICT_PERMISSION_TOOLS,
   "native.bash",
-  "native.web-search",
   "native.subagent",
 ] as const satisfies readonly AllowedToolId[];
 
@@ -128,7 +129,10 @@ export function assertPermissionProfileConfiguration(
 ): void {
   if (profile !== "strict") return;
   const autonomy = allowedTools.find(
-    (id): id is AutonomyToolId => autonomyToolSchema.safeParse(id).success,
+    (id): id is AutonomyToolId =>
+      autonomyToolSchema.safeParse(id).success &&
+      id !== "native.web-search" &&
+      id !== "native.web-fetch",
   );
   if (autonomy !== undefined) {
     throw new Error(
@@ -173,6 +177,7 @@ export function buildPermissionAudit(options: {
   readonly additionalDenials?: readonly ToolDenial[];
   readonly extensions?: AnyExtensionAudit;
   readonly mediatedWeb?: boolean;
+  readonly workerNetwork?: boolean;
 }): PermissionAudit {
   const effectiveTools = sortedUnique(options.manifests.map(({ id }) => id));
   const effective = new Set(effectiveTools);
@@ -199,7 +204,7 @@ export function buildPermissionAudit(options: {
     options.extensions?.profile === "github-action"
       ? options.extensions.network
       : options.extensions?.workerNetwork === true;
-  const bridge = commandBridge || extensionBridge;
+  const bridge = options.workerNetwork ?? (commandBridge || extensionBridge);
   const mediatedWeb =
     options.mediatedWeb ??
     (effective.has("native.web-search") || effective.has("native.web-fetch"));

@@ -1,3 +1,4 @@
+import type { ProjectProfile } from "../dsh/project-profile.js";
 import { z } from "zod";
 import { permissionProfileSchema } from "../permissions/profile.js";
 import {
@@ -150,6 +151,24 @@ function validatedBranchInput(
 }
 
 export const actionInputsSchema = z.object({
+  workerNetwork: booleanInput,
+  commentMode: z.enum(["append", "update"]),
+  diagnostics: z.enum(["off", "basic", "detailed"]),
+  dshProfile: z.string().min(1),
+  dshEnv: z.string().transform((value, context) => {
+    try {
+      return z
+        .array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/))
+        .max(64)
+        .parse(JSON.parse(value));
+    } catch {
+      context.addIssue({
+        code: "custom",
+        message: "dsh-env must be a JSON array of environment variable names",
+      });
+      return z.NEVER;
+    }
+  }),
   deepseekApiKey: z.string().min(8, "deepseek-api-key must be at least 8 characters"),
   githubToken: z.string().min(8, "github-token must be at least 8 characters"),
   allowWrite: booleanInput,
@@ -282,3 +301,8 @@ export type NativeActionInputs = CommonActionInputs & {
 
 /** Mode closes the configuration shape so impossible composition pairs never reach production. */
 export type ActionInputs = ControlledActionInputs | NativeActionInputs;
+
+export type ResolvedActionInputs = ActionInputs & {
+  readonly projectProfile?: ProjectProfile;
+  readonly workerEnvironment?: Readonly<Record<string, string>>;
+};

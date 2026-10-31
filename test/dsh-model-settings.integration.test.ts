@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
+import { readProjectProfile } from "../src/dsh/project-profile.js";
 import { prepareControlledProfile } from "../src/dsh/controlled-profile.js";
 import { writeNativeProfile } from "../src/dsh/native-composition.js";
 import { resolveExtensionPlan, resolveNativeExtensionPlan } from "../src/extensions/plan.js";
@@ -43,18 +44,38 @@ async function readRequest(request: IncomingMessage) {
 }
 
 describe.each(["controlled", "native"] as const)("%s model settings through pinned DSH", (mode) => {
-  it.each([
-    { label: "defaults", model: undefined, effort: undefined },
-    { label: "model only", model: "deepseek-v4-pro", effort: undefined },
-    { label: "effort only", model: undefined, effort: "high" as const },
-    ...(["off", "low", "max"] as const).map((effort) => ({
-      label: effort,
-      model: "deepseek-v4-pro",
-      effort,
-    })),
-  ])(
+  it.each(
+    [
+      { label: "defaults", model: undefined, effort: undefined },
+      { label: "model only", model: "deepseek-v4-pro", effort: undefined },
+      { label: "effort only", model: undefined, effort: "high" as const },
+      ...(["off", "low", "max"] as const).map((effort) => ({
+        label: effort,
+        model: "deepseek-v4-pro",
+        effort,
+      })),
+    ]
+      .map(
+        (
+          item,
+        ): {
+          label: string;
+          model: string | undefined;
+          effort: "off" | "low" | "high" | "max" | undefined;
+          project: boolean;
+        } => ({ ...item, project: false }),
+      )
+      .concat([
+        {
+          label: "project Profile",
+          model: "deepseek-v4-pro",
+          effort: "max" as const,
+          project: true,
+        },
+      ]),
+  )(
     "sends $label on the actual Messages request",
-    async ({ model, effort }) => {
+    async ({ model, effort, project }) => {
       const root = await mkdtemp(join(tmpdir(), "dsh-model-settings-"));
       temporary.push(root);
       const dshHome = join(root, "home");
@@ -76,10 +97,46 @@ describe.each(["controlled", "native"] as const)("%s model settings through pinn
         allowPluginInstall: false,
         policy,
       };
-      const selection = {
-        ...(model === undefined ? {} : { model }),
-        ...(effort === undefined ? {} : { reasoningEffort: effort }),
-      };
+      let projectProfile;
+      if (project) {
+        const directory = join(root, "source-profile");
+        await mkdir(directory);
+        await writeFile(
+          join(directory, "package.json"),
+          JSON.stringify({
+            dsh: { profile: { bundles: ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-headless"] } },
+          }),
+        );
+        await writeFile(
+          join(directory, "cordis.patch.yml"),
+          JSON.stringify([
+            {
+              id: "agent-default-model",
+              config: { provider: "deepseek-official", model, reasoningEffort: effort },
+            },
+            { id: "system-prompt", config: { personaPrefix: "PROJECT_PROMPT_PRESERVED" } },
+            {
+              id: "headless-runner",
+              config: {
+                task: "STATIC_PROFILE_TASK",
+                json: false,
+                sessionId: "invalid-profile-session",
+              },
+            },
+          ]),
+        );
+        projectProfile = await readProjectProfile(directory, {
+          path: ".dsh",
+          sourceSha: "a".repeat(40),
+        });
+      }
+      const selection =
+        projectProfile !== undefined
+          ? { projectProfile }
+          : {
+              ...(model === undefined ? {} : { model }),
+              ...(effort === undefined ? {} : { reasoningEffort: effort }),
+            };
       const manifestBase = { name: "model-settings-fixture", private: true, dependencies: {} };
       if (mode === "controlled") {
         await prepareControlledProfile({
@@ -107,7 +164,10 @@ describe.each(["controlled", "native"] as const)("%s model settings through pinn
         });
         // Production mounts this path in Docker. Only its filesystem location
         // changes for the host fixture; the generated model patch is untouched.
-        const patchPath = join(profileRoot, "cordis.patch.yml");
+        const patchPath = join(
+          profileRoot,
+          project ? ".action-runtime.patch.yml" : "cordis.patch.yml",
+        );
         const patch = fixtureObjects(await readJsonFixture(patchPath));
         const attachment = patch.find(({ id }) => id === "attachment-local");
         if (attachment === undefined) throw new Error("Missing attachment provider");
@@ -148,6 +208,7 @@ describe.each(["controlled", "native"] as const)("%s model settings through pinn
               SystemRoot: process.env.SystemRoot,
               HOME: dshHome,
               DSH_HOME: dshHome,
+              ...(project ? { DSH_ACTION_DIAGNOSTICS: "basic" } : {}),
               DSH_TELEMETRY_DISABLED: "1",
               DSH_TOOLS_MODE: "native",
               DEEPSEEK_API_KEY: "model-settings-fixture-key",
@@ -157,15 +218,26 @@ describe.each(["controlled", "native"] as const)("%s model settings through pinn
             maxBuffer: 2 * 1024 * 1024,
           },
         );
-        expect(result.stderr).toBe("");
+        if (project) {
+          expect(result.stderr).toContain("loader.entry-active");
+          expect(result.stderr).toContain("agent-default-model");
+          expect(result.stderr).not.toContain("PROJECT_PROMPT_PRESERVED");
+        } else expect(result.stderr).toBe("");
         expect(result.stdout).toContain("MODEL_SETTINGS_OK");
         // Native also generates a session title; the Agent request carries its
         // tool schemas, while that auxiliary provider request does not.
-        const agentRequests =
-          mode === "controlled"
+        const agentRequests = project
+          ? requests.filter((request) =>
+              JSON.stringify(request).includes("PROJECT_PROMPT_PRESERVED"),
+            )
+          : mode === "controlled"
             ? requests
             : requests.filter((request) => request.tools !== undefined);
         expect(agentRequests).toHaveLength(1);
+        if (project) {
+          expect(JSON.stringify(agentRequests[0])).toContain("PROJECT_PROMPT_PRESERVED");
+          expect(JSON.stringify(agentRequests[0])).not.toContain("STATIC_PROFILE_TASK");
+        }
         expect(agentRequests[0]).toMatchObject({
           model: model ?? "deepseek-flash",
           thinking: { type: effort === "off" ? "disabled" : "enabled" },

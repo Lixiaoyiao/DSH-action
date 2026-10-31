@@ -1,3 +1,4 @@
+import type { ProjectProfile } from "./project-profile.js";
 import type { ExtensionPlan } from "../extensions/plan.js";
 import type { NativeToolId, ToolPolicyOwner } from "../tools/schema.js";
 import type { DshRuntime } from "./runtime.js";
@@ -38,6 +39,7 @@ export interface DshCompositionIsolationMetadata {
 }
 
 export interface PrepareDshCompositionOptions extends DshModelSettings {
+  readonly projectProfile?: ProjectProfile;
   readonly isolation: "docker" | "none";
   readonly assetsDirectory: string;
   readonly runtime: DshRuntime;

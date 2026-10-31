@@ -23,17 +23,20 @@ describe("runDsh isolation", () => {
   it("rejects a Docker gateway that is not a local interface without opening a wildcard proxy", async () => {
     const fixture = await fixtures();
     await expect(
-      runDsh(request({ isolation: "docker", workspacePath: fixture.workspace }), {
-        assetsDirectory: fixture.assets,
-        temporaryDirectory: fixture.root,
-        executeProcess: (spec) =>
-          Promise.resolve({
-            stdout: spec.args[1] === "inspect" ? "203.0.113.1\n" : "",
-            stderr: "",
-            exitCode: 0,
-            signal: null,
-          }),
-      }),
+      runDsh(
+        request({ isolation: "docker", workerNetwork: false, workspacePath: fixture.workspace }),
+        {
+          assetsDirectory: fixture.assets,
+          temporaryDirectory: fixture.root,
+          executeProcess: (spec) =>
+            Promise.resolve({
+              stdout: spec.args[1] === "inspect" ? "203.0.113.1\n" : "",
+              stderr: "",
+              exitCode: 0,
+              signal: null,
+            }),
+        },
+      ),
     ).rejects.toThrow("requires a local Linux Docker bridge gateway");
   });
 
@@ -42,29 +45,32 @@ describe("runDsh isolation", () => {
     const proxy = vi.fn(() => Promise.resolve(fakeProxy()));
     const specs: DshProcessSpec[] = [];
     await expect(
-      runDsh(request({ isolation: "docker", workspacePath: fixture.workspace }), {
-        assetsDirectory: fixture.assets,
-        environment: {
-          PATH: process.env.PATH,
-          DEEPSEEK_API_KEY: "real-key-never-forwarded",
-          GITHUB_TOKEN: "github-token-never-forwarded",
-          DOCKER_CONTEXT: "maintainer-context",
+      runDsh(
+        request({ isolation: "docker", workerNetwork: false, workspacePath: fixture.workspace }),
+        {
+          assetsDirectory: fixture.assets,
+          environment: {
+            PATH: process.env.PATH,
+            DEEPSEEK_API_KEY: "real-key-never-forwarded",
+            GITHUB_TOKEN: "github-token-never-forwarded",
+            DOCKER_CONTEXT: "maintainer-context",
+          },
+          startProxy: proxy,
+          executeProcess: (spec, limits) => {
+            specs.push(spec);
+            expect(limits.timeoutMs).toBeLessThanOrEqual(5_000);
+            expect(spec.args).toEqual(["info", "--format", "{{.ServerVersion}}"]);
+            expect(spec.env.DOCKER_CONTEXT).toBe("maintainer-context");
+            expect(JSON.stringify(spec.env)).not.toContain("never-forwarded");
+            return Promise.resolve({
+              exitCode: 1,
+              signal: null,
+              stdout: "",
+              stderr: "Cannot connect to the Docker daemon",
+            });
+          },
         },
-        startProxy: proxy,
-        executeProcess: (spec, limits) => {
-          specs.push(spec);
-          expect(limits.timeoutMs).toBeLessThanOrEqual(5_000);
-          expect(spec.args).toEqual(["info", "--format", "{{.ServerVersion}}"]);
-          expect(spec.env.DOCKER_CONTEXT).toBe("maintainer-context");
-          expect(JSON.stringify(spec.env)).not.toContain("never-forwarded");
-          return Promise.resolve({
-            exitCode: 1,
-            signal: null,
-            stdout: "",
-            stderr: "Cannot connect to the Docker daemon",
-          });
-        },
-      }),
+      ),
     ).rejects.toThrow(/Docker CLI\/daemon is unavailable/u);
     expect(specs).toHaveLength(1);
     expect(proxy).not.toHaveBeenCalled();
@@ -82,6 +88,7 @@ describe("runDsh isolation", () => {
         operation: "fix",
         trust: "trusted-write",
         isolation: "docker",
+        workerNetwork: false,
         containerImage: PINNED_NODE_IMAGE,
         workspacePath: fixture.workspace,
       }),
@@ -244,7 +251,7 @@ describe("runDsh isolation", () => {
     let captured: DshProcessSpec | undefined;
     const observedSpecs: DshProcessSpec[] = [];
     const result = await runDsh(
-      request({ isolation: "docker", workspacePath: fixture.workspace }),
+      request({ isolation: "docker", workerNetwork: false, workspacePath: fixture.workspace }),
       {
         assetsDirectory: fixture.assets,
         temporaryDirectory: fixture.root,
@@ -312,6 +319,7 @@ describe("runDsh isolation", () => {
       await runDsh(
         request({
           isolation: "docker",
+          workerNetwork: true,
           workspacePath: fixture.workspace,
           nativeTools: ["workspace.read", webTool],
         }),
@@ -372,6 +380,7 @@ describe("runDsh isolation", () => {
         runDsh(
           request({
             isolation: "docker",
+            workerNetwork: false,
             workspacePath: fixture.workspace,
             nativeTools: ["workspace.read", webTool],
             webSearchBaseUrl: "https://search.example.test/anthropic/v1",
@@ -400,50 +409,53 @@ describe("runDsh isolation", () => {
     let captured: DshProcessSpec | undefined;
     let copiedLauncher: string | undefined;
 
-    await runDsh(request({ isolation: "docker", workspacePath: fixture.workspace }), {
-      temporaryDirectory: fixture.root,
-      environment: { PATH: process.env.PATH, GITHUB_ACTION_PATH: callerWorkspace },
-      startProxy: () => Promise.resolve(proxy),
-      executeProcess: async (spec) => {
-        if (spec.args[1] === "inspect") {
+    await runDsh(
+      request({ isolation: "docker", workerNetwork: false, workspacePath: fixture.workspace }),
+      {
+        temporaryDirectory: fixture.root,
+        environment: { PATH: process.env.PATH, GITHUB_ACTION_PATH: callerWorkspace },
+        startProxy: () => Promise.resolve(proxy),
+        executeProcess: async (spec) => {
+          if (spec.args[1] === "inspect") {
+            return Promise.resolve({
+              stdout: "172.30.0.1\n",
+              stderr: "",
+              exitCode: 0,
+              signal: null,
+            });
+          }
+          const isDsh = spec.args.includes(CONTAINER_LAUNCHER);
+          if (isDsh) {
+            captured = spec;
+            const packageMount = spec.args.find((argument) =>
+              argument.endsWith(`:${CONTAINER_PACKAGE_ROOT}:ro`),
+            );
+            if (packageMount === undefined) throw new Error("missing package-root mount");
+            copiedLauncher = await readFile(
+              join(
+                packageMount.slice(0, -`:${CONTAINER_PACKAGE_ROOT}:ro`.length),
+                "action-launcher.mjs",
+              ),
+              "utf8",
+            );
+          }
           return Promise.resolve({
-            stdout: "172.30.0.1\n",
+            stdout: isDsh
+              ? JSON.stringify({
+                  protocolVersion: 1,
+                  operation: "review",
+                  state: "final",
+                  summary: "Done.",
+                  findings: [],
+                })
+              : "",
             stderr: "",
             exitCode: 0,
             signal: null,
           });
-        }
-        const isDsh = spec.args.includes(CONTAINER_LAUNCHER);
-        if (isDsh) {
-          captured = spec;
-          const packageMount = spec.args.find((argument) =>
-            argument.endsWith(`:${CONTAINER_PACKAGE_ROOT}:ro`),
-          );
-          if (packageMount === undefined) throw new Error("missing package-root mount");
-          copiedLauncher = await readFile(
-            join(
-              packageMount.slice(0, -`:${CONTAINER_PACKAGE_ROOT}:ro`.length),
-              "action-launcher.mjs",
-            ),
-            "utf8",
-          );
-        }
-        return Promise.resolve({
-          stdout: isDsh
-            ? JSON.stringify({
-                protocolVersion: 1,
-                operation: "review",
-                state: "final",
-                summary: "Done.",
-                findings: [],
-              })
-            : "",
-          stderr: "",
-          exitCode: 0,
-          signal: null,
-        });
+        },
       },
-    });
+    );
 
     const packagedPolicy = fileURLToPath(
       new URL("../assets/dsh/action-policy.mjs", import.meta.url),

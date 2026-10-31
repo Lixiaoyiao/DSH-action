@@ -201,6 +201,38 @@ export function formatStepSummary(outcome: RunOutcome): string {
         `**Session checkpoint:** ${inlineCode(session.artifactName)}${session.expiresAt === undefined ? "" : `; expires ${session.expiresAt}`}.`,
       );
   }
+  if (outcome.configuration !== undefined)
+    lines.push(
+      "",
+      `**Harness Profile:** ${inlineCode(outcome.configuration.path)} at ${inlineCode(outcome.configuration.sourceSha)}${outcome.configuration.withheld ? " (extensions withheld for untrusted context)" : ""}.`,
+    );
+  if (outcome.diagnostics !== undefined) {
+    lines.push(
+      "",
+      "### Runtime diagnostics",
+      "",
+      `Last activity: ${String(outcome.diagnostics.lastActivityMs)}ms ago. Worker events are observations, not authority.`,
+      "",
+      "| Source | Event | Elapsed ms |",
+      "| --- | --- | --- |",
+    );
+    for (const event of outcome.diagnostics.events.slice(-30))
+      lines.push(
+        `| ${event.source} | ${safeInline(event.phase)}${event.name ? " " + safeInline(event.name) : ""} | ${String(event.elapsedMs)} |`,
+      );
+    if (outcome.diagnostics.remainingMs !== undefined)
+      lines.push("", `Remaining Action budget: ${String(outcome.diagnostics.remainingMs)}ms.`);
+    const lastCompleted = outcome.diagnostics.events.findLast((event) =>
+      event.phase.endsWith(".end"),
+    );
+    if (lastCompleted !== undefined)
+      lines.push(
+        "",
+        `Last completed phase: ${safeInline(lastCompleted.phase)}. Last observed event: ${safeInline(outcome.diagnostics.events.at(-1)?.phase ?? "unknown")}.`,
+      );
+    if (outcome.diagnostics.artifactId !== undefined)
+      lines.push("", `Diagnostic artifact: ${String(outcome.diagnostics.artifactId)}.`);
+  }
   if (outcome.error !== undefined) {
     lines.push(
       "",

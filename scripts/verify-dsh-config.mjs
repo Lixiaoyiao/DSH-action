@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { parse } from "yaml";
+import { composeEntries } from "@deepseek-ai/dsh-app-boot";
+import { composeActionProfile } from "../assets/dsh/profile-runtime.mjs";
 
 const require = createRequire(import.meta.url);
 const dshPackage = require.resolve("@deepseek-ai/dsh/package.json");
@@ -34,20 +36,24 @@ try {
       `Action must not expose ${forbidden} in this migration`,
     );
   }
-  // Retain the narrow upload-suppression probes until the launcher exposes a
-  // composed-config seam; general startup and lifecycle use behavioral tests.
-  for (const launcher of ["action-launcher.mjs", "native-launcher.mjs"]) {
-    const source = await readFile(join(projectRoot, "assets", "dsh", launcher), "utf8");
-    for (const row of [
+  for (const mode of ["controlled", "native"]) {
+    const ids = [
       "session-telemetry-otel",
       "session-log-deepseek",
       "plugin-package-inventory-deepseek",
-    ]) {
-      assert.ok(
-        source.includes(`{ id: "${row}", disabled: true }`),
-        `${launcher} must suppress ${row}`,
+    ];
+    const profile = {
+      dir: dshHome,
+      layers: [{ patches: [{ insert: ids.map((id) => ({ id, name: id })) }] }],
+      patches: [],
+    };
+    const composed = composeEntries([composeActionProfile(profile, mode, {})]);
+    for (const id of ids)
+      assert.equal(
+        composed.find((row) => row.id === id)?.disabled,
+        true,
+        mode + " must suppress " + id,
       );
-    }
   }
 
   for (const patch of [

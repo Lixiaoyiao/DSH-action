@@ -108,7 +108,7 @@ export const githubToolSchema = z.enum([
 export type GitHubToolId = z.infer<typeof githubToolSchema>;
 export type AllowedToolId = NativeToolId | CommandToolId | GitHubToolId | McpToolId | PluginToolId;
 
-const allowedToolIdSchema = z.union([
+export const allowedToolIdSchema = z.union([
   nativeToolSchema,
   githubToolSchema,
   z

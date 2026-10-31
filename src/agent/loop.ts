@@ -7,7 +7,6 @@ import { DshError, DshMalformedOutputError } from "../dsh/errors.js";
 import { parseDshOutput } from "../dsh/schema.js";
 import type { ActionInputs } from "../inputs.js";
 import { throwIfCancelled } from "../lifecycle/cancellation.js";
-import { PHASE_TIMEOUTS, phaseTimeoutMs } from "../lifecycle/deadline.js";
 import { DshAgentEngine } from "../dsh/engine.js";
 import { ValidationFailureError } from "../write/validate.js";
 import { fingerprintWorkspace } from "../write/workspace.js";
@@ -102,7 +101,7 @@ export async function runAgentLoop<TFinal>(
           now,
         );
       }
-      const remainingBeforeTurn = phaseTimeoutMs(hooks.deadlineMs, PHASE_TIMEOUTS.agentTurnMs, now);
+      const remainingBeforeTurn = Math.max(0, hooks.deadlineMs - now());
       if (remainingBeforeTurn <= 0) throw new AgentDeadlineError();
       let response;
       try {

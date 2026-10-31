@@ -87,6 +87,7 @@ export async function prepareWorkspace(options: {
     const workspaceSnapshot = await createWorkspaceSnapshot(
       { kind: "materialized-tree", root: immutableSource },
       agentWorkspace,
+      [inputs.dshProfile === "auto" ? ".dsh" : inputs.dshProfile],
     );
     throwIfCancelled(signal);
     return {

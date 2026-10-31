@@ -35,7 +35,7 @@ const PROTECTED_BASENAMES = new Set([
 const MAX_PUBLISHED_FILES = 200;
 const MAX_PUBLISHED_BYTES = 10 * 1024 * 1024;
 
-export function assertWritablePath(path: string): void {
+export function assertWritablePath(path: string, protectedPaths: readonly string[] = []): void {
   const normalized = path.normalize("NFKC").replaceAll("\\", "/").toLowerCase();
   const segments = normalized.split("/");
   const basename = segments.at(-1) ?? "";
@@ -45,7 +45,13 @@ export function assertWritablePath(path: string): void {
     codeowners ||
     dependabot ||
     PROTECTED_BASENAMES.has(normalized) ||
-    PROTECTED_PREFIXES.some(
+    [
+      ...PROTECTED_PREFIXES,
+      ...protectedPaths.map(
+        (root) =>
+          root.normalize("NFKC").replaceAll("\\", "/").toLowerCase().replace(/\/$/u, "") + "/",
+      ),
+    ].some(
       (protectedPath) =>
         normalized === protectedPath.replace(/\/$/u, "") || normalized.startsWith(protectedPath),
     )
@@ -73,7 +79,7 @@ export async function createGitHubCommitFromWorkspace(
   if (changes.all.length > MAX_PUBLISHED_FILES) {
     throw new Error("DSH output exceeds the published file limit");
   }
-  for (const path of changes.all) assertWritablePath(path);
+  for (const path of changes.all) assertWritablePath(path, snapshot.protectedPaths);
 
   const baseCommit = await client.rest.git.getCommit({
     owner: target.owner,

@@ -112,7 +112,17 @@ beforeEach(() => {
     },
     sender: { login: "alice" },
   });
-  mocks.createGitHubClient.mockReturnValue({});
+  mocks.createGitHubClient.mockReturnValue({
+    rest: {
+      git: {
+        getRef: () => Promise.resolve({ data: { object: { sha: "a".repeat(40) } } }),
+        getCommit: () =>
+          Promise.resolve({ data: { sha: "a".repeat(40), tree: { sha: "b".repeat(40) } } }),
+        getTree: () =>
+          Promise.resolve({ data: { sha: "b".repeat(40), truncated: false, tree: [] } }),
+      },
+    },
+  });
   mocks.checkActorPermissions.mockResolvedValue({
     actors: [
       {

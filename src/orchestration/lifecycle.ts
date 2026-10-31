@@ -1,3 +1,4 @@
+import type { RunDiagnostics } from "../dsh/diagnostics.js";
 import * as core from "@actions/core";
 import { AgentDeadlineError } from "../agent/loop-errors.js";
 import { DshAbortedError } from "../dsh/errors.js";
@@ -13,6 +14,19 @@ interface ProgressState {
 
 /** Own progress and cancellation finalization, without owning domain results. */
 export class RunLifecycle {
+  public diagnostics: RunDiagnostics | undefined;
+  private lastDiagnosticComment = 0;
+  public reportRuntimeProgress(message: string): void {
+    if (
+      this.phase !== "agent" ||
+      this.reporter === undefined ||
+      message.includes("waiting at") ||
+      Date.now() - this.lastDiagnosticComment < 60000
+    )
+      return;
+    this.lastDiagnosticComment = Date.now();
+    void this.reporter.update("agent", message).catch(() => undefined);
+  }
   private readonly state: ProgressState = { phase: "configuration" };
   public get phase(): ActionPhase {
     return this.state.phase;
@@ -25,6 +39,7 @@ export class RunLifecycle {
   }
   public enter(phase: ActionPhase): void {
     this.state.phase = phase;
+    this.diagnostics?.event(phase);
   }
   public setReporter(reporter: StickyProgressReporter): void {
     this.state.progress ??= reporter;

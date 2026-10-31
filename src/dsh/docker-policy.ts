@@ -129,6 +129,7 @@ function containerEnvironment(
     HOME: CONTAINER_DSH_HOME,
     npm_config_cache: "/tmp/npm-cache",
     DSH_HOME: CONTAINER_DSH_HOME,
+    DSH_ACTION_WORKSPACE: CONTAINER_WORKSPACE,
     DSH_PERMISSION_MODE: workspaceWrite ? "workspace-write" : "read-only",
     DSH_TELEMETRY_DISABLED: "1",
     DSH_TOOLS_MODE: "native",
@@ -152,6 +153,9 @@ interface DockerWorkerSpecOptions {
   readonly packageRoot: string;
   readonly launchPlan: DshDockerLaunchPlan;
   readonly networkName: string;
+  readonly workerNetwork?: boolean;
+  readonly diagnosticLevel?: string;
+  readonly extraEnvironmentNames?: readonly string[];
   readonly hostGateway: string;
   readonly environment: NodeJS.ProcessEnv;
   readonly workerEnvironment: NodeJS.ProcessEnv;
@@ -228,6 +232,12 @@ export function dockerWorkerSpec(options: DockerWorkerSpecOptions): DshProcessSp
   )) {
     args.push("--env", `${name}=${value}`);
   }
+  args.push(
+    "--env",
+    `DSH_ACTION_WORKER_NETWORK=${options.workerNetwork !== false ? "true" : "false"}`,
+  );
+  args.push("--env", `DSH_ACTION_DIAGNOSTICS=${options.diagnosticLevel ?? "off"}`);
+  for (const name of options.extraEnvironmentNames ?? []) args.push("--env", name);
   args.push(options.containerImage, options.launchPlan.command, ...options.launchPlan.args);
 
   const nameIndex = args.indexOf("--name") + 1;
