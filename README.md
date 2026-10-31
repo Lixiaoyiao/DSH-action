@@ -218,7 +218,7 @@ Maintainers can change the trigger phrase, add label/assignee routes, filter act
 - An approved Bundle, Plugin, or stdio MCP server is trusted worker code. Controlled ToolRuntime limits model-routed calls; native leaves routing and inventory to DSH. Neither model is a sandbox for extension startup, background work, or direct process I/O, and any bridge/RW capability applies to the whole worker.
 - `github.*` uses the Controller GitHub Gateway. A separately configured GitHub MCP uses its own external credential and is outside the Gateway's binding, revalidation, validation, and deferred-write guarantees.
 
-Read the complete [Security policy](SECURITY.md) before enabling write mode, host execution, network access, or third-party extensions.
+`worker-network` is the Worker public-egress switch: default `true`, explicit `false` for isolation. Plugin network flags do not control it. Read the [Security policy](SECURITY.md) when choosing network policy, write mode, host execution or third-party extensions.
 
 ## Documentation
 

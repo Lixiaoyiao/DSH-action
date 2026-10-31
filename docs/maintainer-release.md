@@ -248,8 +248,9 @@ counts and proof equality plus a sanitized server audit, including on failure.
 
 The live Web Search smoke requests a source title and URL from the actual
 search response, separately from repository context. It still requires exactly
-one completed successful `native.web-search` receipt and mediated network
-authority. A final JSON answer without that receipt fails even if its text
+one completed successful `native.web-search` receipt and the selected Worker
+network setting. Search authentication stays behind the credential proxy;
+`worker-network` independently selects Worker public egress. A final JSON answer without that receipt fails even if its text
 looks correct. Always-running diagnostics preserve safe outcome/count fields
 when the Action or its assertion fails; they do not print model text or URLs.
 

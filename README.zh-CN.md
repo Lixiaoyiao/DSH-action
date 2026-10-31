@@ -205,6 +205,8 @@ Action 支持[按 key 自动创建或续接 Session](docs/zh-CN/session.md)，�
 
 维护者可以修改 trigger phrase，添加 label/assignee 路由，过滤 actor 或历史评论，选择 base branch，并配置确定性 branch template。这些设置只改变路由和命名；GitHub authority 仍由 Controller policy 与 workflow token scope 决定。
 
+Worker 公网出站只由 `worker-network` 控制：默认 `true`，需要隔离时显式设为 `false`。插件的 `network` 字段不能开关整个 Worker 的网络。
+
 ## 安全边界
 
 - Agent 不会拿到真实的 `GITHUB_TOKEN` 或 DeepSeek key。只有 Controller 能调用 Action-owned `github.*` 写入 API；显式配置的外部 GitHub MCP 使用其自有凭据和 authority，边界见下文。

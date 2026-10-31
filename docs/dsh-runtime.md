@@ -32,9 +32,12 @@ temporary worker token. Restricting its listening address reduces unrelated
 network exposure; it does not isolate the proxy from other processes on the same
 runner or replace the runner firewall.
 
-Workers without extension egress use a disposable internal Docker network.
-Explicitly network-enabled extensions share the worker's bridge egress, including
-other code inside that worker. Installer containers use bridge networking to
+Only `worker-network` chooses Worker public egress. The default `true` uses a
+run-scoped outbound Docker bridge in both modes and all trust tiers, including
+forks. Explicit `false` uses an internal network, retains the model proxy channel
+and disables web tools/proxy routes; host isolation cannot enforce it. Plugin
+`network` declarations never choose this network. All code in an online Worker
+shares its egress. Installer containers independently use bridge networking to
 acquire pinned packages; package identities, preserved runtime inventory and lock
 provenance are audited before worker launch. The worker receives the installed
 package tree read-only.

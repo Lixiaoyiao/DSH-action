@@ -291,10 +291,10 @@ Docker image 本身就是可执行的 worker code。写入和扩展必须使用�
 
 Native 模式可按精确版本重新安装已启用的 npm DSH Bundle。Controlled 模式还需要填写实际的 `plugin__owner__tool` 工具名，只允许你选中的只读工具。使用其他工具命名的插件需要 Native 或手工配置。本地路径、npm 别名、已停用的 Bundle、不兼容版本和普通依赖包需要手工处理，列表会说明原因。没有声明兼容范围时会明确显示未验证。
 
-确认后才会在工作流中启用插件安装。不会复制 `.env`、密钥、本地 Cordis 配置、兼容例外或插件设置。导入的插件使用包自带默认值，不额外申请网络或工作区写权限；现有工作流的权限和整个 worker 的挂载范围仍然适用；所需云端配置可通过已有扩展输入另外设置。Fork PR 审查继续使用不加载扩展的配置。
+确认后才会在工作流中启用插件安装。不会复制 `.env`、密钥、本地 Cordis 配置、兼容例外或插件设置。导入的插件使用包自带默认值，并保留旧的网络/写权限声明。对于支持 `worker-network` 的 Action，这些声明不会关闭默认公网出站；需要隔离时应使用该开关。现有信任和工作区写权限检查仍然适用；所需云端配置可通过已有扩展输入另外设置。Fork PR 审查继续使用不加载扩展的配置。
 
-Native 的网页搜索和读取通过 Controller 代理调用新版 DeepSeek Search/Fetch API。Controlled 的搜索也使用 Search API；Fetch 需要在 custom 或 standard 权限档位中明确加入 `native.web-fetch`。`base-url` 同时决定这些 API 的上游，`web-search-base-url` 保留为旧 Messages 搜索路由。新版 Flash 使用的模型 ID 是 `deepseek-flash`。
+Worker 公网出站只由 `worker-network` 控制，默认 `true`。官方 DSH 搜索通过受限的 Controller 凭据代理访问上游；官方 HTTP 抓取直接从 Worker 发起。新版 Controlled 的 strict 默认请求这两种网页工具，仍受显式禁止项和信任策略限制；Native Profile 决定 provider。未修改的安装器仍绑定 Action `v0.12.2`，升级 Action 引用后才会采用这些新默认值。
 
 Controlled 自动导入面向只读 Review 和 Session；Coding Commands 的插件需要手工声明各任务所需权限。选择同时安装时，插件只加入 Review，Commands 保持原样。Native Commands 保留原有信任检查，插件不能在不受信任的 fork 命令中运行。
 
-显式自定义 `web-search-base-url` 时保留原有 Messages 搜索协议；默认地址使用新版 Search API。Fetch 始终使用独立授权和 `base-url`，也可以只开启 Fetch 而不启用搜索。
+`web-search-base-url` 配置需要认证的搜索上游，不是 Worker 联网开关。匿名 HTTP 抓取使用请求中的目标 URL，不使用模型的 `base-url`。需要关闭 Worker 公网出站时设置 `worker-network: "false"`。

@@ -8,7 +8,7 @@ branding:
 inputs:
   # BEGIN GENERATED ACTION INPUTS
   worker-network:
-    description: "Allow Worker outbound networking independently of mode, trust and extension declarations."
+    description: "Sole Worker public-egress switch, independent of mode, trust and plugin flags. Defaults to true; false requires Docker and retains the necessary model proxy."
     required: false
     default: "true"
   comment-mode:
@@ -171,11 +171,11 @@ inputs:
     required: false
     default: "warn"
   base-url:
-    description: "Trusted credential-routing input for model requests and DeepSeek Search/Fetch APIs. Never derive it from untrusted content."
+    description: "Trusted upstream for model requests and compatible DeepSeek API routes. Does not select Worker egress or the target URL of native HTTP fetch."
     required: false
     default: "https://api.deepseek.com"
   web-search-base-url:
-    description: "An explicit custom URL preserves legacy Messages search. The default uses the new DeepSeek Search API through base-url; Fetch also uses base-url."
+    description: "Trusted upstream for official DSH Messages-based web search through the restricted Controller proxy. Worker public egress is controlled by worker-network."
     required: false
     default: "https://api.deepseek.com/anthropic/v1"
   bot-user-id:

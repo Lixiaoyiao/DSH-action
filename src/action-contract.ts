@@ -37,7 +37,7 @@ export const ACTION_INPUT_CONTRACT = [
     required: false,
     default: "true",
     description:
-      "Allow Worker outbound networking independently of mode, trust and extension declarations.",
+      "Sole Worker public-egress switch, independent of mode, trust and plugin flags. Defaults to true; false requires Docker and retains the necessary model proxy.",
     docsGroup: "runtime",
   },
   {
@@ -402,7 +402,7 @@ export const ACTION_INPUT_CONTRACT = [
     required: false,
     default: "https://api.deepseek.com",
     description:
-      "Trusted credential-routing input for model requests and DeepSeek Search/Fetch APIs. Never derive it from untrusted content.",
+      "Trusted upstream for model requests and compatible DeepSeek API routes. Does not select Worker egress or the target URL of native HTTP fetch.",
     docsGroup: "credentials",
   },
   {
@@ -411,7 +411,7 @@ export const ACTION_INPUT_CONTRACT = [
     required: false,
     default: "https://api.deepseek.com/anthropic/v1",
     description:
-      "An explicit custom URL preserves legacy Messages search. The default uses the new DeepSeek Search API through base-url; Fetch also uses base-url.",
+      "Trusted upstream for official DSH Messages-based web search through the restricted Controller proxy. Worker public egress is controlled by worker-network.",
     docsGroup: "credentials",
   },
   {

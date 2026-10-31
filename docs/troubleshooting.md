@@ -136,12 +136,14 @@ Common causes:
 - The event/actor trust profile can remove a requested tool. Forks receive no
   repository tools. Trusted-read work denies edit, Bash, and subagent.
 - `native.bash` and `native.subagent` require eligible trusted-write Docker
-  policy. `native.bash` cannot share a worker with a bridge-networked extension.
+  policy. Bash authorization is independent of `worker-network`.
 - `native.web-search` uses a separate Controller-mediated endpoint. It is not
-  arbitrary web fetch and does not grant general bridge egress.
+  arbitrary web fetch and does not select Worker egress. `worker-network` is
+  the independent public-egress switch.
 - Extension tools require `permission-profile: custom` (with `strict` retained
   only for older v0.4 compatibility), Docker isolation, matching declared
-  permissions, and a consistent process-level network/workspace mode.
+  permissions and compatible workspace-write declarations. Legacy network
+  declarations remain separate from `worker-network`.
 
 Those canonical-tool checks describe controlled mode. In native mode, DSH owns
 the internal capability graph. `toolPolicy.policyOwner` is `dsh`, and
@@ -245,11 +247,14 @@ Typical code: `DSH_PROXY`.
 - `native.web-search` supports the configured DeepSeek Anthropic Messages route;
   it does not enable arbitrary `web_fetch` requests or general network access.
 
-When extensions declare `network: false`, the DSH worker still reaches the
-Controller proxy through an inspected Docker host gateway. That route is not a
-port allowlist. Runner firewall policy must protect other host services. When an
-approved extension requests network, the co-hosted worker uses bridge egress,
-which is not destination-restricted.
+Check `worker-network` first: its default `true` allows ordinary Worker
+public egress; explicit `false` blocks it through an internal Docker network and
+disables web tools/proxy routes. The necessary model proxy still uses an inspected
+host gateway, which is not a port allowlist. Runner firewall policy protects other
+host services. Plugin `network: false` does not disable an online Worker, and
+`network: true` cannot override the switch. Official HTTP `web_fetch` needs both
+an enabled tool/provider and Worker egress; model/search API credentials stay
+behind the Controller proxy.
 
 ## The Action times out
 
