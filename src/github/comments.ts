@@ -3,8 +3,28 @@
  * Copyright (c) 2025 Anthropic, PBC. MIT licensed; see THIRD_PARTY_NOTICES.md.
  */
 import type { GitHubClient } from "./client.js";
-import { indexTrackingComments, type TrackingKind } from "../review/tracking.js";
+import {
+  createTrackingMarker,
+  stripTrackingMarkers,
+  indexTrackingComments,
+  type TrackingKind,
+} from "../review/tracking.js";
 import { GitHubQuotaError } from "./request-policy.js";
+
+export interface CommentPublication {
+  readonly mode: "append" | "update";
+  readonly runId: string;
+  readonly attempt: string;
+}
+const publications = new WeakMap<GitHubClient, CommentPublication>();
+export function configureCommentPublication(
+  client: GitHubClient,
+  publication: CommentPublication,
+): void {
+  if (!/^\d+$/.test(publication.runId) || !/^[1-9]\d*$/.test(publication.attempt))
+    throw new Error("Invalid comment run identity");
+  publications.set(client, Object.freeze({ ...publication }));
+}
 
 export interface CommentTarget {
   readonly owner: string;
@@ -88,7 +108,15 @@ export async function listOwnedTrackingComments(
       }),
     options.signal,
   );
-  return indexTrackingComments(comments, expectedAuthorId);
+  const publication = publications.get(client);
+  const marker =
+    publication?.mode === "append"
+      ? `<!-- dsh-action:run=${publication.runId} attempt=${publication.attempt} -->`
+      : undefined;
+  return indexTrackingComments(
+    marker === undefined ? comments : comments.filter((comment) => comment.body?.includes(marker)),
+    expectedAuthorId,
+  );
 }
 
 export async function upsertTrackingComment(
@@ -99,6 +127,14 @@ export async function upsertTrackingComment(
   body: string,
   options: CommentRequestOptions = {},
 ): Promise<number> {
+  const publication = publications.get(client);
+  if (publication?.mode === "append") {
+    body = [
+      createTrackingMarker({ kind }),
+      `<!-- dsh-action:run=${publication.runId} attempt=${publication.attempt} -->`,
+      stripTrackingMarkers(body),
+    ].join("\n");
+  }
   const index = await listOwnedTrackingComments(client, target, expectedAuthorId, options);
   const existing =
     kind === "summary"

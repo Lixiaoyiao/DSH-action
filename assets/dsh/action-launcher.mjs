@@ -1,8 +1,9 @@
+import { composeActionProfile } from "./profile-runtime.mjs";
 import {
   boot,
   createRuntimeResolution,
   installFailLoud,
-  loadProfile,
+  loadProfileDirectory,
   PluginPackages,
 } from "@deepseek-ai/dsh-app-boot";
 import { provideCmdline } from "@deepseek-ai/dsh-cmdline";
@@ -35,7 +36,7 @@ function admittedExtensionSelectors(profile) {
   }
   for (const patch of profile.patches) {
     for (const row of patch.insert ?? []) {
-      if (/^dsh-action-(?:native-)?(?:mcp|plugin)-/u.test(row.id ?? "")) addRow(row);
+      if (row.id !== "dsh-action-policy") addRow(row);
     }
   }
   return selectors;
@@ -103,7 +104,7 @@ async function main() {
   // entrypoints. The Action deliberately omits the product CLI's layered .env,
   // home patch, and live user-patch watchers because workflow inputs — not the
   // checked-out repository or model output — are the authorization boundary.
-  const profile = loadProfile(NAME, PROFILE, INSTALL_ANCHOR, dshHome);
+  const profile = loadProfileDirectory(NAME, join(dshHome, "profiles", PROFILE), INSTALL_ANCHOR);
   if (profile.skippedBundles.length !== 0) {
     throw new Error("an admitted DSH Profile Bundle failed compatibility or resolution");
   }
@@ -113,29 +114,7 @@ async function main() {
     home: dshHome,
   });
   const patches = [
-    ...profile.layers.flatMap((layer) => layer.patches),
-    ...profile.patches,
-    ...(process.env.DSH_ACTION_SEARCH_PROVIDER === "deepseek-official"
-      ? [
-          {
-            id: "web",
-            config: { searchProvider: "deepseek-official", fetchProvider: "deepseek-fetch-api" },
-          },
-          { id: "web-search-deepseek", disabled: false, config: { apiKeyEnv: "DEEPSEEK_API_KEY" } },
-        ]
-      : []),
-    {
-      id: "web-deepseek-api",
-      config: {
-        apiKeyEnv: "DEEPSEEK_API_KEY",
-        baseURL: `${process.env.DEEPSEEK_BASE_URL}/v1/tools`,
-      },
-    },
-    // These upstream defaults send extra durable log or installed-package
-    // data. An Action runtime upgrade must not opt the user into that upload.
-    { id: "session-log-deepseek", disabled: true },
-    { id: "plugin-package-inventory-deepseek", disabled: true },
-    { id: "session-telemetry-otel", disabled: true },
+    ...composeActionProfile(profile, "controlled"),
     ...(sessionPlan === undefined
       ? []
       : [
@@ -197,6 +176,14 @@ async function main() {
           });
         await host.plugin(PluginPackages, { resolution });
         requireAdmittedExtensions(host, admittedExtensionSelectors(profile));
+        host.on(
+          "agent/created",
+          () => {
+            if (process.env.DSH_ACTION_DIAGNOSTICS && process.env.DSH_ACTION_DIAGNOSTICS !== "off")
+              process.stderr.write('DSH_DIAGNOSTIC {"phase":"loader.ready"}\n');
+          },
+          { prepend: true },
+        );
         const signal = (code) => {
           if (exitStarted) process.exit(code);
           requestExit(code);

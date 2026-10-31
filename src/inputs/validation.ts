@@ -55,6 +55,8 @@ function assertControllerSecretsAbsentFromWorkerInputs(inputs: ActionInputs): vo
 
 function assertInputOnlyRuntimeInvariants(inputs: ActionInputs): void {
   assertSupportedDshVersion(inputs.dshVersion);
+  if (!inputs.workerNetwork && inputs.isolation !== "docker")
+    throw new Error("worker-network=false requires Docker network enforcement");
   assertContainerImageReference(inputs.containerImage);
   validatedControllerBaseUrl(inputs.baseUrl, "DeepSeek base URL");
   validatedControllerBaseUrl(inputs.webSearchBaseUrl, "Web search base URL");

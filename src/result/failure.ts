@@ -68,7 +68,8 @@ const dshFailureMetadata: Readonly<Record<string, { title: string; guidance: str
   },
   DSH_TIMEOUT: {
     title: "DeepSeek Harness timed out",
-    guidance: "Increase timeout-minutes or reduce the task scope, then rerun the workflow.",
+    guidance:
+      "Inspect the reported phase and last activity. Only a run-deadline failure is controlled by timeout-minutes.",
   },
 };
 

@@ -1,3 +1,4 @@
+import type { RunDiagnostics } from "./diagnostics.js";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
@@ -12,6 +13,8 @@ const DEFAULT_RESPONSE_LIMIT = 32 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 120_000;
 
 export interface DeepSeekProxyOptions {
+  readonly diagnostics?: RunDiagnostics;
+  readonly deadlineMs?: number;
   readonly apiKey: string;
   readonly baseUrl: string;
   /** Controller-selected Anthropic-compatible upstream used only by the web_search tool. */
@@ -132,6 +135,7 @@ async function streamResponse(
   upstream: Response,
   response: ServerResponse,
   limit: number,
+  diagnostics?: RunDiagnostics,
 ): Promise<void> {
   const headers: Record<string, string> = {
     "cache-control": "no-store",
@@ -155,6 +159,7 @@ async function streamResponse(
     let item = await reader.read();
     while (!item.done) {
       const chunk = item.value;
+      if (bytes === 0) diagnostics?.event("model.first-byte");
       bytes += chunk.byteLength;
       if (bytes > limit) {
         await reader.cancel();
@@ -171,6 +176,8 @@ async function streamResponse(
 }
 
 interface ProxyRuntime {
+  readonly diagnostics?: RunDiagnostics;
+  readonly deadlineMs?: number;
   readonly apiKey: string;
   readonly token: string;
   readonly base: URL;
@@ -287,7 +294,11 @@ async function handleRequest(
 
   const controller = new AbortController();
   runtime.activeRequests.add(controller);
-  const timer = setTimeout(() => controller.abort(), runtime.timeoutMs);
+  runtime.diagnostics?.event("model.request", { name: routed.kind });
+  const timer = setTimeout(
+    () => controller.abort(),
+    Math.max(1, Math.min(runtime.timeoutMs, (runtime.deadlineMs ?? Infinity) - Date.now())),
+  );
   timer.unref();
   response.once("close", () => {
     if (!response.writableEnded) controller.abort();
@@ -301,8 +312,14 @@ async function handleRequest(
       redirect: "error",
       signal: controller.signal,
     });
-    await streamResponse(upstream, response, runtime.responseLimit);
+    runtime.diagnostics?.event("model.headers", { name: routed.kind, status: upstream.status });
+    await streamResponse(upstream, response, runtime.responseLimit, runtime.diagnostics);
+    runtime.diagnostics?.event("model.end", { name: routed.kind, status: upstream.status });
   } catch (error: unknown) {
+    runtime.diagnostics?.event(
+      controller.signal.aborted ? "model.timeout-or-abort" : "model.error",
+      { name: routed.kind },
+    );
     if (!response.headersSent) {
       replyJson(response, controller.signal.aborted ? 504 : 502, "upstream_failed");
     } else {
@@ -352,6 +369,8 @@ export async function startDeepSeekProxy(
   const token = randomBytes(32).toString("base64url");
   const activeRequests = new Set<AbortController>();
   const runtime: ProxyRuntime = {
+    ...(options.diagnostics === undefined ? {} : { diagnostics: options.diagnostics }),
+    ...(options.deadlineMs === undefined ? {} : { deadlineMs: options.deadlineMs }),
     apiKey: options.apiKey,
     token,
     base,
@@ -395,10 +414,7 @@ export async function startDeepSeekProxy(
       ? {}
       : {
           workerWebSearchBaseUrl: `http://${workerHost}:${String(port)}/anthropic/v1`,
-          workerWebSearchProvider:
-            webSearchBase.href.replace(/\/+$/u, "") === "https://api.deepseek.com/anthropic/v1"
-              ? "deepseek-search-api"
-              : "deepseek-official",
+          workerWebSearchProvider: "deepseek-official",
         }),
     workerToken: token,
     boundHost: bindHost,

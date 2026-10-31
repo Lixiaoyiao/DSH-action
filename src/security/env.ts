@@ -149,3 +149,32 @@ export function redactKnownSecrets(value: string, secrets: readonly string[]): s
     "authorization: Bearer [REDACTED]",
   );
 }
+
+/** Explicit environment capabilities; reserved transport, loader and Controller names stay private. */
+export function selectedWorkerEnvironment(
+  names: readonly string[],
+  source: NodeJS.ProcessEnv,
+  controllerSecrets: readonly string[],
+  trusted: boolean,
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const name of names) {
+    if (
+      !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(name) ||
+      /^(?:GITHUB_|GH_|ACTIONS_|INPUT_|DEEPSEEK_|DSH_|NODE_|NPM_|LD_|DYLD_|PYTHON|RUBY|PERL|BASH_ENV$|ENV$|PATH$|HOME$|USERPROFILE$|COMSPEC$|SHELL$|DOCKER_)/i.test(
+        name,
+      )
+    )
+      throw new DshEnvironmentError(`dsh-env cannot expose reserved variable ${name}`);
+    if (!trusted) continue;
+    const value = source[name];
+    if (value === undefined || value.includes("\0") || Buffer.byteLength(value) > 16384)
+      throw new DshEnvironmentError(`Missing or invalid dsh-env variable ${name}`);
+    assertNoSecretOutput("environment", value, [
+      ...controllerSecrets,
+      ...collectControllerSecrets(source, 1),
+    ]);
+    result[name] = value;
+  }
+  return result;
+}

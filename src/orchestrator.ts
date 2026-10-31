@@ -1,3 +1,8 @@
+import { join } from "node:path";
+import { loadRepositoryProfile, assertProfileInputCompatibility } from "./dsh/project-profile.js";
+import { getBranchHead } from "./write/github.js";
+import { selectedWorkerEnvironment, assertNoSecretOutput } from "./security/env.js";
+import { RunDiagnostics } from "./dsh/diagnostics.js";
 /*
  * Lifecycle adapted from anthropics/claude-code-action/src/entrypoints/run.ts.
  * Copyright (c) 2025 Anthropic, PBC. MIT licensed; see THIRD_PARTY_NOTICES.md.
@@ -6,7 +11,7 @@ import * as core from "@actions/core";
 import { assertStartupConfiguration } from "./configuration-check.js";
 import { DshAbortedError } from "./dsh/errors.js";
 import { selectDshComposition } from "./dsh/select-composition.js";
-import { loadInputs } from "./inputs.js";
+import { loadInputs, type ResolvedActionInputs } from "./inputs.js";
 import { throwIfCancelled } from "./lifecycle/cancellation.js";
 import {
   describeActionFailure,
@@ -47,14 +52,18 @@ export async function runAction(options: RunActionOptions = {}): Promise<RunOutc
   const startedAt = Date.now();
   const lifecycle = new RunLifecycle();
   let deadline: RunDeadline | undefined;
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
   let preparation: RunPreparation | undefined;
   let execution: ExecutionPreparation | undefined;
   let agent: AgentPhase | undefined;
-  let runtime: Pick<RunOutcome, "dsh" | "authority"> = {};
+  let runtime: Pick<RunOutcome, "dsh" | "authority" | "configuration"> = {};
   const observations = () => ({
     schemaVersion: 1 as const,
     durationMs: Math.max(0, Date.now() - startedAt),
     ...runtime,
+    ...(lifecycle.diagnostics === undefined || lifecycle.diagnostics.level === "off"
+      ? {}
+      : { diagnostics: lifecycle.diagnostics.snapshot() }),
     ...preparation?.snapshot(),
     ...execution?.snapshot(),
     ...(lifecycle.commentId === undefined ? {} : { commentId: lifecycle.commentId }),
@@ -73,7 +82,17 @@ export async function runAction(options: RunActionOptions = {}): Promise<RunOutc
   if (options.signal?.aborted === true) beginCancellationFinalization();
   try {
     throwIfCancelled(options.signal);
-    const inputs = loadInputs();
+    let inputs: ResolvedActionInputs = loadInputs();
+    lifecycle.diagnostics = new RunDiagnostics(
+      inputs.diagnostics,
+      (message) => {
+        core.info(message);
+        lifecycle.reportRuntimeProgress(message);
+      },
+      [inputs.githubToken, inputs.deepseekApiKey],
+    );
+    heartbeat = setInterval(() => lifecycle.diagnostics?.heartbeat(), 30_000);
+    heartbeat.unref();
     assertStartupConfiguration(inputs);
     const selection = selectDshComposition(inputs.dshMode);
     const composition = selection.create();
@@ -107,6 +126,71 @@ export async function runAction(options: RunActionOptions = {}): Promise<RunOutc
         signal,
         onFailureBeforeCleanup: startFailure,
       });
+      const profileBranch = authorized.context.repository.defaultBranch ?? authorized.baseBranch;
+      if (profileBranch === undefined && authorized.snapshot?.kind !== "pull_request")
+        throw new Error("Cannot resolve trusted Profile source branch");
+      const profileDirectory = join(workspace.tempRoot, "trusted-profile");
+      const sourceSha =
+        authorized.snapshot?.kind === "pull_request"
+          ? authorized.snapshot.baseSha
+          : await getBranchHead(
+              authorized.client,
+              authorized.context.repository.owner,
+              authorized.context.repository.repo,
+              profileBranch!,
+            );
+      const profile = await lifecycle.diagnostics.phase("profile.load", () =>
+        loadRepositoryProfile({
+          client: authorized.client,
+          owner: authorized.context.repository.owner,
+          repo: authorized.context.repository.repo,
+          sourceSha,
+          selection: inputs.dshProfile,
+          directory: profileDirectory,
+        }),
+      );
+      if (profile !== undefined) {
+        assertProfileInputCompatibility(inputs);
+        for (const content of Object.values(profile.files))
+          assertNoSecretOutput("environment", Buffer.from(content, "base64").toString("utf8"), [
+            inputs.deepseekApiKey,
+            inputs.githubToken,
+          ]);
+        runtime = {
+          ...runtime,
+          configuration: {
+            ...profile.audit,
+            ...(authorized.policy.trust === "untrusted" ? { withheld: true } : {}),
+          },
+        };
+        if (authorized.policy.trust !== "untrusted") {
+          if (inputs.isolation !== "docker")
+            throw new Error("Project Profiles require the isolated Docker runtime");
+          inputs = {
+            ...inputs,
+            projectProfile: profile,
+            permissionProfile:
+              inputs.dshMode === "controlled" ? "custom" : inputs.permissionProfile,
+            allowedTools: [
+              ...inputs.allowedTools,
+              ...(inputs.dshMode === "controlled" ? profile.policy.allowedTools : []),
+            ],
+            disallowedTools: [
+              ...inputs.disallowedTools,
+              ...(inputs.dshMode === "controlled" ? profile.policy.deniedTools : []),
+            ],
+          };
+        } else lifecycle.diagnostics.event("profile.withheld-untrusted");
+      }
+      const workerEnvironment = selectedWorkerEnvironment(
+        inputs.dshEnv,
+        process.env,
+        [inputs.githubToken, inputs.deepseekApiKey],
+        authorized.policy.trust !== "untrusted",
+      );
+      Object.values(workerEnvironment).forEach(core.setSecret);
+      lifecycle.diagnostics.addSecrets(Object.values(workerEnvironment));
+      inputs = { ...inputs, workerEnvironment };
       execution = new ExecutionPreparation({
         lifecycle,
         composition,
@@ -163,6 +247,7 @@ export async function runAction(options: RunActionOptions = {}): Promise<RunOutc
       error: failure,
     };
   } finally {
+    if (heartbeat !== undefined) clearInterval(heartbeat);
     deadline?.dispose();
     options.signal?.removeEventListener("abort", beginCancellationFinalization);
   }

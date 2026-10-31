@@ -32,6 +32,56 @@ export interface ActionPublicInputDefinition {
  */
 export const ACTION_INPUT_CONTRACT = [
   {
+    name: "worker-network",
+    runtimeKey: "workerNetwork",
+    required: false,
+    default: "true",
+    description:
+      "Allow Worker outbound networking independently of mode, trust and extension declarations.",
+    docsGroup: "runtime",
+    installer: true,
+  },
+  {
+    name: "comment-mode",
+    runtimeKey: "commentMode",
+    required: false,
+    default: "append",
+    description:
+      "append creates one reply per run/attempt; update reuses the latest matching bot reply.",
+    docsGroup: "runtime",
+    installer: true,
+  },
+  {
+    name: "diagnostics",
+    runtimeKey: "diagnostics",
+    required: false,
+    default: "basic",
+    description: "Diagnostic detail: off, basic, or detailed (bounded redacted artifact).",
+    docsGroup: "runtime",
+    installer: true,
+  },
+  {
+    name: "dsh-profile",
+    runtimeKey: "dshProfile",
+    required: false,
+    default: "auto",
+    description:
+      "Trusted repository Profile directory; auto discovers .dsh at the trusted base/default commit.",
+    docsGroup: "runtime",
+    installer: true,
+  },
+  {
+    name: "dsh-env",
+    runtimeKey: "dshEnv",
+    required: false,
+    default: "[]",
+    description:
+      "JSON array of additional Worker environment variable names. Never Controller credentials.",
+    docsGroup: "runtime",
+    installer: true,
+  },
+
+  {
     name: "deepseek-api-key",
     runtimeKey: "deepseekApiKey",
     required: true,

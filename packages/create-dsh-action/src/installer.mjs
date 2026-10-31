@@ -1,3 +1,10 @@
+import {
+  defaultProjectFiles,
+  previewProfileImport,
+  printProfilePreview,
+  selectProfileImport,
+  workflowWithProfile,
+} from "./profile-import.mjs";
 import { access, lstat, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { join, resolve } from "node:path";
@@ -56,12 +63,12 @@ function usage() {
   return [
     "Usage: create-dsh-action [--advanced] [--mode review|commands|both|session] [--dsh-mode controlled|native]",
     "  [--test-commands '<JSON argv arrays>'] [--container-image '<name>@sha256:<digest>']",
-    "  [--import-plugins] [--dsh-home '<local DSH folder>']",
+    "  [--import-profile NAME | --no-import-profile] [--dsh-home PATH] [--dry-run] [--yes]",
     "",
     "Without flags, choose workflows in the terminal; read-only @dsh chat + PR Review and Controlled are the defaults.",
     "Use --advanced to choose workflow and DSH modes in the terminal, including with --mode.",
     "Explicit --mode keeps non-interactive file generation. No workflow is committed or pushed automatically.",
-    "Use --import-plugins in a terminal to choose installed local DSH plugins for cloud installation.",
+    "Local Profiles are discovered in interactive mode. Review the native configuration preview before import.",
     "",
     "Workflow choices:",
     "  1) Read-only @dsh chat + PR Review",
@@ -133,10 +140,34 @@ export function parseArguments(argv) {
   let containerImage;
   let advanced = false;
   let importPlugins = false;
+  let importProfile;
+  let noImportProfile = false;
+  let dryRun = false;
+  let yes = false;
   let dshHome;
 
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
+    if (argument === "--dry-run") {
+      dryRun = true;
+      continue;
+    }
+    if (argument === "--yes") {
+      yes = true;
+      continue;
+    }
+    if (argument === "--no-import-profile") {
+      noImportProfile = true;
+      continue;
+    }
+    if (argument === "--import-profile" || argument?.startsWith("--import-profile=")) {
+      if (importProfile !== undefined)
+        throw new Error("--import-profile may be provided only once");
+      importProfile = argument === "--import-profile" ? argv[++index] : argument.slice(17);
+      if (!importProfile || importProfile.startsWith("--"))
+        throw new Error("--import-profile requires a Profile name");
+      continue;
+    }
     if (argument === "--import-plugins") {
       if (importPlugins) throw new Error("--import-plugins may be provided only once");
       importPlugins = true;
@@ -234,10 +265,14 @@ export function parseArguments(argv) {
       "--test-commands/--container-image are for commands or both; review and session need no write setup",
     );
   }
-  if (dshHome !== undefined && !importPlugins)
-    throw new Error("--dsh-home requires --import-plugins");
+  if (noImportProfile && (importProfile || importPlugins))
+    throw new Error("--no-import-profile conflicts with import options");
   return {
     help,
+    importProfile,
+    noImportProfile,
+    dryRun,
+    yes,
     mode,
     dshMode,
     ...(advanced ? { advanced } : {}),
@@ -336,6 +371,8 @@ async function promptForMissingSelections({
   dshMode,
   importPlugins,
   dshHome,
+  importProfile,
+  noImportProfile,
   env,
 }) {
   const readline = createInterface({ input, output, terminal: false });
@@ -356,11 +393,14 @@ async function promptForMissingSelections({
     return {
       mode,
       dshMode,
-      pluginImport: importPlugins
-        ? await (
-            await import("./local-plugins.mjs")
-          ).selectLocalPlugins({ home: dshHome, env, prompt, output, dshMode, mode })
-        : undefined,
+      profileImport: await selectProfileImport({
+        home: dshHome,
+        env,
+        prompt,
+        output,
+        selected: importProfile,
+        skip: noImportProfile,
+      }),
     };
   } finally {
     readline.close();
@@ -401,7 +441,9 @@ async function installWorkflows({
   templateDirectory,
   testCommands,
   containerImage,
-  pluginImport,
+  profileImport,
+  dryRun = false,
+  output,
 }) {
   const definitions = workflowDefinitions(mode, dshMode).map((definition) => ({
     ...definition,
@@ -451,13 +493,6 @@ async function installWorkflows({
         )
         .replace(/^ {2}issues: write\r?\n/mu, "");
     }
-    if (pluginImport)
-      contents = (await import("./local-plugins.mjs")).addPluginInputs(
-        contents,
-        pluginImport,
-        definition.target.endsWith("dsh-review.yml"),
-        definition.target.endsWith("dsh-commands.yml"),
-      );
     if (definition.target.endsWith("dsh-commands.yml")) {
       if (testCommands !== undefined) {
         contents = contents.replace(
@@ -496,17 +531,26 @@ async function installWorkflows({
         );
       }
     }
-    definition.contents = contents;
+    definition.contents = workflowWithProfile(contents, profileImport?.requiredEnv ?? []);
   }
 
-  return saveWorkflowChanges(
-    cwd,
-    definitions.map(({ target, contents }) => ({
+  const profileExists = await pathExists(join(cwd, ".dsh", "package.json"));
+  const profileFiles =
+    profileImport?.files ?? (profileExists ? [] : defaultProjectFiles({ mode, dshMode }));
+  const changes = [
+    ...definitions.map(({ target, contents }) => ({
       path: target,
       source: contents,
       expectedHash: null,
     })),
-  );
+    ...profileFiles,
+  ];
+  if (dryRun) {
+    for (const change of changes) output.write(`Would create ${change.path}\n`);
+    return [];
+  }
+  await profileImport?.validate();
+  return saveWorkflowChanges(cwd, changes, { profiles: true });
 }
 
 function printSuccess(output, mode, dshMode, createdFiles, testCommands) {
@@ -587,9 +631,11 @@ export async function runInstaller(options = {}) {
 
   let mode = parsed.mode;
   let dshMode = parsed.dshMode;
-  let pluginImport;
+  let profileImport;
   const interactive = isTTY && !environment.CI;
-  if (parsed.importPlugins && !interactive)
+  if (parsed.importPlugins)
+    output.write("--import-plugins is deprecated; use native Profile import.\n");
+  if (parsed.importPlugins && !interactive && !parsed.importProfile)
     throw new Error(
       "Plugin import needs a terminal so you can choose and confirm the plugins. Run without CI or omit --import-plugins.",
     );
@@ -599,17 +645,34 @@ export async function runInstaller(options = {}) {
     );
   if (
     interactive &&
-    (mode === undefined || (parsed.advanced && dshMode === undefined) || parsed.importPlugins)
+    (mode === undefined ||
+      (parsed.advanced && dshMode === undefined) ||
+      parsed.importPlugins ||
+      !parsed.noImportProfile)
   ) {
-    ({ mode, dshMode, pluginImport } = await promptForMissingSelections({
+    ({ mode, dshMode, profileImport } = await promptForMissingSelections({
       input,
       output,
       mode,
       dshMode: dshMode ?? (mode !== undefined && !parsed.advanced ? DEFAULT_DSH_MODE : undefined),
       importPlugins: parsed.importPlugins,
+      importProfile: parsed.importProfile,
+      noImportProfile: parsed.noImportProfile,
       dshHome: parsed.dshHome,
       env: environment,
     }));
+  }
+  if (!interactive && parsed.importProfile) {
+    profileImport = await previewProfileImport({
+      home: parsed.dshHome,
+      env: environment,
+      profile: parsed.importProfile,
+    });
+    printProfilePreview(profileImport, output);
+    if (profileImport.blocked)
+      throw new Error("Profile migration has blocked fields; resolve the preview before importing");
+    if (!parsed.yes && !parsed.dryRun)
+      throw new Error("Profile import needs confirmation: inspect --dry-run, then supply --yes");
   }
   dshMode ??= DEFAULT_DSH_MODE;
   if (
@@ -626,8 +689,10 @@ export async function runInstaller(options = {}) {
     templateDirectory,
     testCommands: parsed.testCommands,
     containerImage: parsed.containerImage,
-    pluginImport,
+    profileImport,
+    dryRun: parsed.dryRun,
+    output,
   });
-  printSuccess(output, mode, dshMode, createdFiles, parsed.testCommands);
+  if (!parsed.dryRun) printSuccess(output, mode, dshMode, createdFiles, parsed.testCommands);
   return { mode, dshMode, createdFiles };
 }

@@ -36,6 +36,10 @@ export async function prepareCompositionLauncher(options: {
     options.launcherPath,
     join(options.runtime.packageRoot, basename(options.containerLauncher)),
   );
+  await copyFile(
+    join(options.assetsDirectory, "profile-runtime.mjs"),
+    join(options.runtime.packageRoot, "profile-runtime.mjs"),
+  );
   const sessionEnabled = options.runtime.session !== undefined;
   if (sessionEnabled) {
     const sessionSource = join(options.assetsDirectory, "action-session.mjs");

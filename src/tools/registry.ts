@@ -38,6 +38,7 @@ export interface ResolveEffectiveToolsOptions {
   readonly isolation?: "docker" | "none";
   readonly githubBinding?: GitHubToolBinding;
   readonly allowWrite?: boolean;
+  readonly workerNetwork?: boolean;
 }
 
 export interface EffectiveTools {
@@ -64,6 +65,10 @@ export function resolveEffectiveTools(
   );
   const requested = new Set<AllowedToolId>(permission.requestedTools);
   const disallowed = new Set<AllowedToolId>(permission.disallowedTools);
+  if (options.workerNetwork === false) {
+    disallowed.add("native.web-search");
+    disallowed.add("native.web-fetch");
+  }
   const permissionDenials: ToolDenial[] = [...permission.deniedTools];
   const isolation = options.isolation ?? "docker";
   const requestedBuiltin = new Set(

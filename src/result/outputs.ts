@@ -28,6 +28,8 @@ function structuredResult(
   };
   return {
     schemaVersion: outcome.schemaVersion,
+    ...(outcome.configuration === undefined ? {} : { configuration: outcome.configuration }),
+    ...(outcome.diagnostics === undefined ? {} : { diagnostics: outcome.diagnostics }),
     status: actionStatus(outcome),
     conclusion: outcome.conclusion,
     operation: outcome.operation ?? "none",

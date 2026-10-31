@@ -31,6 +31,9 @@ export interface DshProcessResult {
 
 export interface DshProcessLimits {
   readonly timeoutMs: number;
+  readonly onStderr?: (chunk: Buffer) => void;
+  readonly onStdout?: (chunk: Buffer) => void;
+  readonly phase?: string;
   readonly maxStdoutBytes: number;
   readonly maxStderrBytes: number;
   readonly maxCombinedBytes: number;
@@ -172,12 +175,21 @@ export async function executeBoundedDshProcess(
         return;
       }
       (stream === "stdout" ? stdoutChunks : stderrChunks).push(chunk);
+      try {
+        if (stream === "stdout") limits.onStdout?.(chunk);
+        else limits.onStderr?.(chunk);
+      } catch {
+        /* Diagnostic observers cannot change process results. */
+      }
     };
 
     child.stdout.on("data", (value: unknown) => capture("stdout", value));
     child.stderr.on("data", (value: unknown) => capture("stderr", value));
 
-    const timeout = setTimeout(() => stop(new DshTimeoutError(limits.timeoutMs)), limits.timeoutMs);
+    const timeout = setTimeout(
+      () => stop(new DshTimeoutError(limits.timeoutMs, limits.phase ?? "worker")),
+      limits.timeoutMs,
+    );
     timeout.unref();
     const abort = (): void => stop(new DshAbortedError());
     limits.signal?.addEventListener("abort", abort, { once: true });

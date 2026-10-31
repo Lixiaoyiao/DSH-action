@@ -201,6 +201,28 @@ export function formatStepSummary(outcome: RunOutcome): string {
         `**Session checkpoint:** ${inlineCode(session.artifactName)}${session.expiresAt === undefined ? "" : `; expires ${session.expiresAt}`}.`,
       );
   }
+  if (outcome.configuration !== undefined)
+    lines.push(
+      "",
+      `**Harness Profile:** ${inlineCode(outcome.configuration.path)} at ${inlineCode(outcome.configuration.sourceSha)}${outcome.configuration.withheld ? " (extensions withheld for untrusted context)" : ""}.`,
+    );
+  if (outcome.diagnostics !== undefined) {
+    lines.push(
+      "",
+      "### Runtime diagnostics",
+      "",
+      `Last activity: ${outcome.diagnostics.lastActivityMs}ms ago. Worker events are observations, not authority.`,
+      "",
+      "| Source | Event | Elapsed ms |",
+      "| --- | --- | --- |",
+    );
+    for (const event of outcome.diagnostics.events.slice(-30))
+      lines.push(
+        `| ${event.source} | ${safeInline(event.phase)}${event.name ? " " + safeInline(event.name) : ""} | ${event.elapsedMs} |`,
+      );
+    if (outcome.diagnostics.artifactId !== undefined)
+      lines.push("", `Diagnostic artifact: ${outcome.diagnostics.artifactId}.`);
+  }
   if (outcome.error !== undefined) {
     lines.push(
       "",

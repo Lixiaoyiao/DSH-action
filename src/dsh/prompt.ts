@@ -25,6 +25,7 @@ export interface DshPromptInput {
   /** Maintainer-controlled schema; available only for final task output. */
   readonly taskOutputSchema?: TaskOutputSchema;
   readonly maxBytes?: number;
+  readonly workerNetwork?: boolean;
 }
 
 export function outputContract(
@@ -115,6 +116,7 @@ interface RenderPromptInput {
   readonly untrustedTruncated: boolean;
   readonly toolCatalog: readonly AgentToolManifest[];
   readonly toolPolicy: DshPromptToolPolicy;
+  readonly workerNetwork?: boolean;
   readonly taskOutputSchema?: TaskOutputSchema;
 }
 
@@ -132,11 +134,9 @@ function renderPrompt(input: RenderPromptInput): string {
           "run bounded foreground Bash inside the credential-free sandbox (no background jobs, approval, or escalation)",
         ]
       : []),
-    ...(enabled.has("native.web-search")
-      ? ["use Controller-mediated web_search (no general network grant)"]
-      : []),
+    ...(enabled.has("native.web-search") ? ["use the available native web_search tool"] : []),
     ...(enabled.has("native.web-fetch")
-      ? ["read public pages with Controller-mediated web_fetch"]
+      ? ["read public pages with the available native web_fetch tool"]
       : []),
     ...(enabled.has("native.subagent")
       ? ["delegate to a managed depth-1 subagent that inherits this same tool boundary"]

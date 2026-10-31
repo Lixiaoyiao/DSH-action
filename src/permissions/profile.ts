@@ -18,6 +18,8 @@ export const STRICT_PERMISSION_TOOLS = [
   "workspace.read",
   "workspace.search",
   "workspace.edit",
+  "native.web-search",
+  "native.web-fetch",
 ] as const satisfies readonly AllowedToolId[];
 
 export const STANDARD_PERMISSION_TOOLS = [
@@ -173,6 +175,7 @@ export function buildPermissionAudit(options: {
   readonly additionalDenials?: readonly ToolDenial[];
   readonly extensions?: AnyExtensionAudit;
   readonly mediatedWeb?: boolean;
+  readonly workerNetwork?: boolean;
 }): PermissionAudit {
   const effectiveTools = sortedUnique(options.manifests.map(({ id }) => id));
   const effective = new Set(effectiveTools);
@@ -199,7 +202,7 @@ export function buildPermissionAudit(options: {
     options.extensions?.profile === "github-action"
       ? options.extensions.network
       : options.extensions?.workerNetwork === true;
-  const bridge = commandBridge || extensionBridge;
+  const bridge = options.workerNetwork ?? (commandBridge || extensionBridge);
   const mediatedWeb =
     options.mediatedWeb ??
     (effective.has("native.web-search") || effective.has("native.web-fetch"));

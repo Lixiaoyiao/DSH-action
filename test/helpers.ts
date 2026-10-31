@@ -20,6 +20,11 @@ export function inputs(
   overrides: ControlledInputOverrides | NativeInputOverrides | DynamicModeInputOverrides = {},
 ): ActionInputs {
   const common: CommonTestInputs = {
+    workerNetwork: true,
+    commentMode: "append",
+    diagnostics: "off",
+    dshProfile: "auto",
+    dshEnv: [],
     deepseekApiKey: "secret",
     githubToken: "token",
     allowWrite: false,

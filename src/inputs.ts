@@ -14,7 +14,12 @@ import {
 } from "./extensions/schema.js";
 import { actionInputsSchema, type ActionInputs } from "./inputs/schema.js";
 import { assertActionInputInvariants } from "./inputs/validation.js";
-export type { ActionInputs, ControlledActionInputs, NativeActionInputs } from "./inputs/schema.js";
+export type {
+  ActionInputs,
+  ResolvedActionInputs,
+  ControlledActionInputs,
+  NativeActionInputs,
+} from "./inputs/schema.js";
 
 export type InputReader = (name: string, options?: { required?: boolean }) => string;
 
@@ -61,6 +66,11 @@ export function loadInputs(reader: InputReader = core.getInput): ActionInputs {
     );
   }
   const parsed = actionInputsSchema.safeParse({
+    workerNetwork: optionalInput(reader, "workerNetwork"),
+    commentMode: optionalInput(reader, "commentMode"),
+    diagnostics: optionalInput(reader, "diagnostics"),
+    dshProfile: optionalInput(reader, "dshProfile"),
+    dshEnv: optionalInput(reader, "dshEnv"),
     deepseekApiKey,
     githubToken,
     allowWrite: optionalInput(reader, "allowWrite"),

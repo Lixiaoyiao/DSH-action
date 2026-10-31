@@ -21,6 +21,10 @@ export interface InstallerResult {
 
 export function parseArguments(argv: readonly string[]): {
   readonly help: boolean;
+  readonly importProfile?: string;
+  readonly noImportProfile?: boolean;
+  readonly dryRun?: boolean;
+  readonly yes?: boolean;
   readonly mode: InstallerMode | undefined;
   readonly dshMode: InstallerDshMode | undefined;
   readonly testCommands?: readonly (readonly string[])[];

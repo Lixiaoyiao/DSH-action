@@ -152,6 +152,9 @@ interface DockerWorkerSpecOptions {
   readonly packageRoot: string;
   readonly launchPlan: DshDockerLaunchPlan;
   readonly networkName: string;
+  readonly workerNetwork?: boolean;
+  readonly diagnosticLevel?: string;
+  readonly extraEnvironmentNames?: readonly string[];
   readonly hostGateway: string;
   readonly environment: NodeJS.ProcessEnv;
   readonly workerEnvironment: NodeJS.ProcessEnv;
@@ -228,6 +231,12 @@ export function dockerWorkerSpec(options: DockerWorkerSpecOptions): DshProcessSp
   )) {
     args.push("--env", `${name}=${value}`);
   }
+  args.push(
+    "--env",
+    `DSH_ACTION_WORKER_NETWORK=${options.workerNetwork !== false ? "true" : "false"}`,
+  );
+  args.push("--env", `DSH_ACTION_DIAGNOSTICS=${options.diagnosticLevel ?? "off"}`);
+  for (const name of options.extraEnvironmentNames ?? []) args.push("--env", name);
   args.push(options.containerImage, options.launchPlan.command, ...options.launchPlan.args);
 
   const nameIndex = args.indexOf("--name") + 1;

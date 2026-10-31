@@ -1,3 +1,4 @@
+import { composeActionProfile } from "./profile-runtime.mjs";
 import { appendFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
@@ -6,7 +7,7 @@ import {
   boot,
   createRuntimeResolution,
   installFailLoud,
-  loadProfile,
+  loadProfileDirectory,
   PluginPackages,
 } from "@deepseek-ai/dsh-app-boot";
 import { provideCmdline } from "@deepseek-ai/dsh-cmdline";
@@ -41,7 +42,7 @@ function admittedExtensionSelectors(profile) {
   }
   for (const patch of profile.patches) {
     for (const row of patch.insert ?? []) {
-      if (/^dsh-action-(?:native-)?(?:mcp|plugin)-/u.test(row.id ?? "")) addRow(row);
+      if (row.id !== "dsh-action-policy") addRow(row);
     }
   }
   return selectors;
@@ -139,7 +140,7 @@ async function main() {
     dshHome,
   );
 
-  const profile = loadProfile(NAME, PROFILE, INSTALL_ANCHOR, dshHome);
+  const profile = loadProfileDirectory(NAME, join(dshHome, "profiles", PROFILE), INSTALL_ANCHOR);
   if (profile.skippedBundles.length !== 0) {
     throw new Error("an admitted DSH Profile Bundle failed compatibility or resolution");
   }
@@ -150,35 +151,7 @@ async function main() {
   });
   const observationPath = join(dshHome, "action-state", "native-observed-tools.jsonl");
   const patches = [
-    ...profile.layers.flatMap((layer) => layer.patches),
-    ...profile.patches,
-    // Both web tools use the Controller's fixed DeepSeek API routes.
-    { id: "web-fetch-http", disabled: true },
-    { id: "mcp-resources", disabled: true },
-    {
-      id: "web",
-      config: {
-        searchProvider:
-          process.env.DSH_ACTION_SEARCH_PROVIDER === "deepseek-official"
-            ? "deepseek-official"
-            : "deepseek-search-api",
-        fetchProvider: "deepseek-fetch-api",
-      },
-    },
-    {
-      id: "web-deepseek-api",
-      config: {
-        apiKeyEnv: "DEEPSEEK_API_KEY",
-        baseURL: `${process.env.DEEPSEEK_BASE_URL}/v1/tools`,
-      },
-    },
-    { id: "tool-web", config: { search: true, fetch: true, searchTimeoutMs: 60_000 } },
-    // Session-log and package-inventory uploads are independent of telemetry.
-    { id: "session-log-deepseek", disabled: true },
-    { id: "plugin-package-inventory-deepseek", disabled: true },
-    // The programmatic launcher intentionally skips the product CLI switch,
-    // so preserve the Action's default-off telemetry boundary explicitly.
-    { id: "session-telemetry-otel", disabled: true },
+    ...composeActionProfile(profile, "native"),
     ...(sessionPlan === undefined
       ? []
       : [
@@ -255,6 +228,14 @@ async function main() {
           });
         await host.plugin(PluginPackages, { resolution });
         requireAdmittedExtensions(host, admittedExtensionSelectors(profile));
+        host.on(
+          "agent/created",
+          () => {
+            if (process.env.DSH_ACTION_DIAGNOSTICS && process.env.DSH_ACTION_DIAGNOSTICS !== "off")
+              process.stderr.write('DSH_DIAGNOSTIC {"phase":"loader.ready"}\n');
+          },
+          { prepend: true },
+        );
         observeRootAgent(host, observationPath);
         const signal = (code) => {
           if (exitStarted) process.exit(code);

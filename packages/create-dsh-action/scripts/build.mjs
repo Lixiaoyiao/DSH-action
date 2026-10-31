@@ -62,7 +62,7 @@ const runtimeFiles = [
   "installer.mjs",
   "workflow-text.mjs",
   "workflow-files.mjs",
-  "local-plugins.mjs",
+  "profile-import.mjs",
 ];
 const sourceTemplateFiles = ["dsh-review.yml", "dsh-commands.yml", "dsh-session.yml"];
 const runtime = new Map();

@@ -1,3 +1,4 @@
+import { stageProjectProfile, type ProjectProfile } from "./project-profile.js";
 import { randomUUID } from "node:crypto";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -129,19 +130,26 @@ function nativeProfilePatch(
 export async function writeNativeProfile(
   options: DshModelSettings & {
     readonly profileRoot: string;
+    readonly projectProfile?: ProjectProfile;
     readonly manifestBase: Readonly<Record<string, unknown>>;
     readonly plan: NativeExtensionPlan;
     readonly moduleSpecifiers?: Readonly<Record<string, string>>;
   },
 ): Promise<void> {
   const officialBundles = assertNativeProfileTemplate();
-  const bundles = [
+  const legacyBundles = [
     ...officialBundles,
     ...options.plan.bundles.map((bundle) => bundle.definition.package),
   ];
   const baseDependencies = isJsonObject(options.manifestBase.dependencies)
     ? options.manifestBase.dependencies
     : {};
+  const bundles = await stageProjectProfile(
+    options.projectProfile,
+    options.profileRoot,
+    nativeProfilePatch(options.plan, options.moduleSpecifiers, options),
+    legacyBundles,
+  );
   const manifest = {
     ...options.manifestBase,
     name: "dsh-profile-headless-native",
@@ -156,11 +164,6 @@ export async function writeNativeProfile(
       encoding: "utf8",
       mode: 0o600,
     },
-  );
-  await writeFile(
-    join(options.profileRoot, "cordis.patch.yml"),
-    nativeProfilePatch(options.plan, options.moduleSpecifiers, options),
-    { encoding: "utf8", mode: 0o600 },
   );
   await writeFile(join(options.profileRoot, NATIVE_PROFILE_ROOT_FILENAME), "[]\n", {
     encoding: "utf8",
@@ -332,6 +335,7 @@ export class NativeComposition implements DshComposition {
     const profileRoot = options.runtime.packageRoot;
     await writeNativeProfile({
       profileRoot,
+      ...(options.projectProfile === undefined ? {} : { projectProfile: options.projectProfile }),
       manifestBase,
       plan,
       ...(options.model === undefined ? {} : { model: options.model }),

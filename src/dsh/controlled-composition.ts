@@ -226,6 +226,7 @@ export class ControlledComposition implements DshComposition {
     const assets = controlledAssets(options.assetsDirectory);
     const profile = await prepareControlledProfile({
       dshHome: options.runtime.dshHome,
+      ...(options.projectProfile === undefined ? {} : { projectProfile: options.projectProfile }),
       plan: options.plan,
       nativeTools: options.nativeTools,
       workspaceWrite: options.workspaceWrite,

@@ -1,3 +1,5 @@
+import type { ProjectProfileAudit } from "../dsh/project-profile.js";
+import type { DiagnosticSummary } from "../dsh/diagnostics.js";
 import type { ModelUsage } from "../dsh/usage.js";
 import type { Operation } from "../commands/parse.js";
 import type { AgentToolReceipt } from "../agent/loop-contracts.js";
@@ -74,6 +76,8 @@ export interface SessionRunSummary {
 }
 
 export interface RunOutcome {
+  readonly diagnostics?: DiagnosticSummary;
+  readonly configuration?: ProjectProfileAudit;
   readonly schemaVersion: 1;
   readonly conclusion: ActionConclusion;
   readonly operation?: Operation;

@@ -7,6 +7,26 @@ branding:
 
 inputs:
   # BEGIN GENERATED ACTION INPUTS
+  worker-network:
+    description: "Allow Worker outbound networking independently of mode, trust and extension declarations."
+    required: false
+    default: "true"
+  comment-mode:
+    description: "append creates one reply per run/attempt; update reuses the latest matching bot reply."
+    required: false
+    default: "append"
+  diagnostics:
+    description: "Diagnostic detail: off, basic, or detailed (bounded redacted artifact)."
+    required: false
+    default: "basic"
+  dsh-profile:
+    description: "Trusted repository Profile directory; auto discovers .dsh at the trusted base/default commit."
+    required: false
+    default: "auto"
+  dsh-env:
+    description: "JSON array of additional Worker environment variable names. Never Controller credentials."
+    required: false
+    default: "[]"
   deepseek-api-key:
     description: "DeepSeek API key. Kept by the controller-side credential proxy; never passed to DSH or repository code."
     required: true
