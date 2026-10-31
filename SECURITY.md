@@ -204,7 +204,7 @@ object; native DSH inventory remains DSH-owned runtime observation.
 Composition is a separate dimension. `dsh-mode: controlled` is the compatible
 default and retains the Action-generated Profile and positive ToolRuntime
 policy. Experimental `dsh-mode: native` uses the locked official DSH
-`0.2.0-rc.2` headless composition and leaves DSH in ownership of its internal
+`0.2.1-rc.2` headless composition and leaves DSH in ownership of its internal
 capability graph. `permission-profile` is neither reused nor reinterpreted as a
 composition selector, and a controlled canonical allowlist is not presented as
 complete authority over the native inventory.
@@ -343,32 +343,29 @@ before a later failure, the Controller records `partial-success` and an
 
 This section applies to `dsh-mode: controlled`.
 
-v0.4 introduced the official DSH extension mechanisms. v0.9.1 migrates them
-against the exact `@deepseek-ai/dsh@0.2.0-rc.2` package family, generates a
-controlled Profile, and
-loads the approved Bundle and Cordis plugin rows from that Profile. It does not
-read extension authorization from the repository or model response and does not
-run model-generated `npm`, Git, or plugin-install commands. The generated Cordis
-patch serializes workflow values as JSON data so a configured string cannot add
-a patch row or become a YAML `!!js` expression; an approved Bundle's own patch
-remains trusted package code.
+The Action composes trusted project Profiles with its internal runtime overrides
+through the official `@deepseek-ai/dsh-app-boot@0.2.1-rc.2` Profile API. Without a
+project Profile, legacy workflow inputs are converted into the same native
+loading path. Bundles and Cordis plugins are executable trusted configuration;
+PR-head content and model output cannot supply their startup configuration.
+Controlled tool requests from the trusted Profile remain limited by the
+Controller's capabilities, explicit denies and current authorization.
 
-The [fixed-candidate migration audit](docs/dsh-0.2.0-rc.2-migration.md) covers
-app-boot, Profile/Bundle/Plugin, MCP, ToolRuntime, Bash, Web Search, Subagent,
-Workflow/PTC, Session lifecycle, receipts, Docker/path/timeout handling, and
-the packaged `dist` entrypoint. It records required upstream differences and
-the dependency audit findings without approving later DSH releases.
-The [2026-10-14 dependency review](docs/dependency-security-2026-10-14.md)
-records the current compatible patches, remaining exact upstream constraints,
-and the distinction between installed advisories and default-path reachability.
+The Action never runs model-generated package installation or Git commands.
+Legacy workflow values are serialized as JSON data, so a configured string cannot
+inject a Cordis row or YAML `!!js` expression. Trusted native patch expressions
+retain official DSH semantics. The general CLI's local `$DSH_HOME` and `.env`
+discovery, watch and hot reload are not used.
+
+The [fixed-candidate migration audit](docs/dsh-0.2.1-rc.2-migration.md) records
+the official runtime and composition integration. The
+[v0.13.0 dependency updates](CHANGELOG.md#0130---2026-10-31) retain that DSH family
+with explicit major-scoped or exact-parent compatibility overrides. Production
+audit results retain seven moderate entries in the Artifact SDK archive chain,
+with no high or critical entries. The [2026-10-14 dependency review](docs/dependency-security-2026-10-14.md)
+is historical evidence, not the current override or vulnerability inventory.
 The separately versioned installer writes workflow files and does not run
 inside the Agent or Controller.
-
-In controlled mode, the Action starts this generated Profile through the official
-`@deepseek-ai/dsh-app-boot@0.2.0-rc.2` public API. It does not use the general
-CLI path that discovers workspace or `$DSH_HOME` `.env` files, nor does it
-enable dynamic user patch discovery, watch or hot reload. The only Profile and
-Cordis patch inputs come from the Controller-validated run configuration.
 
 The effective runtime tool set is a positive intersection of the selected
 permission preset, exact allow/deny lists, strict configuration manifests, and
@@ -753,7 +750,7 @@ Use dedicated runners, network segmentation, and runner-level egress controls
 for that threat model.
 
 GitHub attachment images are not an enabled input path in v0.9.1. The exact
-audited `@deepseek-ai/dsh-headless@0.2.0-rc.2` entrypoint accepts one text task
+audited `@deepseek-ai/dsh-headless@0.2.1-rc.2` entrypoint accepts one text task
 and constructs one text content block; it has no formal multimodal contract.
 Markdown images are rendered inert as `[image removed]`. The Controller does
 not download attachments, forward their URLs, mount their bytes, or attach
@@ -789,7 +786,7 @@ Controlled mode retains the binding of its generated Profile and positive
 native-tool policy to the exact DSH version whose complete tool surface was
 audited. Native mode binds its official headless composition and observed
 runtime inventory to that same pin. The Action accepts only the exact
-`@deepseek-ai/dsh@0.2.0-rc.2` package family; another tag, range, or exact
+`@deepseek-ai/dsh@0.2.1-rc.2` package family; another tag, range, or exact
 version is rejected until matching controlled and native contracts are reviewed
 and shipped. The Action's DSH
 dependency graph is installed from the committed lockfile in an ephemeral

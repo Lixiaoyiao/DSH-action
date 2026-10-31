@@ -43,7 +43,8 @@ it("uses the official HTTP fetch consumer through success, redirect protection, 
     userAgent: "dsh-security-regression",
   };
   // The official injectable resolver is the sole test seam. Requests still use
-  // the actual Undici resolved by dsh-web-fetch-http. Public-IP policy is tested separately below.
+  // the actual Undici resolved by dsh-web-fetch-http. The default resolver's
+  // public-IP policy is exercised in a separate process below.
   const provider = new HttpFetchProvider(limits, () =>
     Promise.resolve([{ address: "127.0.0.1", family: 4 }]),
   );
@@ -78,6 +79,55 @@ it("uses the official HTTP fetch consumer through success, redirect protection, 
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
+});
+
+it("rejects a private DNS answer through the default official HTTP resolver", () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `
+        import assert from "node:assert/strict";
+        import dns from "node:dns/promises";
+        import { syncBuiltinESMExports } from "node:module";
+        import { createServer } from "node:http";
+        let lookups = 0;
+        let requests = 0;
+        dns.lookup = async (hostname, options) => {
+          assert.equal(hostname, "dns-fixture.example");
+          assert.equal(options.all, true);
+          lookups++;
+          return [{ address: "127.0.0.1", family: 4 }];
+        };
+        syncBuiltinESMExports();
+        const { HttpFetchProvider } = await import("@deepseek-ai/dsh-web-fetch-http");
+        const server = createServer((_request, response) => {
+          requests++;
+          response.writeHead(200, { "content-type": "text/plain" }).end("private fixture");
+        });
+        await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+        try {
+          const provider = new HttpFetchProvider({
+            maxResponseBytes: 8192, maxBodyChars: 8192, timeoutMs: 1000,
+            maxRedirects: 2, userAgent: "dsh-security-regression",
+          });
+          await assert.rejects(provider.fetch({
+            url: "http://dns-fixture.example:" + server.address().port + "/",
+          }), { code: "WEB_BLOCKED_URL" });
+          assert.equal(lookups, 1);
+          assert.equal(requests, 0);
+        } finally {
+          server.closeAllConnections();
+          await new Promise(resolve => server.close(resolve));
+        }
+      `,
+    ],
+    { encoding: "utf8", timeout: 5000, windowsHide: true },
+  );
+  expect(result.error).toBeUndefined();
+  expect(result.stderr).toBe("");
+  expect(result.status).toBe(0);
 });
 
 it("keeps the Office consumer ZIP roundtrip and rejects the malformed ZIP64 regression", () => {

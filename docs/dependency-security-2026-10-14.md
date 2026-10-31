@@ -1,6 +1,10 @@
 # Dependency security review — 2026-10-14
 
-This review updates the dependency assessment for the current source tree while
+This is the historical assessment of the 2026-10-14 source tree. For current
+patches, explicit compatibility overrides and residual audit entries, see the
+[v0.13.0 release notes](../CHANGELOG.md#0130---2026-10-31).
+
+The assessment below was recorded while
 retaining the exact DSH `0.2.0-rc.2` family. The
 [rc.2 migration audit](dsh-0.2.0-rc.2-migration.md) and
 [v0.9.2 audit](v0.9.2-runtime-audit.md) describe historical releases; their counts

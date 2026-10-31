@@ -1,6 +1,6 @@
 # Setup
 
-Unreleased: native project Profiles, independent network access (on by default), per-run reply history and live diagnostics. Installer changes are deferred. See [configuration](native-profile.md).
+Action v0.13.0: native project Profiles, independent network access (on by default), per-run reply history and live diagnostics. Installer changes are deferred. See [configuration](native-profile.md).
 
 [中文](setup.zh-CN.md) · [README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md)
 
@@ -149,11 +149,11 @@ The default `github-token` is `${{ github.token }}` and is also Controller-only.
 The examples use the current release tag for readability:
 
 ```yaml
-uses: Lixiaoyiao/DSH-action@v0.12.2
+uses: Lixiaoyiao/DSH-action@v0.13.0
 ```
 
 For production, replace the tag with the full immutable commit SHA resolved
-from formal `v0.12.2`. Installer `0.7.4` targets that Action identity, with a
+from formal `v0.13.0`. The unchanged installer `0.7.4` still targets `v0.12.2`, with a
 separately reviewed source commit. Generated workflows use the verified release
 commit; source templates receive it through the release build.
 
@@ -212,7 +212,7 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
           persist-credentials: false
           fetch-depth: 1
-      - uses: Lixiaoyiao/DSH-action@v0.12.2
+      - uses: Lixiaoyiao/DSH-action@v0.13.0
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           dsh-version: 0.2.1-rc.2
