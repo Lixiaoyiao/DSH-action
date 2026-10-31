@@ -296,6 +296,16 @@ export async function loadRepositoryProfile(options: {
       throw new DshConfigurationError("Profile path must be an ordinary Git directory");
     treeSha = entry.sha;
   }
+  const profileTree = await options.client.rest.git.getTree({ ...target, tree_sha: treeSha });
+  if (profileTree.data.truncated || profileTree.data.sha !== treeSha)
+    throw new DshConfigurationError("Profile resource tree is incomplete");
+  const files = new Set(profileTree.data.tree.map((entry) => entry.path));
+  const manifestPresent = files.has("package.json"),
+    patchPresent = files.has("cordis.patch.yml");
+  // .dsh/skills is a native repository capability, not a declaration of a Profile.
+  if (options.selection === "auto" && !manifestPresent && !patchPresent) return undefined;
+  if (!manifestPresent || !patchPresent)
+    throw new DshConfigurationError("Project Profile requires package.json and cordis.patch.yml");
   let bytes = 0,
     count = 0;
   async function materialize(sha: string, relative: string): Promise<void> {

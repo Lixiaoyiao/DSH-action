@@ -175,3 +175,13 @@ npm run check:config -- --config examples/config-check.json --profile examples/n
 Plugin activation, network and GitHub authority remain not_checked. Runtime and
 Session compatibility include effective configuration and network; history
 never restores old authorization.
+
+The selected Profile directory is a Controller-protected publication path, including
+custom `dsh-profile` directories. Worker additions, edits and deletions beneath it
+are rejected before any GitHub blob or commit is created. The directory selection
+is carried by the Controller workspace snapshot, not accepted from model output.
+
+With `dsh-profile: auto`, a `.dsh` directory containing only native repository
+resources such as `skills/` does not activate project Profile loading. Either
+`package.json` or `cordis.patch.yml` indicates Profile intent, and both files must
+then exist and validate. An explicit `dsh-profile` always requires a valid Profile.

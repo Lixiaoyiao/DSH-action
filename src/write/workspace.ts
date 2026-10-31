@@ -23,6 +23,8 @@ export interface WorkspaceSnapshot {
   readonly sourceRoot: string;
   readonly workerRoot: string;
   readonly baseline: ReadonlyMap<string, FileState>;
+  /** Controller-selected configuration roots; never supplied by the Worker. */
+  readonly protectedPaths?: readonly string[];
 }
 
 export type WorkspaceSource =
@@ -141,6 +143,7 @@ async function repositoryPaths(source: WorkspaceSource): Promise<readonly string
 export async function createWorkspaceSnapshot(
   source: WorkspaceSource,
   workerRoot: string,
+  protectedPaths: readonly string[] = [],
 ): Promise<WorkspaceSnapshot> {
   const sourceRoot = source.root;
   await mkdir(workerRoot, { recursive: true, mode: 0o700 });
@@ -165,7 +168,12 @@ export async function createWorkspaceSnapshot(
       throw new Error("Snapshot path escaped root");
     await copyEntry(source, destination, state);
   }
-  return { sourceRoot, workerRoot, baseline };
+  return {
+    sourceRoot,
+    workerRoot,
+    baseline,
+    protectedPaths: Object.freeze(protectedPaths.map(normalizeRelativePath)),
+  };
 }
 
 async function walkFiles(root: string, directory = ""): Promise<Map<string, FileState>> {

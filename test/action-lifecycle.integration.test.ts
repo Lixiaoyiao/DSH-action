@@ -1391,3 +1391,77 @@ it("retains a published diagnosis when its Session checkpoint fails", async () =
   expect(published.comment).toHaveBeenCalledOnce();
   expect(ports.process).not.toHaveBeenCalled();
 });
+
+it("carries a custom Profile protection from Action input to the final GitHub write gate", async () => {
+  vi.stubEnv("INPUT_DSH-PROFILE", "config/harness");
+  vi.stubEnv("INPUT_ALLOWED-TOOLS", "");
+  const profileFiles = [
+    {
+      path: "package.json",
+      sha: "f".repeat(40),
+      content: JSON.stringify({ dsh: { profile: { bundles: [] } } }),
+    },
+    { path: "cordis.patch.yml", sha: "1".repeat(40), content: "[]" },
+  ];
+  ports.client.mockReturnValue(
+    githubClientFixture({
+      ...fixture,
+      rest: {
+        ...fixture.rest,
+        git: {
+          ...fixture.rest?.git,
+          getTree: ({ tree_sha, recursive }: { tree_sha: string; recursive?: string }) =>
+            Promise.resolve({
+              data: {
+                sha: tree_sha,
+                truncated: false,
+                tree:
+                  recursive !== undefined
+                    ? profileFiles.map((file) => ({
+                        path: "config/harness/" + file.path,
+                        sha: file.sha,
+                        type: "blob",
+                        mode: "100644",
+                        size: Buffer.byteLength(file.content),
+                      }))
+                    : tree_sha === tree
+                      ? [{ path: "config", sha: "d".repeat(40), type: "tree", mode: "040000" }]
+                      : tree_sha === "d".repeat(40)
+                        ? [{ path: "harness", sha: "e".repeat(40), type: "tree", mode: "040000" }]
+                        : profileFiles.map((file) => ({
+                            path: file.path,
+                            sha: file.sha,
+                            type: "blob",
+                            mode: "100644",
+                            size: Buffer.byteLength(file.content),
+                          })),
+              },
+            }),
+          getBlob: ({ file_sha }: { file_sha: string }) => {
+            const file = profileFiles.find((file) => file.sha === file_sha);
+            if (file === undefined) throw new Error("Unexpected blob");
+            return Promise.resolve({
+              data: {
+                sha: file.sha,
+                encoding: "base64",
+                size: Buffer.byteLength(file.content),
+                content: Buffer.from(file.content).toString("base64"),
+              },
+            });
+          },
+        },
+      },
+    }),
+  );
+  ports.runDsh.mockImplementation(async (request) => {
+    if (request.workspacePath === undefined) throw new Error("Missing worker workspace");
+    await writeFile(join(request.workspacePath, "config/harness/cordis.patch.yml"), "[]\n");
+    return readonlyWorkerResult("final");
+  });
+  const outcome = await runAction();
+  expect(outcome.conclusion).toBe("failure");
+  expect(outcome.error?.message).toContain("Protected path");
+  expect(ports.runDsh).toHaveBeenCalledOnce();
+  expect(created.blob).not.toHaveBeenCalled();
+  expect(created.commit).not.toHaveBeenCalled();
+});
