@@ -11,6 +11,11 @@ on:
         options:
           - pull-request
           - main
+      profile_defaults:
+        description: "Candidate uses native Profile defaults (Worker egress and web tools enabled)"
+        type: boolean
+        required: false
+        default: false
       candidate_sha:
         description: Full lowercase SHA of the candidate action commit
         required: true
@@ -76,6 +81,8 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+    env:
+      PROFILE_DEFAULTS: ${{ inputs.profile_defaults }}
     steps:
       - name: Checkout permanent harness
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -155,12 +162,17 @@ jobs:
           RESULT_JSON: ${{ steps.strict.outputs['result-json'] }}
         run: |
           set -euo pipefail
-          jq -e '
+          jq -e --argjson profile_defaults "$PROFILE_DEFAULTS" '
             .schemaVersion == 1 and .conclusion == "success" and .operation == "task" and
             .policy.trust == "trusted-read" and .permissions.profile == "strict" and
-            .permissions.effectiveTools == ["workspace.read","workspace.search"] and
+            (if $profile_defaults then
+              .permissions.effectiveTools == ["native.web-fetch","native.web-search","workspace.read","workspace.search"] and
+              .toolPolicy.requestedTools == ["native.web-fetch","native.web-search","workspace.edit","workspace.read","workspace.search"]
+            else
+              .permissions.effectiveTools == ["workspace.read","workspace.search"] and
+              .toolPolicy.requestedTools == ["workspace.edit","workspace.read","workspace.search"]
+            end) and
             .toolPolicy.policyOwner == "controller" and
-            .toolPolicy.requestedTools == ["workspace.edit","workspace.read","workspace.search"] and
             .toolPolicy.effectiveTools == .permissions.effectiveTools and
             (.toolPolicy.deniedTools | any(.id == "workspace.edit")) and
             (.toolPolicy | has("observedTools") | not) and
@@ -199,7 +211,7 @@ jobs:
           set -euo pipefail
           [[ "$DSH_MODE" == "native" ]]
           [[ "$DSH_COMPOSITION" == "dsh-native-headless" ]]
-          jq -e '
+          jq -e --argjson profile_defaults "$PROFILE_DEFAULTS" '
             .schemaVersion == 1 and .conclusion == "success" and .operation == "task" and
             .dsh.mode == "native" and .dsh.composition == "dsh-native-headless" and
             .policy.trust == "trusted-read" and
@@ -214,7 +226,7 @@ jobs:
             (.toolPolicy | has("requestedTools") | not) and
             (.toolPolicy | has("deniedTools") | not) and
             .permissions.workspaceWrite == false and
-            .permissions.network == "mediated-web" and
+            (if $profile_defaults then .permissions.network == "bridge" else .permissions.network == "mediated-web" end) and
             .isolation.backend == "docker" and .isolation.processIsolated == true and
             .isolation.workspaceAccess == "read-only" and
             .isolation.extensionProfile == "none" and
@@ -353,14 +365,14 @@ jobs:
         run: |
           set -euo pipefail
           node .github/e2e/web-search-evidence.mjs
-          jq -e '
+          jq -e --argjson profile_defaults "$PROFILE_DEFAULTS" '
             .actionOutcome == "success" and .sourceReported == true and
             .receiptCount == 1 and .completedWebSearchCount == 1
           ' "$WEB_EVIDENCE" >/dev/null
           jq -e '
             .conclusion == "success" and
             .permissions.effectiveTools == ["native.web-search"] and
-            .permissions.network == "mediated-web" and
+            (if $profile_defaults then .permissions.network == "bridge" else .permissions.network == "mediated-web" end) and
             (.loop.dshToolReceipts // [] | map(select(.id == "native.web-search" and .completed == true and .ok == true)) | length == 1)
           ' <<<"$RESULT_JSON" >/dev/null
 
