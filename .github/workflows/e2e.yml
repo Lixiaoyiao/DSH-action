@@ -369,7 +369,7 @@ jobs:
             .actionOutcome == "success" and .sourceReported == true and
             .receiptCount == 1 and .completedWebSearchCount == 1
           ' "$WEB_EVIDENCE" >/dev/null
-          jq -e '
+          jq -e --argjson profile_defaults "$PROFILE_DEFAULTS" '
             .conclusion == "success" and
             .permissions.effectiveTools == ["native.web-search"] and
             (if $profile_defaults then .permissions.network == "bridge" else .permissions.network == "mediated-web" end) and
