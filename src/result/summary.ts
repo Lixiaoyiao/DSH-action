@@ -220,6 +220,16 @@ export function formatStepSummary(outcome: RunOutcome): string {
       lines.push(
         `| ${event.source} | ${safeInline(event.phase)}${event.name ? " " + safeInline(event.name) : ""} | ${String(event.elapsedMs)} |`,
       );
+    if (outcome.diagnostics.remainingMs !== undefined)
+      lines.push("", `Remaining Action budget: ${String(outcome.diagnostics.remainingMs)}ms.`);
+    const lastCompleted = outcome.diagnostics.events.findLast((event) =>
+      event.phase.endsWith(".end"),
+    );
+    if (lastCompleted !== undefined)
+      lines.push(
+        "",
+        `Last completed phase: ${safeInline(lastCompleted.phase)}. Last observed event: ${safeInline(outcome.diagnostics.events.at(-1)?.phase ?? "unknown")}.`,
+      );
     if (outcome.diagnostics.artifactId !== undefined)
       lines.push("", `Diagnostic artifact: ${String(outcome.diagnostics.artifactId)}.`);
   }

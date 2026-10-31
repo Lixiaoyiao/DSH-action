@@ -32,7 +32,7 @@ async function publishStatusComment(client, target, authorId, title, message, ru
         "",
         `<sub>[Workflow run](${runUrl}) · dsh-action</sub>`,
     ].join("\n");
-    await (0,comments/* upsertTrackingComment */.k)(client, target, authorId, trackingKind, body);
+    await (0,comments/* upsertTrackingComment */.kv)(client, target, authorId, trackingKind, body);
 }
 
 // EXTERNAL MODULE: ./src/write/transaction.ts + 2 modules

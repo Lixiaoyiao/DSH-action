@@ -145,6 +145,14 @@ describe("runDsh installation", () => {
       },
     },
     {
+      name: "second Bundle patch escaping its package",
+      message: /patch escapes/u,
+      mutate: async ({ manifest, packageDirectory }: InstalledFixture) => {
+        manifest.dsh = { bundle: { patch: ["./cordis.patch.yml", "../outside.patch.yml"] } };
+        await writeFile(join(packageDirectory, "..", "outside.patch.yml"), "[]\n");
+      },
+    },
+    {
       name: "replaced runtime package",
       message: /changed runtime package/u,
       mutate: async ({ runtime }: InstalledFixture) => {
@@ -167,6 +175,24 @@ describe("runDsh installation", () => {
     try {
       await expect(fixture.run()).rejects.toThrow(message);
       expect(fixture.adapter.workerLaunches).toBe(0);
+    } finally {
+      await disposeDshRuntime(fixture.runtime);
+    }
+  });
+
+  it("accepts an ordered two-file Bundle and reuses its audited installation", async () => {
+    const fixture = await installationFixture(async ({ manifest, packageDirectory }) => {
+      manifest.dsh = { bundle: { patch: ["./cordis.patch.yml", "./second.patch.yml"] } };
+      await writeFile(join(packageDirectory, "second.patch.yml"), "[]\n");
+    });
+    try {
+      await expect(fixture.run()).resolves.toMatchObject({
+        output: { summary: "Installed safely." },
+      });
+      await expect(fixture.run()).resolves.toMatchObject({
+        output: { summary: "Installed safely." },
+      });
+      expect(fixture.adapter.workerLaunches).toBe(2);
     } finally {
       await disposeDshRuntime(fixture.runtime);
     }

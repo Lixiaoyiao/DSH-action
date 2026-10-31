@@ -1,6 +1,6 @@
 # Setup
 
-Unreleased: native project Profiles, independent network access (on by default), per-run reply history and live diagnostics. See [configuration and migration](native-profile.md).
+Unreleased: native project Profiles, independent network access (on by default), per-run reply history and live diagnostics. Installer changes are deferred. See [configuration](native-profile.md).
 
 [中文](setup.zh-CN.md) · [README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md)
 

@@ -3,7 +3,12 @@
   "private": true,
   "type": "module",
   "dsh": {
-    "profile": { "bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-headless"] }
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-headless"
+      ]
+    }
   },
   "dependencies": {}
 }

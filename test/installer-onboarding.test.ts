@@ -55,7 +55,7 @@ describe("installer terminal onboarding", () => {
       argv: [],
       cwd: f.root,
       isTTY: true,
-      env: { DSH_HOME: join(f.root, "empty-home") },
+      env: {},
       input: Readable.from(["\n\n"]),
       output: f.output,
       templateDirectory: f.templates,
@@ -63,11 +63,7 @@ describe("installer terminal onboarding", () => {
     expect(result).toEqual({
       mode: "review",
       dshMode: "controlled",
-      createdFiles: [
-        ".github/workflows/dsh-review.yml",
-        ".dsh/package.json",
-        ".dsh/cordis.patch.yml",
-      ],
+      createdFiles: [".github/workflows/dsh-review.yml"],
     });
     expect(f.text()).toContain("Selection [1-4, default 1]");
     expect(f.text()).toContain("Selection [1-2, default 1]");
@@ -76,7 +72,7 @@ describe("installer terminal onboarding", () => {
       'allow-write: "false"',
     );
     expect(await readFile(join(f.root, "README.md"), "utf8")).toBe("existing repository content\n");
-    expect((await readdir(f.root)).sort()).toEqual([".dsh", ".github", "README.md", "templates"]);
+    expect((await readdir(f.root)).sort()).toEqual([".github", "README.md", "templates"]);
   });
 
   it("retries invalid terminal choices and installs the selected workflows", async () => {
@@ -85,7 +81,7 @@ describe("installer terminal onboarding", () => {
       argv: [],
       cwd: f.root,
       isTTY: true,
-      env: { DSH_HOME: join(f.root, "empty-home") },
+      env: {},
       input: Readable.from(["unknown\n3\nunknown\n2\n"]),
       output: f.output,
       templateDirectory: f.templates,
@@ -94,8 +90,6 @@ describe("installer terminal onboarding", () => {
     expect(result.createdFiles).toEqual([
       ".github/workflows/dsh-review.yml",
       ".github/workflows/dsh-commands.yml",
-      ".dsh/package.json",
-      ".dsh/cordis.patch.yml",
     ]);
     expect(f.text()).toContain("Please enter 1, 2, 3, or 4.");
     expect(f.text()).toContain("Please enter 1 or 2.");
@@ -107,7 +101,7 @@ describe("installer terminal onboarding", () => {
       argv: ["--advanced", "--mode", "review"],
       cwd: f.root,
       isTTY: true,
-      env: { DSH_HOME: join(f.root, "empty-home") },
+      env: {},
       input: Readable.from(["2\n"]),
       output: f.output,
       templateDirectory: f.templates,
@@ -124,7 +118,7 @@ describe("installer terminal onboarding", () => {
       argv: ["--mode", "review"],
       cwd: f.root,
       isTTY: true,
-      env: { DSH_HOME: join(f.root, "empty-home") },
+      env: {},
       input: new Readable({
         read() {
           read = true;
@@ -145,7 +139,7 @@ describe("installer terminal onboarding", () => {
         argv: [],
         cwd: f.root,
         isTTY: true,
-        env: { DSH_HOME: join(f.root, "empty-home") },
+        env: {},
         input: Readable.from(["1\n"]),
         output: f.output,
         templateDirectory: f.templates,

@@ -159,11 +159,11 @@ attempts every acquired resource's disposer, preserving the primary outcome.
 
 ## Installation design
 
-The CLI installer discovers local Profiles, previews portable configuration and
-Secret references, then saves native project files and workflows in one checked
-transaction. It never executes imported code, copies credentials, changes the
-source Home or publishes Git changes. Existing files and concurrent edits are
-preserved. Package compatibility metadata is generated from the Action lock.
+The CLI installer remains unchanged in this runtime change. It creates
+release-bound workflows and optionally imports package metadata from local
+plugins. It never executes repository code, sets GitHub Secrets or publishes
+Git changes. Full native Profile migration is deferred; users can maintain
+project Profile files directly. Current CLI saves remain limited to workflows.
 
 ## Verification seams
 

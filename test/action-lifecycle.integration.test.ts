@@ -1170,7 +1170,7 @@ it.each(["controlled", "native"] as const)(
     });
     if (mode === "native") {
       expect(outcome.dsh).toEqual({ mode: "native", composition: "dsh-native-headless" });
-      expect(outcome.permission?.network).toBe("mediated-web");
+      expect(outcome.permission?.network).toBe("bridge");
       expect(outcome.toolPolicy).toEqual({
         schemaVersion: 1,
         policyOwner: "dsh",

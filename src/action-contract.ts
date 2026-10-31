@@ -39,7 +39,6 @@ export const ACTION_INPUT_CONTRACT = [
     description:
       "Allow Worker outbound networking independently of mode, trust and extension declarations.",
     docsGroup: "runtime",
-    installer: true,
   },
   {
     name: "comment-mode",
@@ -49,7 +48,6 @@ export const ACTION_INPUT_CONTRACT = [
     description:
       "append creates one reply per run/attempt; update reuses the latest matching bot reply.",
     docsGroup: "runtime",
-    installer: true,
   },
   {
     name: "diagnostics",
@@ -58,7 +56,6 @@ export const ACTION_INPUT_CONTRACT = [
     default: "basic",
     description: "Diagnostic detail: off, basic, or detailed (bounded redacted artifact).",
     docsGroup: "runtime",
-    installer: true,
   },
   {
     name: "dsh-profile",
@@ -68,7 +65,6 @@ export const ACTION_INPUT_CONTRACT = [
     description:
       "Trusted repository Profile directory; auto discovers .dsh at the trusted base/default commit.",
     docsGroup: "runtime",
-    installer: true,
   },
   {
     name: "dsh-env",
@@ -78,7 +74,6 @@ export const ACTION_INPUT_CONTRACT = [
     description:
       "JSON array of additional Worker environment variable names. Never Controller credentials.",
     docsGroup: "runtime",
-    installer: true,
   },
 
   {

@@ -319,7 +319,7 @@ describe("runDsh isolation", () => {
       await runDsh(
         request({
           isolation: "docker",
-          workerNetwork: false,
+          workerNetwork: true,
           workspacePath: fixture.workspace,
           nativeTools: ["workspace.read", webTool],
         }),

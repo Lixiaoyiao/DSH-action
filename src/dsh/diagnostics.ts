@@ -1,8 +1,6 @@
 import { isRecord } from "../security/record.js";
 import { createHash } from "node:crypto";
-import { StringDecoder } from "node:string_decoder";
 import { redactKnownSecrets } from "../security/env.js";
-import { stepModelUsage, mergeModelUsage, type ModelUsage } from "./usage.js";
 
 export type DiagnosticLevel = "off" | "basic" | "detailed";
 export interface DiagnosticEvent {
@@ -20,6 +18,7 @@ export interface DiagnosticSummary {
   readonly elapsedMs: number;
   readonly lastActivityMs: number;
   readonly artifactId?: number;
+  readonly remainingMs?: number;
 }
 
 /** Bounded metadata projection. Never retain model prose, tool arguments or HTTP bodies. */
@@ -28,16 +27,13 @@ export class RunDiagnostics {
   private lastActivity = this.started;
   private readonly events: DiagnosticEvent[] = [];
   private dropped = 0;
-  private decoder = new StringDecoder("utf8");
-  private pending = "";
   private pendingError = "";
-  private discardLine = false;
   private readonly secrets: string[];
-  public usage: ModelUsage | undefined;
   public constructor(
     public readonly level: DiagnosticLevel,
     private readonly log: (message: string) => void,
     secrets: readonly string[] = [],
+    private readonly deadlineMs?: number,
   ) {
     this.secrets = [...secrets];
   }
@@ -96,11 +92,7 @@ export class RunDiagnostics {
     }
   }
   public resetStream(): void {
-    this.pending = "";
     this.pendingError = "";
-    this.usage = undefined;
-    this.decoder = new StringDecoder("utf8");
-    this.discardLine = false;
   }
   public stderr(chunk: Buffer): void {
     this.pendingError = (this.pendingError + chunk.toString("utf8")).slice(-65536);
@@ -123,37 +115,13 @@ export class RunDiagnostics {
         }
       }
   }
-  public stdout(chunk: Buffer): void {
-    const text = this.decoder.write(chunk);
-    for (const part of text.split(/(?<=\n)/u)) {
-      if (!this.discardLine) this.pending += part;
-      if (Buffer.byteLength(this.pending) > 1024 * 1024) {
-        this.pending = "";
-        this.discardLine = true;
-      }
-      if (!part.endsWith("\n")) continue;
-      if (!this.discardLine) this.line(this.pending);
-      this.pending = "";
-      this.discardLine = false;
-    }
-  }
-  private line(line: string): void {
-    let row: Record<string, unknown>;
-    try {
-      const value: unknown = JSON.parse(line);
-      if (!isRecord(value)) return;
-      row = value;
-    } catch {
-      return;
-    }
+  public observeHeadless(value: unknown): void {
+    if (!isRecord(value)) return;
+    const row = value;
     if (
       row.type === "status" &&
       ["turn_start", "step_start", "step_end", "turn_end"].includes(String(row.phase))
     ) {
-      if (row.phase === "step_end") {
-        const sample = stepModelUsage(row.usage);
-        this.usage = this.usage === undefined ? sample : mergeModelUsage(this.usage, sample);
-      }
       this.event(String(row.phase), {}, "worker");
     } else if (
       row.type === "tool_call" &&
@@ -177,6 +145,9 @@ export class RunDiagnostics {
       dropped: this.dropped,
       elapsedMs: Date.now() - this.started,
       lastActivityMs: Date.now() - this.lastActivity,
+      ...(this.deadlineMs === undefined
+        ? {}
+        : { remainingMs: Math.max(0, this.deadlineMs - Date.now()) }),
     };
   }
 }

@@ -262,7 +262,7 @@ describe("create-dsh-action release build", () => {
         "dist/action-inputs.generated.mjs",
         "dist/cli.mjs",
         "dist/installer.mjs",
-        "dist/profile-import.mjs",
+        "dist/local-plugins.mjs",
         "dist/workflow-files.mjs",
         "dist/workflow-text.mjs",
         "dist/templates/dsh-commands-native.yml",
@@ -468,11 +468,7 @@ describe("installer modes", () => {
     expect(result).toEqual({
       mode: "review",
       dshMode: "controlled",
-      createdFiles: [
-        ".github/workflows/dsh-review.yml",
-        ".dsh/package.json",
-        ".dsh/cordis.patch.yml",
-      ],
+      createdFiles: [".github/workflows/dsh-review.yml"],
     });
     await expect(workflow(project, "dsh-review.yml")).resolves.not.toMatch(/^\s*dsh-mode:/mu);
     expect(output).toContain("DSH mode: controlled");
@@ -489,11 +485,7 @@ describe("installer modes", () => {
     expect(commands).toContain("REQUIRED: Replace this fail-closed placeholder");
     expect(commands).not.toMatch(/\b(?:npm|pnpm|yarn)\b/u);
     expect(result.dshMode).toBe("controlled");
-    expect(result.createdFiles).toEqual([
-      ".github/workflows/dsh-commands.yml",
-      ".dsh/package.json",
-      ".dsh/cordis.patch.yml",
-    ]);
+    expect(result.createdFiles).toEqual([".github/workflows/dsh-commands.yml"]);
     expect(output).toContain(
       "Replace test-commands with the commands that build and test your project",
     );
@@ -511,8 +503,6 @@ describe("installer modes", () => {
     expect(result.createdFiles).toEqual([
       ".github/workflows/dsh-review.yml",
       ".github/workflows/dsh-commands.yml",
-      ".dsh/package.json",
-      ".dsh/cordis.patch.yml",
     ]);
     expect(result.dshMode).toBe("controlled");
     expect(output).toContain("dsh-review.yml");
@@ -537,11 +527,7 @@ describe("installer modes", () => {
       expect(result).toEqual({
         mode,
         dshMode,
-        createdFiles: [
-          ...createdNames.map((name) => `.github/workflows/${name}`),
-          ".dsh/package.json",
-          ".dsh/cordis.patch.yml",
-        ],
+        createdFiles: createdNames.map((name) => `.github/workflows/${name}`),
       });
       expect(output).toContain(`DSH mode: ${dshMode}`);
 
@@ -596,11 +582,7 @@ describe("safe filesystem and non-interactive behavior", () => {
           }),
         })
         .parse(parse(contents));
-      expect(result.createdFiles).toEqual([
-        ".github/workflows/dsh-session.yml",
-        ".dsh/package.json",
-        ".dsh/cordis.patch.yml",
-      ]);
+      expect(result.createdFiles).toEqual([".github/workflows/dsh-session.yml"]);
       expect(document["run-name"]).toBe("dsh-session-${{ inputs.session_key }}");
       expect(document.concurrency).toEqual({
         group: document["run-name"],
@@ -828,7 +810,7 @@ describe("generated workflow contracts", () => {
       expect(review).not.toContain("pull_request.head");
       expect(review).toContain("persist-credentials: false");
       expect(review).toContain('allow-write: "false"');
-      expect(review).not.toContain("permission-profile:");
+      expect(review).toContain("permission-profile: strict");
       expect(review).toContain("isolation: docker");
 
       for (const permission of [
@@ -842,7 +824,7 @@ describe("generated workflow contracts", () => {
       }
       expect(commands).toContain("ref: ${{ github.event.repository.default_branch }}");
       expect(commands).toContain("persist-credentials: false");
-      expect(commands).not.toContain("permission-profile:");
+      expect(commands).toContain("permission-profile: standard");
       expect(commands).toContain("isolation: docker");
       expect(commands).toContain('allow-write: "true"');
       expect(commands).toContain('run-tests: "true"');

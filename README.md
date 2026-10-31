@@ -1,6 +1,6 @@
 # DSH-action
 
-Unreleased: native project Profiles, independent network access (on by default), per-run reply history and live diagnostics. See [configuration and migration](docs/native-profile.md).
+Unreleased: native project Profiles, independent network access (on by default), per-run reply history and live diagnostics. Installer changes are deferred. See [configuration](docs/native-profile.md).
 
 For existing workflows, update the Action reference to Lixiaoyiao/DSH-action@the-existing-commit-SHA and keep its immutable commit pin. Use npm create dsh-action for the installer.
 

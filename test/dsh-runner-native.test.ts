@@ -240,7 +240,7 @@ describe("runDsh native", () => {
       expect(result.isolationReport.limitations.join(" ")).toMatch(
         /entire native worker.*share that egress path/iu,
       );
-      expect(captured?.args.find(arg => /^dsh-action-[0-9a-f]/u.test(arg))).toBeDefined();
+      expect(captured?.args.find((arg) => /^dsh-action-[0-9a-f]/u.test(arg))).toBeDefined();
       expect(captured?.args).toContain(`${fixture.workspace}:/workspace:ro`);
       const launch = [captured?.command ?? "", ...(captured?.args ?? [])].join("\0");
       expect(launch).not.toContain(realGitHubToken);
@@ -360,7 +360,7 @@ describe("runDsh native", () => {
       });
       expect(captured?.args).toContain(`${fixture.workspace}:/workspace:rw`);
       const networkIndex = captured?.args.indexOf("--network") ?? -1;
-      expect(captured?.args[networkIndex + 1]).toMatch(/^dsh-action-internal-/u);
+      expect(captured?.args[networkIndex + 1]).toMatch(/^dsh-action-(?!internal-)/u);
     } finally {
       await disposeDshRuntime(runtime);
     }

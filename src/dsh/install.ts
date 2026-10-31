@@ -1,5 +1,6 @@
+import { LOCKED_RUNTIME_PACKAGES } from "./runtime-packages.generated.js";
 import type { ProjectProfile } from "./project-profile.js";
-import { copyFile, readFile, readdir, realpath } from "node:fs/promises";
+import { copyFile, readFile, readdir, realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import type { ExtensionPlan } from "../extensions/plan.js";
@@ -42,10 +43,27 @@ function insideDirectory(parent: string, child: string): boolean {
 export async function verifyInstalledExtensions(
   packageRoot: string,
   plan: ExtensionPlan,
+  profile?: ProjectProfile,
 ): Promise<void> {
   const installed = [
     ...plan.bundles.map((extension) => ({ extension, bundle: true })),
     ...plan.plugins.map((extension) => ({ extension, bundle: false })),
+    ...(profile === undefined
+      ? []
+      : [...new Set([...profile.bundles, ...Object.keys(profile.dependencies)])].map(
+          (packageName) => {
+            const source =
+              profile.dependencies[packageName] ?? LOCKED_RUNTIME_PACKAGES[packageName];
+            if (source === undefined)
+              throw new DshConfigurationError(
+                "Profile package has no declared source: " + packageName,
+              );
+            return {
+              extension: { definition: { id: packageName, package: packageName, source } },
+              bundle: profile.bundles.includes(packageName),
+            };
+          },
+        )),
   ];
   for (const { extension, bundle } of installed) {
     const packageDirectory = join(
@@ -87,7 +105,6 @@ export async function verifyInstalledExtensions(
       const patches = typeof bundle?.patch === "string" ? [bundle.patch] : bundle?.patch;
       if (
         !Array.isArray(patches) ||
-        patches.length === 0 ||
         !patches.every((patch) => typeof patch === "string" && patch.trim() !== "")
       )
         throw new DshConfigurationError(
@@ -101,6 +118,10 @@ export async function verifyInstalledExtensions(
         if (!insideDirectory(packageReal, patchReal))
           throw new DshConfigurationError(
             `Bundle ${extension.definition.package} patch escapes the installed package`,
+          );
+        if (!(await stat(patchReal)).isFile())
+          throw new DshConfigurationError(
+            `Bundle ${extension.definition.package} patch is not a file`,
           );
       }
     }
@@ -214,7 +235,6 @@ export async function auditFreshExtensionInstallation(
     baseline,
     await installedTopLevelPackageInventory(runtime.packageRoot),
   );
-  await verifyInstalledExtensions(runtime.packageRoot, plan);
   runtime.installedExtensionRuntimeLock = auditExtensionRuntimeLock({
     lockText: await readFile(join(runtime.packageRoot, "package-lock.json"), "utf8"),
     baseline: lockBaseline,

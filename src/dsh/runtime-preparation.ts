@@ -19,6 +19,7 @@ import {
 import {
   assertExtensionInstallBaseline,
   auditFreshExtensionInstallation,
+  verifyInstalledExtensions,
   auditReusedExtensionInstallation,
   captureExtensionInstallBaseline,
   prepareLockedRuntimeFiles,
@@ -295,6 +296,9 @@ export async function prepareWorkerRuntime(
   if (prepared.isolation !== "docker") {
     throw new DshConfigurationError("DSH composition was not prepared for Docker isolation");
   }
+  await scope.setup(() =>
+    verifyInstalledExtensions(runtime.packageRoot, extensions, request.projectProfile),
+  );
   await scope.setup(() => verifyProjectDependencyLock(request.projectProfile, runtime));
   if (prepared.finalizeAfterInstall !== undefined) {
     prepared = await prepared.finalizeAfterInstall(async (run) => scope.setup(run));

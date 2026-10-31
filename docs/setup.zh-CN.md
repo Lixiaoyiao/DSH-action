@@ -1,6 +1,6 @@
 # 安装与接入
 
-未发布变更：Action 管运行环境，项目原生 Profile 管 Harness。默认联网、按运行保留回复；安装器支持一次性导入本地 Profile。详见[原生配置与迁移](native-profile.md)。
+未发布变更：Action 管运行环境，项目原生 Profile 管 Harness。默认联网、按运行保留回复；安装器迁移暂缓，本次先完成 Action 运行时。详见[原生配置与迁移](native-profile.md)。
 
 [English](setup.md) · [项目首页](../README.zh-CN.md) · [使用指南](usage.zh-CN.md) · [配置参考](configuration.md)
 

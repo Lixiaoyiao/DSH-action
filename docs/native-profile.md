@@ -54,7 +54,7 @@ current task, JSON output, Session admission, workspace and credential fields
 are applied last. Non-owned model/plugin settings remain intact.
 
 Source files are never rewritten. Native parser expressions remain inert in the
-Controller and installer and are evaluated only by the Worker. Internal launcher
+Controller and are evaluated only by the Worker. Internal launcher
 and helper filenames are reserved. A skipped Bundle, failed required extension,
 or unapplied project patch is reported as a configuration/startup failure.
 
@@ -149,54 +149,29 @@ transport activity on failure. They do not record model thinking, complete
 prompts, tool arguments, request bodies or credential headers. Worker events are
 untrusted observations and do not become Controller tool requests or receipts.
 
-## Import once, maintain the repository
+## Maintain native files directly
 
-Interactive `create-dsh-action` discovers `$DSH_HOME/profiles` (default `~/.dsh`).
-Choose one Profile and review the preview before confirming. The importer reads
-native Profile and Home patches in their original order, dependencies, model,
-MCP and referenced portable text resources. It does not execute plugin code or
-expressions. `--import-plugins` is a deprecated alias for this flow.
+Installer changes are deferred. The existing npm installer remains unchanged;
+create the project Profile from the example files above or copy
+`examples/native-profile` to `.dsh`, then commit it. Subsequent runs load the
+trusted committed version without rerunning an installer.
 
-```sh
-npx create-dsh-action --mode review --import-profile my-profile --dry-run
-npx create-dsh-action --mode review --import-profile my-profile --yes
-```
+Native settings plus non-empty legacy Harness inputs (model, reasoning-effort,
+MCP/plugin JSON, or Harness tool grants) are rejected with a migration location.
+Controller-only GitHub/command capabilities remain Action inputs. Workflows
+without a project Profile retain the legacy conversion path.
 
-Use `--dsh-home PATH` for another local home, or `--no-import-profile` to generate
-a fresh Profile. Non-interactive runs do not guess which local Profile to import.
+The runtime reuses exact Action-provided package versions and rejects conflicts.
+Bundle patch declarations accept a string or an ordered string array; every
+referenced file is checked for containment. An optional native npm v3 lock
+constrains additions without replacing the Action runtime lock.
 
-The preview distinguishes imported, converted, reused, omitted and blocked
-fields. Credentials become environment references; their values are never
-printed or copied. Credential-bearing resources, external machine paths,
-unsupported expressions, Windows-only commands and incompatible packages block
-the import instead of disappearing silently. Source Home credentials, Sessions,
-logs and caches remain local. Legacy `settings.yaml` must first be migrated by
-official DSH; it is not classified as disposable machine state.
-
-The runtime reuses its exact pinned packages and rejects conflicting versions.
-Third-party dependencies use exact versions or immutable Git sources. A native
-npm v3 lock supplied in the project constrains additions; the Action never
-replaces or hand-merges its own runtime lock. Local installation locks that do
-not describe the target project are identified in the preview; regenerate the
-project lock with the package manager after reviewing its dependencies.
-
-Profile and workflow writes use one transaction, recheck the previewed bytes and
-roll back on conflicts. Existing project files are not overwritten. The installer
-does not modify the source Home, set Secrets, commit or push.
-
-After import, edit and commit the project Profile directly. No installer rerun
-is needed. Native settings plus non-empty legacy Harness inputs (`model`,
-`reasoning-effort`, MCP/plugin JSON, or Harness tool grants) are an error with a
-migration location. Controller-only GitHub/command capabilities remain Action
-inputs. Workflows without a Profile retain the legacy conversion path.
-
-For a static check without running a model or plugin:
+For an offline static check:
 
 ```sh
 npm run check:config -- --config examples/config-check.json --profile examples/native-profile
 ```
 
-Network, plugin activation, current GitHub authority and credential validity
-remain explicitly `not_checked` by the offline checker. Config/network changes
-participate in runtime and Session compatibility; history never restores old
-authorization.
+Plugin activation, network and GitHub authority remain not_checked. Runtime and
+Session compatibility include effective configuration and network; history
+never restores old authorization.

@@ -6,13 +6,13 @@
 - Default Worker egress and native web tools on, with one independent network switch.
 - Preserve replies per run/attempt and retain safe live diagnostic metadata on failure.
 - Remove the hidden ten-minute Agent cap; keep the immutable overall deadline.
-- Import local native Profiles with preview, Secret references and transactional file writes.
-
+- Accept ordered Bundle patch arrays and validate each resolved file, including native Profiles.
+- Match full test discovery paths before exempting an identical-content rename.
+- Share extension activation/source checks, decode Headless events once, and test parsed workflow values.
+- Installer migration and version updates are deferred.
 
 Notable user-facing changes are recorded here. This project follows semantic
 versioning for published action releases.
-
-## Unreleased
 
 ## [0.12.2] - 2026-10-23
 

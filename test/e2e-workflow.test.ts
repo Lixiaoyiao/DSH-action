@@ -4,12 +4,30 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { isRecord } from "../src/security/record.js";
 
-function stepBlock(workflow: string, name: string): string {
-  const marker = `      - name: ${name}`;
-  const start = workflow.indexOf(marker);
-  if (start < 0) throw new Error(`Missing E2E workflow step: ${name}`);
-  const end = workflow.indexOf("\n      - name:", start + marker.length);
-  return workflow.slice(start, end < 0 ? undefined : end);
+function workflowSteps(workflow: string): readonly Readonly<Record<string, unknown>>[] {
+  return Object.values(workflowRecord(workflowRecord(parse(workflow)).jobs)).flatMap((job) => {
+    const steps = workflowRecord(job).steps;
+    return Array.isArray(steps) ? steps.map(workflowRecord) : [];
+  });
+}
+function step(workflow: string, id: string): Readonly<Record<string, unknown>> {
+  const matches = workflowSteps(workflow).filter((value) => value.id === id || value.name === id);
+  if (matches.length !== 1 || matches[0] === undefined)
+    throw new Error("Expected one workflow step: " + id);
+  return matches[0];
+}
+function stepRun(workflow: string, id: string): string {
+  const run = step(workflow, id).run;
+  if (typeof run !== "string") throw new Error("Expected script for workflow step: " + id);
+  return run;
+}
+function stepInputs(workflow: string, id: string): Readonly<Record<string, unknown>> {
+  return workflowRecord(step(workflow, id).with);
+}
+function jsonInput(inputs: Readonly<Record<string, unknown>>, name: string): unknown {
+  const value = inputs[name];
+  if (typeof value !== "string") throw new Error("Missing input " + name);
+  return JSON.parse(value) as unknown;
 }
 
 function workflowRecord(value: unknown): Readonly<Record<string, unknown>> {
@@ -49,65 +67,73 @@ describe("trusted core E2E workflow", () => {
     expect(() => {
       parse(workflow);
     }).not.toThrow();
-    const gate = workflow.slice(0, workflow.indexOf("  read_only:"));
-
-    for (const contract of [
-      "candidate_mode:",
-      "- pull-request",
-      "- main",
-      "APPROVED_CANDIDATE_SHA: ${{ vars.DSH_E2E_CANDIDATE_SHA }}",
-    ]) {
-      expect(gate).toContain(contract);
-    }
-    expect(gate).toContain("bash .github/e2e/assert-candidate-binding.sh admit");
-    expect(workflow).toContain("bash .github/e2e/assert-candidate-binding.sh");
-    expect(workflow).toContain('if [[ "$CANDIDATE_MODE" == "pull-request" ]]; then');
+    const parsed = workflowRecord(parse(workflow));
+    const dispatch = workflowRecord(workflowRecord(parsed.on).workflow_dispatch);
+    expect(workflowRecord(workflowRecord(dispatch.inputs).candidate_mode).options).toEqual([
+      "pull-request",
+      "main",
+    ]);
+    expect(workflowRecord(step(workflow, "bind").env).APPROVED_CANDIDATE_SHA).toBe(
+      "${{ vars.DSH_E2E_CANDIDATE_SHA }}",
+    );
+    expect(stepRun(workflow, "bind")).toContain(
+      "bash .github/e2e/assert-candidate-binding.sh admit",
+    );
+    expect(
+      workflowSteps(workflow).some(
+        (value) =>
+          typeof value.run === "string" &&
+          value.run.includes('if [[ "$CANDIDATE_MODE" == "pull-request" ]]; then'),
+      ),
+    ).toBe(true);
   });
 
   it("keeps the integrity golden path on one minimal trusted-write turn", () => {
-    const integrity = stepBlock(workflow, "Validation Integrity blocks weakened entrypoint");
+    const integrity = stepInputs(workflow, "integrity");
 
-    expect(integrity).toContain("permission-profile: custom");
-    expect(integrity).toContain(`allowed-tools: '["workspace.edit","native.bash"]'`);
-    expect(integrity).toContain('max-turns: "1"');
-    expect(integrity).not.toContain("permission-profile: standard");
-    expect(integrity).toContain("deepseek-api-key: dsh-e2e-integrity-fixture-key");
-    expect(integrity).toContain("base-url: ${{ steps.integrity_fixture.outputs.base_url }}");
-    expect(integrity).toContain("DSH_E2E_INTEGRITY_FIXTURE");
-    expect(integrity).not.toContain("secrets.DEEPSEEK_API_KEY");
-    const start = stepBlock(workflow, "Start deterministic integrity fixture");
+    expect(integrity).toMatchObject({
+      "permission-profile": "custom",
+      "max-turns": "1",
+      "deepseek-api-key": "dsh-e2e-integrity-fixture-key",
+      "base-url": "${{ steps.integrity_fixture.outputs.base_url }}",
+    });
+    expect(jsonInput(integrity, "allowed-tools")).toEqual(["workspace.edit", "native.bash"]);
+    expect(integrity.prompt).toContain("DSH_E2E_INTEGRITY_FIXTURE");
+    expect(Object.values(integrity).join(" ")).not.toContain("secrets.DEEPSEEK_API_KEY");
+    const start = stepRun(workflow, "integrity_fixture");
     expect(start).toContain("node .github/e2e/integrity-llm.mjs");
     expect(start).not.toContain("secrets.");
-    expect(stepBlock(workflow, "Stop deterministic integrity fixture")).toContain("if: always()");
-    expect(stepBlock(workflow, "Assert integrity failure")).toContain(
+    expect(step(workflow, "Stop deterministic integrity fixture").if).toBe("always()");
+    expect(stepRun(workflow, "Assert integrity failure")).toContain(
       'map(.phase) == ["bash-issued", "bash-observed"]',
     );
   });
 
   it("uses the bound candidate runtime default at every Action and direct-process entry", () => {
-    expect(workflow).not.toMatch(/^\s+dsh-version:/mu);
+    expect(
+      workflowSteps(workflow)
+        .filter((value) => value.uses === "./candidate-action")
+        .every((value) => !Object.hasOwn(workflowRecord(value.with), "dsh-version")),
+    ).toBe(true);
     expect(workflow).not.toContain("INPUT_DSH-VERSION=");
-    expect(workflow).toContain("uses: ./candidate-action");
+    expect(workflowSteps(workflow).some((value) => value.uses === "./candidate-action")).toBe(true);
     expect(workflow).toContain("node candidate-action/dist/index.js");
   });
 
   it("declares real validation commands for the no-change Subagent write without executing validation", () => {
-    const launch = stepBlock(workflow, "Real native.subagent with no-change write");
-    const assertion = stepBlock(workflow, "Assert native.subagent and no-change semantics");
-    const configured = /^\s+test-commands: '(.+)'$/mu.exec(launch)?.[1];
-    if (configured === undefined)
-      throw new Error("Subagent write lacks explicit validation commands");
-    const commands: unknown = JSON.parse(configured);
-
-    expect(commands).toEqual([
+    const launch = stepInputs(workflow, "no_change");
+    const assertion = stepRun(workflow, "Assert native.subagent and no-change semantics");
+    expect(jsonInput(launch, "test-commands")).toEqual([
       ["npm", "ci", "--ignore-scripts"],
       ["npm", "run", "typecheck"],
       ["npm", "test"],
     ]);
-    expect(launch).toContain("task-access: write");
-    expect(launch).toContain('allow-write: "true"');
-    expect(launch).toContain('run-tests: "true"');
-    expect(launch).toContain('disallowed-tools: \'["native.bash","native.web-search"]\'');
+    expect(launch).toMatchObject({
+      "task-access": "write",
+      "allow-write": "true",
+      "run-tests": "true",
+    });
+    expect(jsonInput(launch, "disallowed-tools")).toEqual(["native.bash", "native.web-search"]);
     expect(assertion).toContain('.policy.trust == "trusted-write"');
     expect(assertion).toContain('.write.status == "no-changes" and .write.changedPaths == []');
     expect(assertion).toContain('.validation.status == "not-applicable"');
@@ -126,11 +152,8 @@ describe("trusted core E2E workflow", () => {
       const inputs = workflowRecord(step.with);
       return inputs.command === "task" && inputs["task-access"] === "write";
     });
-    expect(writeTasks.map((step) => step.name)).toEqual(
-      expect.arrayContaining([
-        "Native trusted-write workspace path",
-        "Real native.subagent with no-change write",
-      ]),
+    expect(writeTasks.map((step) => step.id)).toEqual(
+      expect.arrayContaining(["native_write", "no_change"]),
     );
     for (const step of writeTasks) {
       const configured = workflowRecord(step.with)["test-commands"];
@@ -214,26 +237,28 @@ describe("trusted core E2E workflow", () => {
   });
 
   it("installs candidate test dependencies separately from the trusted harness lock", () => {
-    const fixtures = stepBlock(workflow, "Install fixture dependencies without lifecycle scripts");
-    const candidate = stepBlock(
+    const fixtures = stepRun(workflow, "Install fixture dependencies without lifecycle scripts");
+    const candidate = stepRun(
       workflow,
       "Install exact candidate test dependencies without lifecycle scripts",
     );
-    const ecosystem = stepBlock(workflow, "Deterministic native ecosystem compatibility");
+    const ecosystem = stepRun(workflow, "Deterministic native ecosystem compatibility");
 
-    expect(fixtures).toContain("run: npm ci --ignore-scripts");
+    expect(fixtures).toContain("npm ci --ignore-scripts");
     expect(candidate).toContain("npm ci --prefix candidate-action --ignore-scripts --no-fund");
     expect(candidate).toContain("npm ls --prefix candidate-action --all");
     expect(candidate).not.toMatch(/--force|--legacy-peer-deps|--no-audit/u);
     expect(ecosystem).toContain("cd candidate-action");
     expect(ecosystem).toContain("./node_modules/.bin/vitest run");
     expect(ecosystem).not.toContain("../node_modules/.bin/vitest");
-    expect(workflow.indexOf(candidate)).toBeLessThan(workflow.indexOf(ecosystem));
+    expect(workflowSteps(workflow).findIndex((value) => value.run === candidate)).toBeLessThan(
+      workflowSteps(workflow).findIndex((value) => value.run === ecosystem),
+    );
   });
 
   it("locks controlled tool-policy semantics into the strict and MCP golden paths", () => {
-    const strict = stepBlock(workflow, "Assert strict/Profile/Bundle result");
-    const mcp = stepBlock(workflow, "Assert MCP allow/deny and receipts");
+    const strict = stepRun(workflow, "Assert strict/Profile/Bundle result");
+    const mcp = stepRun(workflow, "Assert MCP allow/deny and receipts");
 
     for (const assertion of [strict, mcp]) {
       expect(assertion).toContain('.toolPolicy.policyOwner == "controller"');
@@ -249,20 +274,28 @@ describe("trusted core E2E workflow", () => {
   });
 
   it("requires an unknown MCP proof from the real model without exposing its expected value", () => {
-    const start = stepBlock(workflow, "Start real Streamable HTTP MCP fixture");
-    const launch = stepBlock(workflow, "MCP allow and deny");
-    const assertion = stepBlock(workflow, "Assert MCP allow/deny and receipts");
-    const report = stepBlock(workflow, "Report bounded MCP proof diagnostics");
-    const artifact = stepBlock(workflow, "Preserve MCP execution evidence");
+    const start = stepRun(workflow, "mcp_server");
+    const launch = stepInputs(workflow, "mcp");
+    const assertion = stepRun(workflow, "Assert MCP allow/deny and receipts");
+    const report = stepRun(workflow, "Report bounded MCP proof diagnostics");
+    const artifact = step(workflow, "Preserve MCP execution evidence");
 
-    expect(launch).toContain("deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}");
-    expect(launch).toContain("taskOutput.proof");
-    expect(launch).toContain('"proof":{"type":"string","minLength":48,"maxLength":48}');
-    expect(launch).not.toMatch(/expectedProof|expected_proof|\.endpoint|const.*proof/iu);
-    expect(launch).toContain('maxCalls":1');
-    expect(launch).toContain("disallowed-tools: '[\"mcp.fixture.hidden\"]'");
+    expect(launch["deepseek-api-key"]).toBe("${{ secrets.DEEPSEEK_API_KEY }}");
+    expect(launch.prompt).toContain("taskOutput.proof");
+    expect(jsonInput(launch, "task-output-schema")).toMatchObject({
+      properties: { proof: { type: "string", minLength: 48, maxLength: 48 } },
+    });
+    expect(Object.values(launch).join(" ")).not.toMatch(
+      /expectedProof|expected_proof|\.endpoint|const.*proof/iu,
+    );
+    const servers = workflowRecord(jsonInput(launch, "mcp-config")).servers;
+    if (!Array.isArray(servers)) throw new Error("Missing MCP servers");
+    const tools = workflowRecord(servers[0]).tools;
+    if (!Array.isArray(tools)) throw new Error("Missing MCP tools");
+    expect(tools.some((tool) => workflowRecord(tool).maxCalls === 1)).toBe(true);
+    expect(jsonInput(launch, "disallowed-tools")).toEqual(["mcp.fixture.hidden"]);
     expect(start).toContain('echo "::add-mask::$proof"');
-    expect(assertion).toContain("if: always()");
+    expect(workflowSteps(workflow).find((value) => value.run === assertion)?.if).toBe("always()");
     expect(assertion.indexOf("mcp-proof-evidence.mjs capture")).toBeLessThan(
       assertion.indexOf("jq -e"),
     );
@@ -270,48 +303,51 @@ describe("trusted core E2E workflow", () => {
     expect(assertion).toContain('[[ "$(wc -l < "$MCP_AUDIT")" -eq 1 ]]');
     expect(assertion).toContain("length == 1");
     expect(assertion).toContain('all(.id != "mcp.fixture.hidden")');
-    expect(report).toContain("if: always()");
+    expect(workflowSteps(workflow).find((value) => value.run === report)?.if).toBe("always()");
     expect(report).not.toMatch(/RESULT_JSON|task-output|summary:|MCP_ENDPOINT|DEEPSEEK_API_KEY/u);
-    expect(artifact).toContain("if: always()");
-    expect(artifact).toContain("dsh-e2e-mcp-evidence.json");
-    expect(artifact).toContain("dsh-e2e-mcp-audit.jsonl");
-    expect(artifact).not.toMatch(/endpoint|server\.log|\.stdout|result-json/u);
+    expect(artifact.if).toBe("always()");
+    expect(workflowRecord(artifact.with).path).toContain("dsh-e2e-mcp-evidence.json");
+    expect(workflowRecord(artifact.with).path).toContain("dsh-e2e-mcp-audit.jsonl");
+    expect(workflowRecord(artifact.with).path).not.toMatch(
+      /endpoint|server\.log|\.stdout|result-json/u,
+    );
   });
 
   it("requires a source from a real Web Search and records evidence before failed assertions", () => {
-    const launch = stepBlock(workflow, "Real mediated Web Search");
-    const assertion = stepBlock(workflow, "Assert Web Search mediation and receipt");
-    const artifact = stepBlock(workflow, "Preserve bounded Web Search evidence");
-    expect(launch).toContain("deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}");
-    expect(launch).toContain("actual DSH runtime web_search tool exactly once");
-    expect(launch).toContain("first source returned by that tool");
-    expect(launch).toContain("site:api-docs.deepseek.com context caching");
-    expect(launch).toContain("allowed-tools: '[\"native.web-search\"]'");
-    expect(launch).toContain("task-output-schema:");
-    expect(launch).not.toMatch(
-      /base-url:|mcp-config:|isolation: none|official DeepSeek Harness repository/u,
-    );
-    expect(assertion).toContain("if: always()");
+    const launch = stepInputs(workflow, "web");
+    const assertion = stepRun(workflow, "Assert Web Search mediation and receipt");
+    const artifact = step(workflow, "Preserve bounded Web Search evidence");
+    expect(launch["deepseek-api-key"]).toBe("${{ secrets.DEEPSEEK_API_KEY }}");
+    expect(launch.prompt).toContain("actual DSH runtime web_search tool exactly once");
+    expect(launch.prompt).toContain("first source returned by that tool");
+    expect(launch.prompt).toContain("site:api-docs.deepseek.com context caching");
+    expect(jsonInput(launch, "allowed-tools")).toEqual(["native.web-search"]);
+    expect(launch["task-output-schema"]).toBeDefined();
+    expect(launch).not.toHaveProperty("base-url");
+    expect(launch).not.toHaveProperty("mcp-config");
+    expect(launch.isolation).not.toBe("none");
+    expect(launch.prompt).not.toContain("official DeepSeek Harness repository");
+    expect(workflowSteps(workflow).find((value) => value.run === assertion)?.if).toBe("always()");
     expect(assertion.indexOf("node .github/e2e/web-search-evidence.mjs")).toBeLessThan(
       assertion.indexOf("jq -e"),
     );
     expect(assertion).toContain(".receiptCount == 1 and .completedWebSearchCount == 1");
     expect(assertion).toContain('.permissions.network == "mediated-web"');
     expect(assertion).toContain(".loop.dshToolReceipts // []");
-    expect(artifact).toContain("if: always()");
-    expect(artifact).toContain("dsh-e2e-web-evidence.json");
-    expect(artifact).not.toMatch(/result-json|\.log|\.stdout/u);
+    expect(artifact.if).toBe("always()");
+    expect(workflowRecord(artifact.with).path).toContain("dsh-e2e-web-evidence.json");
+    expect(workflowRecord(artifact.with).path).not.toMatch(/result-json|\.log|\.stdout/u);
   });
 
   it("runs an exact-candidate native read-only smoke with observed DSH inventory", () => {
-    const launch = stepBlock(workflow, "Native headless read-only smoke");
-    const assertion = stepBlock(workflow, "Assert native composition and observed inventory");
+    const launch = stepInputs(workflow, "native");
+    const assertion = stepRun(workflow, "Assert native composition and observed inventory");
 
-    expect(launch).toContain("uses: ./candidate-action");
-    expect(launch).toContain("dsh-mode: native");
-    expect(launch).toContain("isolation: docker");
-    expect(launch).not.toContain("mcp-config:");
-    expect(launch).not.toContain("plugin-config:");
+    expect(step(workflow, "native").uses).toBe("./candidate-action");
+    expect(launch["dsh-mode"]).toBe("native");
+    expect(launch.isolation).toBe("docker");
+    expect(launch).not.toHaveProperty("mcp-config");
+    expect(launch).not.toHaveProperty("plugin-config");
     for (const contract of [
       '.dsh.mode == "native"',
       '.dsh.composition == "dsh-native-headless"',
@@ -330,13 +366,10 @@ describe("trusted core E2E workflow", () => {
   });
 
   it("qualifies the candidate native ecosystem, trusted-write workspace, and Controller GitHub path", async () => {
-    const ecosystem = stepBlock(workflow, "Deterministic native ecosystem compatibility");
-    const nativeWrite = stepBlock(workflow, "Native trusted-write workspace path");
-    const nativeWriteAssertion = stepBlock(workflow, "Assert native trusted-write authority");
-    const integration = stepBlock(
-      workflow,
-      "Exercise routes, filters, structured output, and typed GitHub tools",
-    );
+    const ecosystem = stepRun(workflow, "Deterministic native ecosystem compatibility");
+    const nativeWrite = stepInputs(workflow, "native_write");
+    const nativeWriteAssertion = stepRun(workflow, "Assert native trusted-write authority");
+    const integration = stepRun(workflow, "integration_contracts");
     const fixture = await readFile(
       new URL("../.github/e2e/github-integration-llm.mjs", import.meta.url),
       "utf8",
@@ -346,11 +379,11 @@ describe("trusted core E2E workflow", () => {
     expect(ecosystem).toContain(
       "./node_modules/.bin/vitest run test/native-ecosystem.integration.test.ts",
     );
-    expect(nativeWrite).toContain("uses: ./candidate-action");
-    expect(nativeWrite).toContain("deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}");
-    expect(nativeWrite).toContain("dsh-mode: native");
-    expect(nativeWrite).toContain("task-access: write");
-    expect(nativeWrite).toContain(`allowed-tools: '["workspace.edit"]'`);
+    expect(step(workflow, "native_write").uses).toBe("./candidate-action");
+    expect(nativeWrite["deepseek-api-key"]).toBe("${{ secrets.DEEPSEEK_API_KEY }}");
+    expect(nativeWrite["dsh-mode"]).toBe("native");
+    expect(nativeWrite["task-access"]).toBe("write");
+    expect(jsonInput(nativeWrite, "allowed-tools")).toEqual(["workspace.edit"]);
     expect(nativeWriteAssertion).toContain('.policy.trust == "trusted-write"');
     expect(nativeWriteAssertion).toContain('.isolation.workspaceAccess == "read-write"');
     expect(nativeWriteAssertion).toContain('.toolPolicy.policyOwner == "dsh"');
@@ -378,7 +411,7 @@ describe("trusted core E2E workflow", () => {
   });
 
   it("requires an authoritative blocked integrity result without a write envelope", () => {
-    const assertion = stepBlock(workflow, "Assert integrity failure");
+    const assertion = stepRun(workflow, "Assert integrity failure");
 
     for (const contract of [
       '.error.code == "VALIDATION_INTEGRITY"',
@@ -401,30 +434,24 @@ describe("trusted core E2E workflow", () => {
   });
 
   it("checks remote mutation state even after a semantic assertion failure", () => {
-    const mutation = stepBlock(workflow, "Assert expected failures made no GitHub mutation");
+    const mutation = stepRun(workflow, "Assert expected failures made no GitHub mutation");
 
-    expect(mutation).toMatch(
-      /Assert expected failures made no GitHub mutation\n\s+if: always\(\)\n/u,
-    );
+    expect(workflowSteps(workflow).find((value) => value.run === mutation)?.if).toBe("always()");
     expect(mutation).toContain("for component in main candidate prs comments task-refs task-prs");
   });
 
   it("does not warn about cleanup when the trusted-write step never ran", () => {
-    const cleanup = stepBlock(workflow, "Close only the verified E2E PR and delete its branch");
+    const cleanup = stepRun(workflow, "Close only the verified E2E PR and delete its branch");
 
-    expect(cleanup).toContain("if: ${{ always() && steps.trusted.outcome != 'skipped' }}");
+    expect(workflowSteps(workflow).find((value) => value.run === cleanup)?.if).toBe(
+      "${{ always() && steps.trusted.outcome != 'skipped' }}",
+    );
     expect(cleanup).toContain("No broad cleanup was attempted.");
   });
 
   it("exercises v0.6 GitHub integration through deterministic exact-DSH runs", () => {
-    const install = stepBlock(
-      workflow,
-      "Install exact candidate runtime without lifecycle scripts",
-    );
-    const integration = stepBlock(
-      workflow,
-      "Exercise routes, filters, structured output, and typed GitHub tools",
-    );
+    const install = stepRun(workflow, "Install exact candidate runtime without lifecycle scripts");
+    const integration = stepRun(workflow, "integration_contracts");
 
     expect(install).toContain(
       "npm ci --prefix candidate-action --omit=dev --ignore-scripts --no-audit --no-fund",
@@ -468,7 +495,7 @@ describe("trusted core E2E workflow", () => {
   });
 
   it("creates a minimal base with an immutable validator and a one-file checks diff", () => {
-    const creation = stepBlock(workflow, "Create isolated Issue and draft PR fixtures");
+    const creation = stepRun(workflow, "integration_entities");
 
     for (const contract of [
       ".github/dsh-e2e-fixtures/checks-",
@@ -499,10 +526,7 @@ describe("trusted core E2E workflow", () => {
   });
 
   it("asserts generic receipts and verifies typed payload effects through remote state", () => {
-    const integration = stepBlock(
-      workflow,
-      "Exercise routes, filters, structured output, and typed GitHub tools",
-    );
+    const integration = stepRun(workflow, "integration_contracts");
 
     expect(integration).toContain('.id == "github.issue.labels.set"');
     expect(integration).toContain('.id == "github.issue.assignees.set"');
@@ -524,10 +548,7 @@ describe("trusted core E2E workflow", () => {
   });
 
   it("qualifies PR review, failed-CI fix, and Issue implementation through recorded effects", () => {
-    const integration = stepBlock(
-      workflow,
-      "Exercise routes, filters, structured output, and typed GitHub tools",
-    );
+    const integration = stepRun(workflow, "integration_contracts");
     for (const contract of [
       "run_candidate review",
       "run_candidate fix",
@@ -551,14 +572,14 @@ describe("trusted core E2E workflow", () => {
     expect(integration.indexOf('echo "implementation_pull_ids=')).toBeLessThan(
       integration.indexOf('[[ "$implement_ok" == "true" ]]'),
     );
-    const cleanup = stepBlock(workflow, "Remove only verified integration fixtures");
+    const cleanup = stepRun(workflow, "Remove only verified integration fixtures");
     expect(cleanup).toContain("assert-business-effects.mjs cleanup-implement");
     expect(cleanup).toContain("assert-business-effects.mjs fix-cleanup");
     expect(cleanup).toContain("cleanup_failure_check");
     expect(cleanup).toContain("-f conclusion=neutral");
     expect(cleanup).toContain("original_commit_id == $head");
-    const evidence = stepBlock(workflow, "Capture bounded business execution evidence");
-    expect(evidence).toContain("if: always()");
+    const evidence = stepRun(workflow, "Capture bounded business execution evidence");
+    expect(workflowSteps(workflow).find((value) => value.run === evidence)?.if).toBe("always()");
     expect(evidence).toContain("{route,index,kind,phase,authorizationMatches}");
     expect(evidence).not.toContain(".prompt");
   });
@@ -566,10 +587,7 @@ describe("trusted core E2E workflow", () => {
   it.each(["fix", "implement"])(
     "explicitly grants workspace editing before the %s fixture requests a Bash write",
     (operation) => {
-      const integration = stepBlock(
-        workflow,
-        "Exercise routes, filters, structured output, and typed GitHub tools",
-      );
+      const integration = stepRun(workflow, "integration_contracts");
       const invocation = integration
         .split(`run_candidate ${operation} `)[1]
         ?.split(`|| ${operation}_ok=false`)[0];
@@ -584,9 +602,9 @@ describe("trusted core E2E workflow", () => {
   );
 
   it("cleans partial integration fixtures independently and aggregates failures", () => {
-    const cleanup = stepBlock(workflow, "Remove only verified integration fixtures");
+    const cleanup = stepRun(workflow, "Remove only verified integration fixtures");
 
-    expect(cleanup).toContain("if: always()");
+    expect(workflowSteps(workflow).find((value) => value.run === cleanup)?.if).toBe("always()");
     expect(cleanup).toContain("set +e");
     expect(cleanup).toContain("dsh-e2e:github-integration:v1");
     expect(cleanup).toContain("^dsh-e2e/checks-");

@@ -297,7 +297,7 @@ describe("runDsh security", () => {
     expect(executeProcess).not.toHaveBeenCalled();
   });
 
-  it("fails closed before execution when Bash would share bridge extension egress", async () => {
+  it("permits authorized Bash and extensions on the independently enabled network", async () => {
     const fixture = await fixtures();
     const extensions = resolveExtensionPlan({
       allowedTools: ["mcp.remote.search"],
@@ -345,8 +345,25 @@ describe("runDsh security", () => {
         },
       },
     });
-    const startProxy = vi.fn();
-    const executeProcess = vi.fn();
+    const startProxy = vi.fn(() => Promise.resolve(fakeProxy()));
+    const executeProcess = vi.fn((spec: DshProcessSpec) => {
+      const inspected = networkInspectResult(spec);
+      if (inspected !== undefined) return Promise.resolve(inspected);
+      return Promise.resolve({
+        stdout: spec.args.includes(CONTAINER_LAUNCHER)
+          ? JSON.stringify({
+              protocolVersion: 1,
+              operation: "fix",
+              state: "final",
+              summary: "Done.",
+              findings: [],
+            })
+          : "",
+        stderr: "",
+        exitCode: 0,
+        signal: null,
+      });
+    });
 
     await expect(
       runDsh(
@@ -366,9 +383,16 @@ describe("runDsh security", () => {
           executeProcess,
         },
       ),
-    ).rejects.toThrow(/native\.bash cannot share a worker with a bridge-networked extension/u);
-    expect(startProxy).not.toHaveBeenCalled();
-    expect(executeProcess).not.toHaveBeenCalled();
+    ).resolves.toMatchObject({
+      output: { summary: "Done." },
+      isolationReport: { networkIsolated: false },
+    });
+    expect(startProxy).toHaveBeenCalledOnce();
+    const worker = executeProcess.mock.calls
+      .map(([spec]) => spec)
+      .find((spec) => spec.args.includes(CONTAINER_LAUNCHER));
+    expect(worker?.args.join(" ")).not.toContain("controller-real-key");
+    expect(worker?.env).not.toHaveProperty("GITHUB_TOKEN");
   });
 
   it("rejects model output containing a known controller credential", async () => {

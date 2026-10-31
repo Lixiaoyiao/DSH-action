@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { lstat, readFile, mkdir, writeFile, rename, link, unlink } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 const MAX_BYTES = 256 * 1024;
 export const workflowHash = (source) => createHash("sha256").update(source).digest("hex");
@@ -37,60 +37,17 @@ export async function readWorkflow(root, name) {
   }
 }
 
-async function projectPath(root, name) {
-  if (!name.startsWith(".dsh/")) return workflowPath(root, name);
-  if (
-    name.length > 240 ||
-    /[\\:]/u.test(name) ||
-    Array.from(name).some((character) => character.charCodeAt(0) < 32) ||
-    name
-      .split("/")
-      .some(
-        (part) =>
-          !part || part === "." || part === ".." || part === "node_modules" || part === ".git",
-      )
-  )
-    throw new Error("Invalid project Profile path");
-  let path = resolve(root);
-  for (const part of name.split("/")) {
-    path = join(path, part);
-    try {
-      if ((await lstat(path)).isSymbolicLink())
-        throw new Error("Symbolic-link Profile paths cannot be edited");
-    } catch (error) {
-      if (error.code !== "ENOENT") throw error;
-    }
-  }
-  return path;
-}
-async function readProjectFile(root, name) {
-  if (!name.startsWith(".dsh/")) return readWorkflow(root, name);
-  const path = await projectPath(root, name);
-  try {
-    const metadata = await lstat(path);
-    if (!metadata.isFile() || metadata.size > 8 * 1024 * 1024)
-      throw new Error("Invalid Profile file");
-    const data = await readFile(path);
-    return { path: name, source: data.toString("utf8"), hash: workflowHash(data) };
-  } catch (error) {
-    if (error.code === "ENOENT") return { path: name, source: "", hash: null };
-    throw error;
-  }
-}
-
 /** Expected bytes must still be present; batch writes roll back on conflict. */
 export async function saveWorkflowChanges(root, changes, options = {}) {
   const entries = [];
   const written = [];
-  const read = options.profiles ? readProjectFile : readWorkflow;
-  const resolvePath = options.profiles ? projectPath : workflowPath;
   try {
     for (const change of changes) {
-      const original = await read(root, change.path);
+      const original = await readWorkflow(root, change.path);
       if (original.hash !== change.expectedHash)
         throw new Error(`${change.path} changed before save. Read the current file and retry.`);
-      const target = await resolvePath(root, change.path);
-      await mkdir(dirname(target), { recursive: true });
+      const target = await workflowPath(root, change.path);
+      await mkdir(join(root, ".github", "workflows"), { recursive: true });
       const suffix = randomBytes(12).toString("hex");
       const staged = `${target}.${suffix}.tmp`;
       const backup = `${target}.${suffix}.bak`;
@@ -99,8 +56,8 @@ export async function saveWorkflowChanges(root, changes, options = {}) {
     }
     for (const entry of entries) {
       await options.beforeWrite?.(entry.path);
-      await resolvePath(root, entry.path);
-      const latest = await read(root, entry.path);
+      await workflowPath(root, entry.path);
+      const latest = await readWorkflow(root, entry.path);
       if (latest.hash !== entry.expectedHash)
         throw new Error(`${entry.path} changed before save. Read the current file and retry.`);
       if (entry.expectedHash !== null) {
@@ -118,7 +75,7 @@ export async function saveWorkflowChanges(root, changes, options = {}) {
     for (const entry of [...entries].reverse()) {
       try {
         if (written.includes(entry)) {
-          const current = await read(root, entry.path);
+          const current = await readWorkflow(root, entry.path);
           if (current.hash !== workflowHash(entry.source))
             throw new Error("concurrent edit", { cause: error });
           await unlink(entry.target);

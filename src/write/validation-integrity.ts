@@ -233,59 +233,120 @@ function isSafeTestRename(previousPath: string, nextPath: string): boolean {
   return previousShape !== undefined && previousShape === testExecutionShape(nextPath);
 }
 
-function manifestTestDiscoveryPatterns(value: string | undefined): readonly string[] | undefined {
-  const manifest = jsonObject(parseJson(value));
-  if (manifest === undefined) return undefined;
-  const jest = jsonObject(manifest.jest);
-  if (jest !== undefined && Object.hasOwn(jest, "testMatch")) {
-    return Array.isArray(jest.testMatch) &&
-      jest.testMatch.every((entry) => typeof entry === "string")
-      ? jest.testMatch
-      : [];
-  }
-  const vitest = jsonObject(manifest.vitest);
-  const include = vitest?.include ?? jsonObject(vitest?.test)?.include;
-  if (include !== undefined) {
-    return Array.isArray(include) && include.every((entry) => typeof entry === "string")
-      ? include
-      : [];
-  }
-  return undefined;
-}
-
-function discoveryPatternAllowsPath(pattern: string, path: string): boolean {
-  const normalized = pattern.toLowerCase().replaceAll("\\", "/");
-  const lowerPath = path.toLowerCase();
-  const suffix = /\.(test|spec)\./u.exec(lowerPath)?.[1];
-  if (suffix !== undefined) {
+function discoveryAllowsPath(
+  manifestText: string | undefined,
+  packageRoot: string,
+  path: string,
+): boolean {
+  const manifest = jsonObject(parseJson(manifestText));
+  const jest = jsonObject(manifest?.jest);
+  const vitest = jsonObject(manifest?.vitest);
+  const config = jest ?? jsonObject(vitest?.test) ?? vitest;
+  // Runtime configuration and regex dialects cannot be inferred from a filename.
+  if (
+    config !== undefined &&
+    ["testRegex", "projects", "roots", "testPathIgnorePatterns", "exclude"].some((key) =>
+      Object.hasOwn(config, key),
+    )
+  )
+    return false;
+  const rootDir = config?.rootDir ?? config?.root ?? ".";
+  if (
+    typeof rootDir !== "string" ||
+    posix.isAbsolute(rootDir) ||
+    rootDir.includes("\\") ||
+    rootDir.includes("<")
+  )
+    return false;
+  const root = posix.normalize(posix.join(packageRoot, rootDir));
+  if (root === ".." || root.startsWith("../")) return false;
+  const relativePath = posix.relative(root, path);
+  if (relativePath === ".." || relativePath.startsWith("../")) return false;
+  const patterns: unknown = config?.testMatch ?? config?.include;
+  if (patterns === undefined) {
     return (
-      normalized.includes(`.${suffix}.`) ||
-      normalized.includes(`{test,spec}`) ||
-      normalized.includes(`{spec,test}`)
+      !relativePath.split("/").some((part) => part === "node_modules" || part.startsWith(".")) &&
+      /(?:\.(?:test|spec)\.[cm]?[jt]sx?$|(?:^|\/)__tests__\/.*\.[cm]?[jt]sx?$)/u.test(relativePath)
     );
   }
-  if (lowerPath.includes("/__tests__/")) return normalized.includes("__tests__");
-  if (/(?:^|\/)test_[^/]+\.py$/u.test(lowerPath)) return normalized.includes("test_");
-  if (/(?:^|\/)[^/]+_test\./u.test(lowerPath)) return normalized.includes("_test");
-  return false;
+  if (
+    !Array.isArray(patterns) ||
+    !patterns.every((entry: unknown): entry is string => typeof entry === "string")
+  )
+    return false;
+  // Do not reinterpret ordered negation, dynamic tokens, or another glob dialect.
+  if (
+    patterns.some(
+      (pattern) => pattern.startsWith("!") || pattern.includes("\\") || /[$]/u.test(pattern),
+    )
+  )
+    return false;
+  return patterns.some((pattern) => {
+    const normalized = pattern.replace(/^<rootDir>\//u, "").replace(/^\.\//u, "");
+    return (
+      !normalized.includes("<") &&
+      !posix.isAbsolute(normalized) &&
+      posix.matchesGlob(relativePath, normalized)
+    );
+  });
 }
 
 function configuredDiscoveryAllowsRename(
   packageDetails: ReadonlyMap<string, PackageGraphDetail>,
+  previousPath: string,
   nextPath: string,
+  paths: readonly string[],
+  commands: readonly string[],
 ): boolean {
-  for (const detail of packageDetails.values()) {
-    for (const manifest of [detail.baseline, detail.candidate]) {
-      const patterns = manifestTestDiscoveryPatterns(manifest);
-      if (
-        patterns !== undefined &&
-        !patterns.some((pattern) => discoveryPatternAllowsPath(pattern, nextPath))
-      ) {
-        return false;
-      }
-    }
-  }
-  return true;
+  // Only an unfiltered known validator can establish default discovery.
+  const validators = commands.flatMap((command) => {
+    const match = /(?:^|\s)(?:vitest|jest)(?:\s+|$)(.*)$/u.exec(command);
+    return match === null ? [] : [match[1] ?? ""];
+  });
+  if (
+    validators.length === 0 ||
+    validators.some((argumentsText) =>
+      argumentsText
+        .trim()
+        .split(/\s+/u)
+        .some((argument) => !["", "run", "--run", "--ci"].includes(argument)),
+    )
+  )
+    return false;
+  // Explicit CLI selectors/configuration can narrow even an otherwise matching glob.
+  if (
+    commands.some((command) =>
+      /(?:--config|--testMatch|--testRegex|--include|--exclude|--root|--projects|--selectProjects|--runTestsByPath|(?:^|\s)-c(?:\s|$))/u.test(
+        command,
+      ),
+    )
+  )
+    return false;
+  const roots = [...packageDetails]
+    .filter(([path]) => {
+      const root = posix.dirname(path);
+      return root === "." || previousPath.startsWith(root + "/");
+    })
+    .sort(([left], [right]) => right.length - left.length);
+  const selected = roots[0];
+  const root = selected === undefined ? "." : posix.dirname(selected[0]);
+  if (root !== "." && !nextPath.startsWith(root + "/")) return false;
+  // Config scripts are not executed by this audit. Their presence prevents a default-discovery proof.
+  if (
+    paths.some(
+      (path) =>
+        (root === "." || path.startsWith(root + "/")) &&
+        (TEST_CONFIG_PATTERN.test(path) || /(?:^|\/)vite\.config\./u.test(path)),
+    )
+  )
+    return false;
+  const manifests =
+    selected === undefined ? [undefined] : [selected[1].baseline, selected[1].candidate];
+  return manifests.every(
+    (manifest) =>
+      discoveryAllowsPath(manifest, root, previousPath) &&
+      discoveryAllowsPath(manifest, root, nextPath),
+  );
 }
 
 function allNoOpSegments(command: string): boolean {
@@ -566,7 +627,13 @@ export async function inspectValidationIntegrity(
     if (
       renamedTo !== undefined &&
       isSafeTestRename(path, renamedTo) &&
-      configuredDiscoveryAllowsRename(graph.packageDetails, renamedTo) &&
+      configuredDiscoveryAllowsRename(
+        graph.packageDetails,
+        path,
+        renamedTo,
+        [...input.snapshot.baseline.keys(), ...input.changes.added],
+        [...packageCommands, ...input.commands.map((command) => command.join(" "))],
+      ) &&
       !consumedAddedTests.has(renamedTo)
     ) {
       renamedTests.set(path, renamedTo);

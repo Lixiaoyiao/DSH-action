@@ -1,3 +1,4 @@
+import { pinnedPackageSourceSchema } from "../extensions/schema.js";
 import { LOCKED_RUNTIME_PACKAGES } from "./runtime-packages.generated.js";
 import { assertNoSecretOutput } from "../security/env.js";
 import { createHash } from "node:crypto";
@@ -106,6 +107,7 @@ function admittedFile(path: string): void {
 export async function readProjectProfile(
   directory: string,
   source: { sourceSha: string; path: string },
+  knownSecrets: readonly string[] = [],
 ): Promise<ProjectProfile> {
   const files: Record<string, string> = {};
   let bytes = 0;
@@ -121,6 +123,7 @@ export async function readProjectProfile(
       }
       if (!entry.isFile()) throw new DshConfigurationError("Profile must contain ordinary files");
       const data = await readFile(join(directory, path));
+      assertNoSecretOutput("environment", data.toString("utf8"), knownSecrets);
       bytes += data.length;
       if (bytes > 8 * 1024 * 1024 || Object.keys(files).length >= 256)
         throw new DshConfigurationError("Profile exceeds 256 files or 8 MiB");
@@ -133,6 +136,7 @@ export async function readProjectProfile(
   const manifest = z
     .record(z.string(), z.unknown())
     .parse(JSON.parse(Buffer.from(files["package.json"] ?? "", "base64").toString("utf8")));
+  assertNoSecretOutput("environment", JSON.stringify(manifest), knownSecrets);
   const declaration = z
     .object({ profile: z.object({ bundles: z.array(z.string().regex(PACKAGE)).max(64) }) })
     .parse(manifest.dsh);
@@ -142,15 +146,11 @@ export async function readProjectProfile(
     .record(z.string().regex(PACKAGE), z.string())
     .parse(manifest.dependencies ?? {});
   for (const [name, version] of Object.entries(dependencies)) {
-    if(/^@deepseek-ai\/dsh(?:-|$)/u.test(name) && version!==DSH_VERSION) throw new DshConfigurationError("Profile cannot mix DSH package-family versions");
-    if (
-      !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(version) &&
-      !/^git\+https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\.git)?#[a-f0-9]{40}$/u.test(
-        version,
-      )
-    )
+    if (/^@deepseek-ai\/dsh(?:-|$)/u.test(name) && version !== DSH_VERSION)
+      throw new DshConfigurationError("Profile cannot mix DSH package-family versions");
+    if (!pinnedPackageSourceSchema.safeParse(version).success)
       throw new DshConfigurationError(
-        `Profile dependency ${name} requires an exact version or immutable Git source`,
+        "Profile dependency " + name + " requires an exact version or immutable Git source",
       );
     if (LOCKED_RUNTIME_PACKAGES[name] !== undefined && version !== LOCKED_RUNTIME_PACKAGES[name])
       throw new DshConfigurationError(
@@ -174,6 +174,7 @@ export async function readProjectProfile(
   } catch {
     throw new DshConfigurationError("Invalid native cordis.patch.yml");
   }
+  assertNoSecretOutput("environment", JSON.stringify(patches), knownSecrets);
   for (const item of patches) {
     if (
       item.id === "dsh-action-policy" &&
@@ -183,7 +184,7 @@ export async function readProjectProfile(
     if (
       item.insert?.some(
         (row) =>
-          row.id?.startsWith("dsh-action-") ||
+          (typeof Reflect.get(row, "id") === "string" && row.id.startsWith("dsh-action-")) ||
           ["headless-runner", "headless-startup"].includes(row.id),
       )
     )
@@ -237,7 +238,7 @@ export async function readProjectProfile(
   const names = new Set<string>();
   for (const rule of policy.rules) {
     const [provider, owner] = rule.id.split(".");
-    const namespace = `${provider ?? ""}__${(owner ?? "").replaceAll("-", "_")}__`;
+    const namespace = `${provider ?? ""}__${owner ?? ""}__`;
     if (!rule.runtimeName.startsWith(namespace))
       throw new DshConfigurationError(
         `Profile extension ${rule.id} must use its own runtime namespace; builtins require their canonical grants`,
@@ -327,7 +328,11 @@ export async function loadRepositoryProfile(options: {
     }
   }
   await materialize(treeSha, "");
-  return readProjectProfile(options.directory, { sourceSha: options.sourceSha, path });
+  return readProjectProfile(
+    options.directory,
+    { sourceSha: options.sourceSha, path },
+    options.knownSecrets,
+  );
 }
 
 export function assertProfileInputCompatibility(inputs: ActionInputs): void {
@@ -360,7 +365,7 @@ export function projectExtensionPlan(
     throw new DshConfigurationError("Project extension startup requires trusted authority");
   const dependencies = Object.fromEntries(
     Object.entries(profile.dependencies).filter(
-      ([name]) => !/^@deepseek-ai\/dsh(?:-|$)/u.test(name),
+      ([name]) => LOCKED_RUNTIME_PACKAGES[name] === undefined,
     ),
   );
   const digest = hash(

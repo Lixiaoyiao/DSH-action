@@ -105,3 +105,64 @@ export function composeActionProfile(profile, mode, environment = process.env, t
     process.stderr.write('DSH_DIAGNOSTIC {"phase":"profile.composed"}\n');
   return patches;
 }
+
+export function admittedExtensionSelectors(profile) {
+  const selectors = [];
+  const addRow = (row) => {
+    if (typeof row.id === "string") selectors.push({ id: row.id });
+    else if (typeof row.name === "string") selectors.push({ name: row.name });
+    if (Array.isArray(row.insert)) row.insert.forEach(addRow);
+  };
+  for (const layer of profile.layers) {
+    if (
+      layer.packageName === "@deepseek-ai/dsh-base" ||
+      layer.packageName === "@deepseek-ai/dsh-headless"
+    )
+      continue;
+    layer.patches.forEach(addRow);
+  }
+  for (const patch of profile.patches) {
+    for (const row of patch.insert ?? []) {
+      if (row.id !== "dsh-action-policy") addRow(row);
+    }
+  }
+  return selectors;
+}
+
+export function requireAdmittedExtensions(host, selectors) {
+  if (selectors.length === 0) return;
+  // The official Headless driver settles Loader before creating its Agent.
+  // Check only explicitly admitted extension entries, including their nested
+  // groups/includes; DSH's unrelated optional entries retain their semantics.
+  host.on(
+    "agent/created",
+    () => {
+      const loader = host.get("loader");
+      if (loader === undefined) throw new Error("admitted extension startup requires Loader");
+      const entries = [...loader.entries()];
+      const required = new Set();
+      for (const selector of selectors) {
+        const matched = entries.filter((entry) =>
+          selector.id === undefined
+            ? entry.options.name === selector.name
+            : entry.options.id === selector.id,
+        );
+        if (matched.length === 0) throw new Error("an admitted extension entry was not composed");
+        matched.forEach((entry) => required.add(entry));
+      }
+      for (const entry of required) {
+        if (entry.subtree !== undefined) {
+          for (const child of entry.subtree.entries()) required.add(child);
+        }
+        if (entry.subgroup !== undefined) {
+          for (const child of entries) if (child.parent === entry.subgroup) required.add(child);
+        }
+        // ACTIVE=2 is the exact locked Cordis FiberState public enum.
+        if (!entry.disabled && entry.fiber?.state !== 2) {
+          throw new Error(`admitted extension ${entry.options.id} failed to activate`);
+        }
+      }
+    },
+    { prepend: true },
+  );
+}

@@ -21,7 +21,7 @@ import {
   DshProxyError,
   DshSpawnError,
 } from "./errors.js";
-import { decodeHeadlessResult, headlessModelUsage } from "./headless-output.js";
+import { HeadlessOutputDecoder } from "./headless-output.js";
 import { repairDshOutput } from "./output-repair.js";
 import { executeBoundedDshProcess, type DshProcessResult, type DshProcessSpec } from "./process.js";
 import { startDeepSeekProxy, type DeepSeekProxyHandle } from "./proxy.js";
@@ -131,13 +131,16 @@ export class DshWorker {
     processResult: DshProcessResult,
     proxy: DeepSeekProxyHandle,
     secrets: readonly string[],
+    decoder: HeadlessOutputDecoder,
   ): Promise<DshOutput> {
     const { context, scope, dependencies } = this;
     assertNoSecretOutput("stdout", processResult.stdout, secrets);
     assertNoSecretOutput("stderr", processResult.stderr, secrets);
     // Retain safe completed-step samples even when exit/terminal validation
     // fails. This read-only projection also checks decoded secret escapes.
-    this.usage = headlessModelUsage(processResult.stdout, secrets);
+    decoder.end(processResult.stdout);
+    decoder.assertSafe();
+    this.usage = decoder.partialUsage();
     if (processResult.exitCode !== 0 || processResult.signal !== null) {
       throw new DshProcessError(
         processResult.exitCode,
@@ -145,7 +148,7 @@ export class DshWorker {
         redactKnownSecrets(processResult.stderr.trim(), secrets),
       );
     }
-    const terminal = decodeHeadlessResult(processResult.stdout, secrets);
+    const terminal = decoder.result();
     this.usage = terminal.usage;
     const resultText = terminal.text;
     const { request } = context;
@@ -230,6 +233,7 @@ export class DshWorker {
     trace?.addSecrets(secrets);
     for (const secret of secrets) runtime.session?.knownSecrets.add(secret);
     const { request } = context;
+    const decoder = new HeadlessOutputDecoder(secrets, (event) => trace?.observeHeadless(event));
     const evidence = new DshTurnEvidence(prepared.composition, scope, secrets);
     try {
       const workerEnvironment = buildDshWorkerEnvironment({
@@ -280,12 +284,8 @@ export class DshWorker {
           execute(spec, {
             timeoutMs: remainingMs,
             phase: "worker",
-            ...(trace === undefined
-              ? {}
-              : {
-                  onStdout: (chunk: Buffer) => trace.stdout(chunk),
-                  onStderr: (chunk: Buffer) => trace.stderr(chunk),
-                }),
+            onStdout: (chunk: Buffer) => decoder.write(chunk),
+            onStderr: (chunk: Buffer) => trace?.stderr(chunk),
             maxStdoutBytes: request.maxOutputBytes,
             maxStderrBytes: Math.min(request.maxOutputBytes, 2 * 1024 * 1024),
             maxCombinedBytes: request.maxOutputBytes,
@@ -293,7 +293,7 @@ export class DshWorker {
           }),
         );
         trace?.event("worker.exit");
-        output = await this.validateResult(processResult, proxy, secrets);
+        output = await this.validateResult(processResult, proxy, secrets, decoder);
         trace?.event("output.validated");
       } catch (error: unknown) {
         failure =
@@ -303,7 +303,13 @@ export class DshWorker {
       }
       if (failure !== undefined) {
         trace?.event("worker.error");
-        if (trace?.usage !== undefined) this.usage = { ...trace.usage, completeness: "partial" };
+        decoder.end();
+        try {
+          decoder.assertSafe();
+        } catch (error) {
+          failure = error;
+        }
+        this.usage = decoder.partialUsage();
       }
       failure = await evidence.collect(failure);
       if (failure !== undefined)

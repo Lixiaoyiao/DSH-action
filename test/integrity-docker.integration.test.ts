@@ -130,6 +130,7 @@ describe.skipIf(process.env.DSH_E2E_INTEGRITY_DOCKER !== "1")(
             workspacePath: snapshot.workerRoot,
             trust: "trusted-write",
             isolation: "docker",
+            workerNetwork: false,
             timeoutMs: 480_000,
             maxOutputBytes: 2 * 1024 * 1024,
             apiKey: fixtureKey,

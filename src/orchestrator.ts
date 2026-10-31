@@ -90,6 +90,7 @@ export async function runAction(options: RunActionOptions = {}): Promise<RunOutc
         lifecycle.reportRuntimeProgress(message);
       },
       [inputs.githubToken, inputs.deepseekApiKey],
+      startedAt + inputs.timeoutMinutes * 60000,
     );
     heartbeat = setInterval(() => lifecycle.diagnostics?.heartbeat(), 30_000);
     heartbeat.unref();
