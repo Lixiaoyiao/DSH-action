@@ -1,4 +1,5 @@
-import type { ActionInputs } from "../inputs.js";
+import type { RunDiagnostics } from "./diagnostics.js";
+import type { ResolvedActionInputs as ActionInputs } from "../inputs.js";
 import { runDsh } from "./runner.js";
 import type { DshRunResult } from "./runner-types.js";
 import type { DshRuntime } from "./runtime.js";
@@ -49,6 +50,7 @@ export class DshAgentEngine implements AgentEngine<DshRunResult> {
     private readonly runtime?: DshRuntime,
     private readonly extensions?: ExtensionPlan,
     composition?: DshComposition,
+    private readonly diagnostics?: RunDiagnostics,
   ) {
     this.composition = composition ?? selectDshComposition(inputs.dshMode).create();
   }
@@ -116,6 +118,13 @@ export class DshAgentEngine implements AgentEngine<DshRunResult> {
         ...(this.extensions === undefined ? {} : { extensions: this.extensions }),
         trust: this.policy.trust,
         isolation: this.inputs.isolation,
+        workerNetwork: this.inputs.workerNetwork,
+        ...(this.inputs.projectProfile === undefined
+          ? {}
+          : { projectProfile: this.inputs.projectProfile }),
+        ...(this.inputs.workerEnvironment === undefined
+          ? {}
+          : { workerEnv: this.inputs.workerEnvironment }),
         deadlineMs: request.deadlineMs,
         timeoutMs: request.timeoutMs,
         ...(request.signal === undefined ? {} : { signal: request.signal }),
@@ -134,6 +143,7 @@ export class DshAgentEngine implements AgentEngine<DshRunResult> {
       },
       {
         composition: this.composition,
+        ...(this.diagnostics === undefined ? {} : { diagnostics: this.diagnostics }),
         ...(this.runtime === undefined ? {} : { runtime: this.runtime }),
       },
     );

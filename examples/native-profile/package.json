@@ -1,0 +1,14 @@
+{
+  "name": "dsh-project-profile",
+  "private": true,
+  "type": "module",
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-headless"
+      ]
+    }
+  },
+  "dependencies": {}
+}

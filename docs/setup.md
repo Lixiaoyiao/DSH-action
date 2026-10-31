@@ -1,5 +1,7 @@
 # Setup
 
+Unreleased: native project Profiles, independent network access (on by default), per-run reply history and live diagnostics. Installer changes are deferred. See [configuration](native-profile.md).
+
 [中文](setup.zh-CN.md) · [README](../README.md) · [Usage](usage.md) · [Configuration](configuration.md)
 
 This guide takes you from installation to read-only `@dsh` conversation and automatic PR Review. Add code-write capabilities when the repository needs them.
@@ -304,10 +306,10 @@ Run `npm create dsh-action@latest -- --import-plugins` in an interactive termina
 
 Enabled npm DSH Bundles can be reinstalled at exact versions in Native mode. Controlled mode also asks for the exact `plugin__owner__tool` names and grants only the selected read-only tools. Packages using arbitrary tool names need Native mode or manual configuration. Local paths, npm aliases, disabled Bundles, incompatible versions and plain dependencies need manual setup; the list explains each case. An undeclared compatibility range is shown as unverified.
 
-The generated workflow enables package installation only after confirmation. It does not copy `.env`, credentials, local Cordis patches, compatibility exceptions or plugin settings. Imported plugins use package defaults and request no extra network or workspace-write access; existing workflow permissions and shared worker mounts still apply. Add any required cloud configuration separately with the existing extension inputs. Fork reviews retain their extension-free configuration.
+The generated workflow enables package installation only after confirmation. It does not copy `.env`, credentials, local Cordis patches, compatibility exceptions or plugin settings. Imported plugins use package defaults and retain their legacy network/workspace-write declarations. In an Action that supports `worker-network`, those declarations do not disable its default public egress; use that switch for Worker isolation. Existing trust and workspace-write gates still apply. Add any required cloud configuration separately with the existing extension inputs. Fork reviews retain their extension-free configuration.
 
-Native web search and fetch now use the DeepSeek Search/Fetch API through the Controller proxy. Controlled search uses the same Search API; add `native.web-fetch` explicitly under a custom or standard permission profile to enable Fetch. The `base-url` input also selects the upstream for these API routes; `web-search-base-url` remains the legacy Messages-search route. The API model ID for the new Flash catalog entry is `deepseek-flash`.
+Worker public egress is controlled only by `worker-network`, defaulting to `true`. Official DSH search uses the restricted Controller credential proxy; official HTTP fetch runs directly in the Worker. Both web tools are included in the new Controlled strict defaults, subject to explicit denies and trust policy. Native Profile settings select providers. The unchanged installer still targets Action `v0.12.2`; these new defaults apply after upgrading that Action reference.
 
 Controlled automatic import targets read-only Review and Session workflows. Coding-command plugins need manual per-task permission declarations; selecting both workflows imports into Review and leaves Commands unchanged. Native commands retain the existing trusted-context gates, so plugins cannot run for untrusted fork commands.
 
-An explicit custom `web-search-base-url` keeps its legacy Messages-search protocol. The default selects the new Search API. Fetch always uses its separate API grant and `base-url`, including when Fetch is the only selected web tool.
+`web-search-base-url` configures the authenticated search upstream, not general Worker connectivity. Anonymous HTTP fetch uses its requested URL, not the model `base-url`. Set `worker-network: "false"` when Worker public egress must be disabled.

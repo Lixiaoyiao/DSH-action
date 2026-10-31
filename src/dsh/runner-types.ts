@@ -1,3 +1,5 @@
+import type { ProjectProfile } from "./project-profile.js";
+import type { RunDiagnostics } from "./diagnostics.js";
 import type { ModelUsage } from "./usage.js";
 import type { DshModelSettings } from "./model-settings.js";
 import type { AgentToolManifest } from "../agent/contracts.js";
@@ -15,12 +17,15 @@ export type DshTrust = "untrusted" | "trusted-read" | "trusted-write";
 export type DshIsolation = "docker" | "none";
 
 export interface DshRunRequest extends DshModelSettings {
+  readonly projectProfile?: ProjectProfile;
   readonly operation: DshOperation;
   readonly prompt: string;
   readonly trustedInstructions?: string;
   readonly workspacePath?: string;
   readonly trust: DshTrust;
   readonly isolation: DshIsolation;
+  readonly workerNetwork?: boolean;
+  readonly workerEnv?: Readonly<Record<string, string>>;
   /** Immutable controller-wide absolute deadline. Direct callers may omit it. */
   readonly deadlineMs?: number;
   /** Agent execution cap, applied after setup and still bounded by deadlineMs. */
@@ -71,6 +76,7 @@ export interface DshRunResult {
 }
 
 export interface DshRunDependencies {
+  readonly diagnostics?: RunDiagnostics;
   readonly executeProcess?: (
     spec: DshProcessSpec,
     limits: DshProcessLimits,

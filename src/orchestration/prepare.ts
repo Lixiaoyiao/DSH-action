@@ -1,3 +1,4 @@
+import { configureCommentPublication } from "../github/comments.js";
 import { createAuthorityRevalidator } from "./authority.js";
 import * as core from "@actions/core";
 
@@ -127,6 +128,12 @@ export class RunPreparation {
     const client = createGitHubClient(inputs.githubToken, signal, {
       deadlineMs,
     });
+    const publication = {
+      mode: inputs.commentMode,
+      runId: context.runId,
+      attempt: process.env.GITHUB_RUN_ATTEMPT ?? "1",
+    };
+    configureCommentPublication(client, publication);
     state.githubClient = client;
     throwIfCancelled(signal);
     lifecycle.enter("authorization");
@@ -198,9 +205,11 @@ export class RunPreparation {
     const initializeProgress = (): StickyProgressReporter | undefined => {
       if (!inputs.progressComment || issueNumber === undefined) return undefined;
       if (lifecycle.reporter !== undefined) return lifecycle.reporter;
+      const publicationClient = createGitHubClient(inputs.githubToken);
+      configureCommentPublication(publicationClient, publication);
       const reporter = new StickyProgressReporter({
         // Terminal publication receives its own bounded client after SIGTERM.
-        client: createGitHubClient(inputs.githubToken),
+        client: publicationClient,
         target: { owner: context.repository.owner, repo: context.repository.repo, issueNumber },
         expectedAuthorId: inputs.botUserId,
         operation: command.operation,

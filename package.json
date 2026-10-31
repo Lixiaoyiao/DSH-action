@@ -1,6 +1,6 @@
 {
   "name": "dsh-action",
-  "version": "0.12.2",
+  "version": "0.13.0",
   "description": "DeepSeek Harness for GitHub - controlled and native DSH composition, coding tasks, review, and safe automation",
   "author": "Lixiaoyiao",
   "repository": {

@@ -369,7 +369,7 @@ describe("locked rc.2 native ecosystem boot", () => {
           code: 1,
           stdout: "",
           stderr: expect.stringContaining(
-            "an admitted DSH Profile Bundle failed compatibility or resolution",
+            "Profile Bundle compatibility/resolution failed:",
           ) as unknown,
         });
         expect(llm.requests).toHaveLength(requestCount);

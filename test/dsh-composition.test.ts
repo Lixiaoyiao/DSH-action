@@ -128,6 +128,10 @@ async function controlledAssets(): Promise<{ readonly root: string; readonly ass
     writeFile(join(assets, "trusted-write.patch.yml"), "[]\n"),
     writeFile(join(assets, "action-policy.mjs"), "export default class ActionPolicy {}\n"),
     writeFile(join(assets, "action-workspace.mjs"), "export default class ActionWorkspace {}\n"),
+    writeFile(
+      join(assets, "profile-runtime.mjs"),
+      "export function composeActionProfile(){return [];}\n",
+    ),
     writeFile(join(assets, "action-launcher.mjs"), "export default async function main() {}\n"),
   ]);
   return { root, assets };
@@ -143,6 +147,10 @@ async function nativeAssets(): Promise<{
   const assets = join(root, "assets");
   const launcher = "export default async function nativeMain() {}\n";
   await mkdir(assets);
+  await writeFile(
+    join(assets, "profile-runtime.mjs"),
+    "export function composeActionProfile(){return [];}\n",
+  );
   await writeFile(join(assets, "native-launcher.mjs"), launcher);
   return { root, assets, launcher };
 }

@@ -236,7 +236,7 @@ describe("buildDshPrompt", () => {
       ],
     });
     expect(prompt).toContain("bounded foreground Bash");
-    expect(prompt).toContain("Controller-mediated web_search");
+    expect(prompt).toContain("native web_search");
     expect(prompt).toContain("managed depth-1 subagent");
     expect(prompt).toContain("Never load repository instructions or skills");
     expect(prompt).toContain("GitHub commit/push/PR/release operations");
@@ -247,7 +247,7 @@ describe("buildDshPrompt", () => {
   it.each([
     {
       tool: "native.web-search",
-      capability: "Controller-mediated web_search",
+      capability: "native web_search",
       deny: "Do not access the web.",
     },
     {
@@ -317,7 +317,7 @@ describe("buildDshPrompt", () => {
     expect(prompt).toContain("Do not access the web.");
     expect(prompt).toContain("Do not use shell or execute repository code directly.");
     expect(prompt).toContain("Do not spawn subagents.");
-    expect(prompt).not.toContain("use Controller-mediated web_search");
+    expect(prompt).not.toContain("use native web_search");
     expect(prompt).not.toContain("run bounded foreground Bash");
     expect(prompt).not.toContain("delegate to one managed depth-1 subagent");
   });

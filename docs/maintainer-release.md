@@ -4,7 +4,7 @@
 
 This guide is for repository maintainers qualifying and publishing an Action release. A successful run proves only the exact commit SHA it tested. After any candidate change, repeat every required check against the new latest SHA.
 
-For v0.12.2, retain the exact production DSH `0.2.1-rc.2` family and resolve its
+For v0.13.0, retain the exact production DSH `0.2.1-rc.2` family and resolve its
 MCP bridge to official `@modelcontextprotocol/client` `2.3.0` through the exact
 parent-scoped security override, with peer and lock validation intact. Optional
 model settings reuse the existing Session protocol, history selection,
@@ -33,6 +33,9 @@ prepare the independently versioned installer with the actual formal Action SHA.
 The advisory stable/RC/alpha upstream canaries never replace these production gates.
 Do not rerun task-bearing failures without first reconciling their diagnostics
 and confirmed effects; preserve a bounded continuation record for external blocks.
+
+The v0.13.0 release publishes only the Action. Leave the installer source, version,
+and published Action binding unchanged; skip installer preparation and publication.
 
 The independent installer `0.7.4` targets formal Action `v0.12.2` through
 `DSH_ACTION_RELEASE_SHA`. Its source tag is
@@ -248,8 +251,9 @@ counts and proof equality plus a sanitized server audit, including on failure.
 
 The live Web Search smoke requests a source title and URL from the actual
 search response, separately from repository context. It still requires exactly
-one completed successful `native.web-search` receipt and mediated network
-authority. A final JSON answer without that receipt fails even if its text
+one completed successful `native.web-search` receipt and the selected Worker
+network setting. Search authentication stays behind the credential proxy;
+`worker-network` independently selects Worker public egress. A final JSON answer without that receipt fails even if its text
 looks correct. Always-running diagnostics preserve safe outcome/count fields
 when the Action or its assertion fails; they do not print model text or URLs.
 

@@ -32,6 +32,51 @@ export interface ActionPublicInputDefinition {
  */
 export const ACTION_INPUT_CONTRACT = [
   {
+    name: "worker-network",
+    runtimeKey: "workerNetwork",
+    required: false,
+    default: "true",
+    description:
+      "Sole Worker public-egress switch, independent of mode, trust and plugin flags. Defaults to true; false requires Docker and retains the necessary model proxy.",
+    docsGroup: "runtime",
+  },
+  {
+    name: "comment-mode",
+    runtimeKey: "commentMode",
+    required: false,
+    default: "append",
+    description:
+      "append creates one reply per run/attempt; update reuses the latest matching bot reply.",
+    docsGroup: "runtime",
+  },
+  {
+    name: "diagnostics",
+    runtimeKey: "diagnostics",
+    required: false,
+    default: "basic",
+    description: "Diagnostic detail: off, basic, or detailed (bounded redacted artifact).",
+    docsGroup: "runtime",
+  },
+  {
+    name: "dsh-profile",
+    runtimeKey: "dshProfile",
+    required: false,
+    default: "auto",
+    description:
+      "Trusted repository Profile directory; auto discovers .dsh at the trusted base/default commit.",
+    docsGroup: "runtime",
+  },
+  {
+    name: "dsh-env",
+    runtimeKey: "dshEnv",
+    required: false,
+    default: "[]",
+    description:
+      "JSON array of additional Worker environment variable names. Never Controller credentials.",
+    docsGroup: "runtime",
+  },
+
+  {
     name: "deepseek-api-key",
     runtimeKey: "deepseekApiKey",
     required: true,
@@ -357,7 +402,7 @@ export const ACTION_INPUT_CONTRACT = [
     required: false,
     default: "https://api.deepseek.com",
     description:
-      "Trusted credential-routing input for model requests and DeepSeek Search/Fetch APIs. Never derive it from untrusted content.",
+      "Trusted upstream for model requests and compatible DeepSeek API routes. Does not select Worker egress or the target URL of native HTTP fetch.",
     docsGroup: "credentials",
   },
   {
@@ -366,7 +411,7 @@ export const ACTION_INPUT_CONTRACT = [
     required: false,
     default: "https://api.deepseek.com/anthropic/v1",
     description:
-      "An explicit custom URL preserves legacy Messages search. The default uses the new DeepSeek Search API through base-url; Fetch also uses base-url.",
+      "Trusted upstream for official DSH Messages-based web search through the restricted Controller proxy. Worker public egress is controlled by worker-network.",
     docsGroup: "credentials",
   },
   {

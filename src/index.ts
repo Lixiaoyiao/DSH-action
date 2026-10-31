@@ -1,3 +1,4 @@
+import { publishDiagnosticArtifact } from "./result/diagnostics.js";
 import * as core from "@actions/core";
 
 import { runAction } from "./orchestrator.js";
@@ -41,6 +42,11 @@ async function main(): Promise<void> {
     cancellation.dispose();
   }
 
+  try {
+    result = await publishDiagnosticArtifact(result);
+  } catch {
+    core.warning("Diagnostic artifact finalization failed; primary result preserved.");
+  }
   for (const [name, value] of Object.entries(buildActionOutputs(result))) {
     core.setOutput(name, value);
   }

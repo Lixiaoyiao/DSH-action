@@ -105,6 +105,7 @@ describe.skipIf(process.env.DSH_E2E_IMAGE_DOCKER !== "1")("production Docker ima
             workspacePath: workspace,
             trust: "trusted-read",
             isolation: "docker",
+            workerNetwork: false,
             timeoutMs: 480_000,
             maxOutputBytes: 4 * 1024 * 1024,
             apiKey: "controller-docker-image-fixture-key",

@@ -23,25 +23,13 @@ after an eligible change and before a commit, ref update, pull request, or typed
 GitHub mutation is flushed. A model response cannot waive it
 ([INV-004](docs/invariants.md#inv-004-githubmutationrequiresvalidation)).
 
-## Local configuration GUI
+## Project configuration
 
-The standalone installer has a local browser UI over a small loopback HTTP
-backend. Browser code owns presentation and editing state; backend modules own
-YAML inspection/editing, plugin metadata discovery, static validation, diff
-preview and local file saves. The server binds to `127.0.0.1`, uses a fresh
-session token and checks the request host/origin.
-
-`src/action-contract.ts` generates the GUI's input metadata. The packaged
-validator bundles the same `checkConfiguration` implementation used by the
-Action, so browser forms do not become a second schema. YAML workflow files are
-the persistent source; there is no sidecar configuration store. Saving requires
-a current diff preview, checks the source hash again, and affects only workflow
-files. Git publication and runtime GitHub authority remain outside this UI.
-
-The UI files live under
-`packages/create-dsh-action/src/gui/ui/`; the sibling backend files
-can evolve independently while keeping the HTTP contract. These modules are
-installer tooling and are not loaded by the Action worker.
+Workflow YAML owns Action and runner concerns. A trusted immutable project
+Profile owns Harness configuration. Both compositions use the official Profile
+loader, ordered Cordis patches and a small final Action-owned overlay. The
+legacy workflow inputs are compatibility conversion, not another loader.
+See [native Profile configuration](docs/native-profile.md).
 
 ## Controlled and native composition
 
@@ -171,17 +159,11 @@ attempts every acquired resource's disposer, preserving the primary outcome.
 
 ## Installation design
 
-The installer defaults to read-only conversation and automatic PR Review in the
-local configuration GUI described above. Advanced modes are explicit choices.
-GUI and non-interactive entrypoints share release-bound templates and the local
-workflow save transaction. Existing files are read from the repository root;
-concurrent edits invalidate the preview before saving.
-
-The installer stores Secret references in YAML and never sets GitHub Secrets,
-commits, pushes, or runs repository scripts. Maintainers perform those steps
-through their normal GitHub and Git tools. Local plugin discovery reads package
-metadata only; cloud configuration names exact packages and explicit tools,
-without copying local credentials or private settings.
+The CLI installer remains unchanged in this runtime change. It creates
+release-bound workflows and optionally imports package metadata from local
+plugins. It never executes repository code, sets GitHub Secrets or publishes
+Git changes. Full native Profile migration is deferred; users can maintain
+project Profile files directly. Current CLI saves remain limited to workflows.
 
 ## Verification seams
 

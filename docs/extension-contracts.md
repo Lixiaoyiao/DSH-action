@@ -230,10 +230,10 @@ requires eligible trusted same-repository authority, repository access, and
 extension loading authority. An owner requesting network additionally requires
 Action network authority; an owner requesting `workspaceWrite` requires
 trusted-write and modify-workspace authority. These declarations cannot elevate
-the run. They are process requirements: one `network: true` owner selects
-Docker bridge egress for the entire native worker, and a read/write repository
-mount is likewise shared by every capability in that worker. Neither is a
-per-owner or per-tool sandbox.
+the run. They are admission requirements, not network selectors:
+`worker-network` alone controls public egress for the whole Worker. A read/write
+repository mount is likewise shared by every capability and remains subject to
+trusted-write policy. Neither is a per-owner or per-tool sandbox.
 
 Bundle and Plugin packages still require an exact npm semver or a GitHub source
 pinned to a lowercase 40-character commit, plus the separate
@@ -386,8 +386,8 @@ the DSH-native inventory.
 
 ## Process-level permission compatibility
 
-In controlled mode, `read`, `workspace-write`, and `network` are declared on
-every extension tool, but filesystem mounts and network namespaces belong to
+In legacy controlled extension configuration, `read`, `workspace-write`, and
+`network` are declared on every extension tool, but filesystem mounts and network namespaces belong to
 the whole DSH process. Every controlled extension tool must include `read`,
 because all co-hosted extension code shares the Agent's repository view. The
 Controller therefore rejects unsafe controlled co-tenancy rather than
@@ -403,25 +403,27 @@ pretending to provide per-tool process isolation:
   `dsh-executable` compatibility path never loads extensions.
 
 Native does not copy that tool-shaped co-tenancy calculation. Its owner-level
-flags are outer admission and audit facts, not DSH tool permissions. Any native
-owner with `network: true` selects bridge egress for the entire worker; if no
-owner requests it, the worker uses the internal-network path. Any owner with
+flags are outer admission and audit facts, not DSH tool permissions. Owner
+`network` declarations cannot enable or disable Worker public egress; only
+`worker-network` selects that shared network. Any owner with
 `workspaceWrite: true` requires trusted-write authority, but the actual
 read-only/read-write repository mount is selected for the complete native
 worker by Action trust/write policy. A `false` value cannot sandbox one owner
 from a mount or network path available to another capability. Native itself
 always requires Docker, including trusted-read work.
 
-`network=false` does not mean that the worker has no network path. When no owner
-requests network, the worker uses an internal Docker network that blocks
-ordinary external egress. The Controller inspects that network's IPv4 gateway
+`worker-network` defaults to `true`, allowing ordinary public egress through a
+run-scoped Docker bridge in both modes and every trust tier. Explicit
+`worker-network: "false"` selects an internal Docker network and disables web
+tools/proxy routes, while retaining the necessary model proxy channel. The Controller inspects that network's IPv4 gateway
 and maps `host.docker.internal` to the inspected address for the Controller LLM
 proxy; an invalid or missing inspected gateway fails closed. This host-gateway
 route is required for model traffic and is not a port-level allowlist, so runner
-firewall policy must protect other host services. When owners request network,
-the co-hosted DSH process uses Docker bridge egress. This is not a destination
-allowlist. Package acquisition also uses bridge networking even when the
-package's later runtime mode is network-disabled.
+firewall policy must protect other host services. Worker egress is not a
+destination allowlist. Legacy `network: false` does not isolate an owner in an
+online Worker, and `network: true` cannot override an offline Worker. Package
+acquisition and Controller requests use independent network paths. Host
+isolation cannot enforce `worker-network: "false"` and rejects it.
 
 ## Controlled ToolRuntime limits and receipts
 

@@ -37,6 +37,10 @@ export function createDshFixtureManager() {
       join(assets, "native-launcher.mjs"),
       "export default async function main() {}\n",
     );
+    await writeFile(
+      join(assets, "profile-runtime.mjs"),
+      "export function composeActionProfile() {return [];}\n",
+    );
     const executable = join(root, "bin.js");
     await writeFile(executable, "");
     return { root, workspace, assets, executable };

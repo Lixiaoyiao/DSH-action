@@ -116,7 +116,17 @@ beforeEach(() => {
     issue: { number: 7 },
     sender: { login: "alice" },
   });
-  mocks.createGitHubClient.mockReturnValue({});
+  mocks.createGitHubClient.mockReturnValue({
+    rest: {
+      git: {
+        getRef: () => Promise.resolve({ data: { object: { sha: "a".repeat(40) } } }),
+        getCommit: () =>
+          Promise.resolve({ data: { sha: "a".repeat(40), tree: { sha: "b".repeat(40) } } }),
+        getTree: () =>
+          Promise.resolve({ data: { sha: "b".repeat(40), truncated: false, tree: [] } }),
+      },
+    },
+  });
   mocks.checkActorPermissions.mockResolvedValue({
     actors: [
       {
@@ -171,7 +181,16 @@ describe("orchestrator cancellation finalization", () => {
     let requestSignal: AbortSignal | undefined;
     mocks.createGitHubClient.mockImplementation((_token: string, signal?: AbortSignal) => {
       requestSignal = signal;
-      return {};
+      return {
+        rest: {
+          git: {
+            getCommit: () =>
+              Promise.resolve({ data: { sha: "a".repeat(40), tree: { sha: "b".repeat(40) } } }),
+            getTree: () =>
+              Promise.resolve({ data: { sha: "b".repeat(40), truncated: false, tree: [] } }),
+          },
+        },
+      };
     });
     mocks.checkActorPermissions.mockImplementation(
       async () =>

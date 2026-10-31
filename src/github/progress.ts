@@ -140,7 +140,7 @@ export function renderProgressComment(view: ProgressView): string {
       `**Next step:** ${safeText(view.failure.guidance)}`,
     );
   }
-  body.push("", `<sub>[Workflow run](${view.runUrl}) · this comment updates in place</sub>`);
+  body.push("", `<sub>[Workflow run](${view.runUrl}) · progress and result for this run</sub>`);
   return body.join("\n").slice(0, 65_000);
 }
 

@@ -1,3 +1,4 @@
+import type { RunDiagnostics } from "./diagnostics.js";
 import { throwIfCancelled } from "../lifecycle/cancellation.js";
 import { settleWithin } from "../lifecycle/deadline.js";
 import { DshTimeoutError } from "./errors.js";
@@ -28,6 +29,7 @@ export class DshRunScope {
     signal: AbortSignal | undefined,
     now: () => number,
     warning: (message: string) => void,
+    public readonly diagnostics?: RunDiagnostics,
   ) {
     this.startedAt = startedAt;
     this.deadlineMs = deadlineMs;
@@ -84,7 +86,7 @@ export class DshRunScope {
       throw error;
     }
     disposeLate();
-    throw new DshTimeoutError(timeoutMs);
+    throw new DshTimeoutError(timeoutMs, "setup");
   }
 
   public async setup<T>(

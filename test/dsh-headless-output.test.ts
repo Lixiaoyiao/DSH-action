@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { decodeHeadlessResult, headlessResultText } from "../src/dsh/headless-output.js";
+import {
+  HeadlessOutputDecoder,
+  decodeHeadlessResult,
+  headlessResultText,
+} from "../src/dsh/headless-output.js";
 import { parseDshOutput } from "../src/dsh/schema.js";
 
 const session = { type: "session", sessionId: "session-fixture", cwd: "/workspace" };
@@ -16,6 +20,37 @@ const stream = (...events: unknown[]): string =>
   events.map((event) => JSON.stringify(event)).join("\n") + "\n";
 
 describe("DSH headless transport", () => {
+  it("decodes chunked UTF-8 once for diagnostics, usage, and final output", () => {
+    const events = [
+      session,
+      {
+        type: "status",
+        phase: "step_end",
+        turn: 0,
+        step: 0,
+        usage: { inputTokens: 10, outputTokens: 2 },
+      },
+      { type: "final", text: "收到" },
+    ];
+    const raw = stream(...events);
+    const observer = vi.fn<(event: unknown) => void>();
+    const decoder = new HeadlessOutputDecoder([], observer);
+    const parse = vi.spyOn(JSON, "parse");
+    try {
+      const bytes = Buffer.from(raw);
+      for (let offset = 0; offset < bytes.length; offset += 2)
+        decoder.write(bytes.subarray(offset, offset + 2));
+      decoder.end(raw);
+      expect(decoder.partialUsage()?.completeness).toBe("partial");
+      expect(decoder.result().text).toBe("收到");
+      expect(decoder.result().usage?.tokens).toMatchObject({ inputTokens: 10, outputTokens: 2 });
+      expect(parse).toHaveBeenCalledTimes(events.length);
+      expect(observer.mock.calls.map(([event]) => event)).toEqual(events);
+    } finally {
+      parse.mockRestore();
+    }
+  });
+
   it("keeps unidentifiable or truncated step metadata partial without changing the final result", () => {
     for (const step of [undefined]) {
       const decoded = decodeHeadlessResult(

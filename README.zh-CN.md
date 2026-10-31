@@ -1,5 +1,7 @@
 # DSH-action
 
+未发布变更：Action 管运行环境，项目原生 Profile 管 Harness。默认联网、按运行保留回复；安装器迁移暂缓，本次先完成 Action 运行时。详见[原生配置与迁移](docs/native-profile.md)。
+
 现有工作流请将 Action 的 uses 地址更新为 Lixiaoyiao/DSH-action@原提交SHA，保留原有 SHA 固定版本。安装器现在使用 npm create dsh-action。
 
 [![CI](https://github.com/Lixiaoyiao/DSH-action/actions/workflows/ci.yml/badge.svg)](https://github.com/Lixiaoyiao/DSH-action/actions/workflows/ci.yml)
@@ -130,7 +132,7 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
           persist-credentials: false
           fetch-depth: 1
-      - uses: Lixiaoyiao/DSH-action@v0.12.2
+      - uses: Lixiaoyiao/DSH-action@v0.13.0
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           dsh-version: 0.2.1-rc.2
@@ -202,6 +204,8 @@ Action 支持[按 key 自动创建或续接 Session](docs/zh-CN/session.md)，�
 `--write`、`fix` 和 `implement` 只是请求能力，并不授予权限。workflow 必须显式启用写模式，并提供由 Controller 执行的验证命令。自然语言默认只读；只有启用 `natural-language-write` 且明确要求修改代码时，才会请求写入。`task-access` 不会启用自然语言写入。命令和自动化用法见[使用指南](docs/usage.zh-CN.md)，完整关卡见[配置参考](docs/configuration.md)。
 
 维护者可以修改 trigger phrase，添加 label/assignee 路由，过滤 actor 或历史评论，选择 base branch，并配置确定性 branch template。这些设置只改变路由和命名；GitHub authority 仍由 Controller policy 与 workflow token scope 决定。
+
+Worker 公网出站只由 `worker-network` 控制：默认 `true`，需要隔离时显式设为 `false`。插件的 `network` 字段不能开关整个 Worker 的网络。
 
 ## 安全边界
 

@@ -687,3 +687,30 @@ export function emptyNativeExtensionPlan(): NativeExtensionPlan {
     },
   });
 }
+
+/** Worker transport is an Action capability, independent of extension declarations. */
+export function bindWorkerNetwork(plan: ExtensionPlan, enabled: boolean): ExtensionPlan {
+  const digest = createHash("sha256")
+    .update(canonicalJson({ configuration: plan.configurationDigest, workerNetwork: enabled }))
+    .digest("hex");
+  return plan.profileName === "github-action"
+    ? {
+        ...plan,
+        network: enabled,
+        digest,
+        configurationDigest: digest,
+        audit: {
+          ...plan.audit,
+          digest,
+          network: enabled,
+          entries: plan.audit.entries.map((entry) => ({ ...entry, network: enabled })),
+        },
+      }
+    : {
+        ...plan,
+        network: enabled,
+        digest,
+        configurationDigest: digest,
+        audit: { ...plan.audit, digest, workerNetwork: enabled },
+      };
+}

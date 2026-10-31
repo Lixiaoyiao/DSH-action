@@ -17,13 +17,17 @@ registerHooks({
 });
 
 const usage =
-  "Usage: npm run check:config -- --config <maintainer-owned.json>\nOffline static check; no model, repository commands, Docker probe, or GitHub calls.";
+  "Usage: npm run check:config -- --config <maintainer-owned.json> [--profile <directory>]\nOffline static check; no model, repository commands, Docker probe, or GitHub calls.";
 const argumentsList = process.argv.slice(2);
 if (argumentsList.length === 1 && ["--help", "-h"].includes(argumentsList[0])) {
   process.stdout.write(`${usage}\n`);
 } else {
   try {
-    if (argumentsList.length !== 2 || argumentsList[0] !== "--config") {
+    if (
+      ![2, 4].includes(argumentsList.length) ||
+      argumentsList[0] !== "--config" ||
+      (argumentsList.length === 4 && argumentsList[2] !== "--profile")
+    ) {
       throw new Error(usage);
     }
     const path = resolve(argumentsList[1]);
@@ -55,6 +59,40 @@ if (argumentsList.length === 1 && ["--help", "-h"].includes(argumentsList[0])) {
     }
     const { checkConfiguration } = await import("../src/configuration-check.ts");
     const result = checkConfiguration(configuration);
+    if (argumentsList[2] === "--profile") {
+      try {
+        const { readProjectProfile, assertProfileInputCompatibility } =
+          await import("../src/dsh/project-profile.ts");
+        const { loadInputs } = await import("../src/inputs.ts");
+        const native = await readProjectProfile(resolve(argumentsList[3]), {
+          sourceSha: "0".repeat(40),
+          path: ".dsh",
+        });
+        if (result.ok) {
+          const parsed = loadInputs((name) =>
+            Object.hasOwn(configuration.inputs ?? {}, name)
+              ? configuration.inputs[name]
+              : ["deepseek-api-key", "github-token"].includes(name)
+                ? "offline-placeholder-secret-" + name
+                : "",
+          );
+          assertProfileInputCompatibility(parsed);
+        }
+        result.diagnostics.push({
+          id: "native_profile",
+          status: "passed",
+          message: `Native Profile parsed; ${native.bundles.length} Bundles. Plugin activation, credentials and network remain not_checked.`,
+        });
+      } catch {
+        result.ok = false;
+        result.diagnostics.push({
+          id: "native_profile",
+          status: "failed",
+          message:
+            "Native Profile syntax, paths, dependency pins or legacy input compatibility failed. Values are not echoed.",
+        });
+      }
+    }
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     if (!result.ok) process.exitCode = 1;
   } catch (error) {

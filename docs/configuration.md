@@ -23,13 +23,13 @@ validation, image, extension, executable, or credential-routing inputs.
 
 <!-- BEGIN GENERATED ACTION INPUTS: credentials -->
 
-| Input                 | Required/default                        | Description                                                                                                                                       |
-| --------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `deepseek-api-key`    | Required                                | DeepSeek API key. Kept by the controller-side credential proxy; never passed to DSH or repository code.                                           |
-| `github-token`        | `${{ github.token }}`                   | GitHub token used only by the trusted controller.                                                                                                 |
-| `base-url`            | `https://api.deepseek.com`              | Trusted credential-routing input for model requests and DeepSeek Search/Fetch APIs. Never derive it from untrusted content.                       |
-| `web-search-base-url` | `https://api.deepseek.com/anthropic/v1` | An explicit custom URL preserves legacy Messages search. The default uses the new DeepSeek Search API through base-url; Fetch also uses base-url. |
-| `bot-user-id`         | `41898282`                              | Numeric ID of the bot account that owns tracking comments. Defaults to github-actions[bot].                                                       |
+| Input                 | Required/default                        | Description                                                                                                                                                |
+| --------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `deepseek-api-key`    | Required                                | DeepSeek API key. Kept by the controller-side credential proxy; never passed to DSH or repository code.                                                    |
+| `github-token`        | `${{ github.token }}`                   | GitHub token used only by the trusted controller.                                                                                                          |
+| `base-url`            | `https://api.deepseek.com`              | Trusted upstream for model requests and compatible DeepSeek API routes. Does not select Worker egress or the target URL of native HTTP fetch.              |
+| `web-search-base-url` | `https://api.deepseek.com/anthropic/v1` | Trusted upstream for official DSH Messages-based web search through the restricted Controller proxy. Worker public egress is controlled by worker-network. |
+| `bot-user-id`         | `41898282`                              | Numeric ID of the bot account that owns tracking comments. Defaults to github-actions[bot].                                                                |
 
 <!-- END GENERATED ACTION INPUTS: credentials -->
 
@@ -114,6 +114,11 @@ an actual `needs_tool` result is ineligible for terminal formatting repair.
 
 | Input                    | Required/default                                                                                                  | Description                                                                                                                                                                                                                                               |
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `worker-network`         | `true`                                                                                                            | Sole Worker public-egress switch, independent of mode, trust and plugin flags. Defaults to true; false requires Docker and retains the necessary model proxy.                                                                                             |
+| `comment-mode`           | `append`                                                                                                          | append creates one reply per run/attempt; update reuses the latest matching bot reply.                                                                                                                                                                    |
+| `diagnostics`            | `basic`                                                                                                           | Diagnostic detail: off, basic, or detailed (bounded redacted artifact).                                                                                                                                                                                   |
+| `dsh-profile`            | `auto`                                                                                                            | Trusted repository Profile directory; auto discovers .dsh at the trusted base/default commit.                                                                                                                                                             |
+| `dsh-env`                | `[]`                                                                                                              | JSON array of additional Worker environment variable names. Never Controller credentials.                                                                                                                                                                 |
 | `model`                  | Empty                                                                                                             | Optional DeepSeek Agent model identifier for controlled and native modes. Empty preserves the pinned DSH default (deepseek-flash); accepts up to 128 ASCII letters, digits, dots, underscores, or hyphens.                                                |
 | `reasoning-effort`       | Empty                                                                                                             | Optional DeepSeek Agent thinking effort: off, low, high, or max. Empty preserves the pinned DSH provider default (high); off disables thinking. Applies to controlled and native modes.                                                                   |
 | `session-mode`           | `off`                                                                                                             | Session opt-in: off, auto, save, or resume. Auto creates or continues the latest successful compatible checkpoint by key, with verified key-scoped concurrency and run-name history. Requires Docker; explicit save/resume remain supported.              |
@@ -182,11 +187,11 @@ Native extension definitions still pass Action-owned outer admission. They
 must come from trusted workflow configuration; package sources remain exact
 pins; package acquisition disables lifecycle scripts and preserves the runtime
 package inventory audit; and real Controller credentials remain forbidden.
-Owner-level `network` and `workspaceWrite` fields request process authority. If
-one owner requests bridge networking, every capability in the native worker
-shares bridge egress. A read/write mount likewise belongs to the complete
-worker and follows Action trust/write policy; neither setting is a per-tool
-sandbox. Maintainer-defined `command.*` tools and the closed Controller
+Legacy owner-level `network` fields describe network requirements; they do not
+select public egress. Only `worker-network` chooses the Worker network. An
+online Worker's egress is shared by every capability in that process.
+`workspaceWrite` requests a shared read/write mount under Action trust/write
+policy; neither declaration is a per-tool sandbox. Maintainer-defined `command.*` tools and the closed Controller
 `github.*` catalog remain a separate execution plane in both compositions.
 
 ### Validation
@@ -263,11 +268,11 @@ for complete workflow templates.
 
 ### Permission profiles
 
-| Profile    | Preset request                                                          | Intended use                                                                                   |
-| ---------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `strict`   | `workspace.read`, `workspace.search`, `workspace.edit`                  | Default, review, and v0.4-compatible behavior. Edit remains ineffective outside trusted write. |
-| `standard` | `strict` plus `native.bash`, `native.web-search`, and `native.subagent` | Trusted maintainer coding tasks. Bash and subagent still require trusted-write Docker policy.  |
-| `custom`   | No preset                                                               | Exact tools, command tools, MCP, Bundle, or Plugin configuration. List every tool explicitly.  |
+| Profile    | Preset request                                                                                  | Intended use                                                                                  |
+| ---------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `strict`   | `workspace.read`, `workspace.search`, `workspace.edit`, `native.web-search`, `native.web-fetch` | Default and review. Edit remains ineffective outside trusted write.                           |
+| `standard` | `strict` plus `native.bash` and `native.subagent`                                               | Trusted maintainer coding tasks. Bash and subagent still require trusted-write Docker policy. |
+| `custom`   | No preset                                                                                       | Exact tools, command tools, MCP, Bundle, or Plugin configuration. List every tool explicitly. |
 
 In controlled mode, `allowed-tools` adds exact requests after preset expansion;
 it does not replace a `strict` or `standard` preset. Use `custom` for a minimal
@@ -375,12 +380,14 @@ These canonical IDs apply to `dsh-mode: controlled`:
 - `workspace.edit` requires effective trusted-write authority and is followed by
   actual-change inspection and Controller validation.
 - `native.bash` is opt-in through `standard` or `custom`, requires trusted-write
-  Docker, runs bounded foreground commands without credentials, and cannot
-  share a worker with a bridge-networked extension.
-- `native.web-search` uses the Controller-mediated DeepSeek Search API.
-- `native.web-fetch` explicitly enables the Fetch API through the same proxy; it
-  is not included in the standard preset. Both use `base-url` and expose neither
-  the real key nor general Docker bridge egress.
+  Docker and runs bounded foreground commands without Controller credentials.
+  Its authorization is independent of `worker-network` and can coexist with
+  network-enabled extensions.
+- Official DSH `native.web-search` uses the restricted Controller credential
+  proxy. Official HTTP `native.web-fetch` fetches public pages directly from
+  the Worker. Both are requested by `strict` and inherited by `standard`, with
+  explicit denies and trust restrictions still applied. Native Profile settings
+  choose providers; enabling a tool does not select the Worker network.
 - `native.subagent` is available only under eligible trusted-write policy. Its
   ordinary response returns to the root Agent; it does not bypass the Action's
   root structured-output contract.
@@ -565,9 +572,9 @@ limit, not an Action grant or prediction of inventory. Adding a native
 Native stdio commands retain the same executable/path restrictions documented
 above. A Streamable HTTP definition uses an HTTP(S) `url`, ordinary `headers`,
 and an explicit `credentialHeaders` map for credential values,
-and always has `network: true`. If any native MCP, Bundle, or Plugin requests
-network, Docker bridge egress belongs to the entire native worker, not only to
-that server. Likewise, `workspaceWrite: true` requests outer trusted-write
+and always declares `network: true`. This is a transport requirement, not the
+Worker switch: `worker-network` independently controls public egress for the
+whole Worker. Likewise, `workspaceWrite: true` requests outer trusted-write
 admission but cannot create it; any actual writable mount is shared by the
 whole worker.
 
@@ -704,9 +711,9 @@ graph capabilities and appear in `observedTools` when visible to the root
 Agent.
 
 `network` and `workspaceWrite` are owner-level admission declarations, not
-per-tool isolation. One native owner requesting network puts the complete
-native worker on Docker bridge networking. A writable mount is also shared by
-the entire worker and remains subject to the Action's trusted-write gates.
+per-tool isolation. `worker-network` alone chooses public egress for the complete
+Worker; an owner's `network` flag cannot enable or disable it. A writable mount
+is shared by the entire Worker and remains subject to trusted-write gates.
 Bundle patches and Plugin startup are trusted code even with lifecycle scripts
 disabled, so review the complete transitive graph and enforce runner-level
 filesystem and network controls.
@@ -717,17 +724,20 @@ filesystem and network controls.
   cache, counters, receipts, and tool state are also run-scoped.
 - The worker receives neither checkout credentials nor Controller credentials.
   Keep `persist-credentials: false` on checkout.
-- `network: false` for extensions blocks ordinary external egress through an
-  internal Docker network, but the worker still reaches the Controller LLM proxy
-  through an inspected `host.docker.internal` gateway. This is not a port
-  allowlist; runner firewall policy protects other host services.
-- A network-enabled extension gives the co-hosted DSH process Docker bridge
-  egress. It is not a destination allowlist. In native mode, one requesting
-  owner gives that path to every capability in the native worker.
-- Network namespaces and mounts apply to the complete DSH process, not one tool.
-  Controlled owners must agree on network and workspace-write mode. Native
-  owner declarations are outer admission requests; the actual bridge and
-  read/write mount remain whole-worker capabilities selected by Action policy.
+- `worker-network: "true"` is the default public-egress setting for the whole
+  Worker, independently of `dsh-mode`, permission profile, trust tier and plugin
+  flags. Docker uses a dedicated outbound bridge, including for fork Workers.
+  Tool, credential, repository-access and write permissions remain separate.
+- `worker-network: "false"` selects an internal Docker network and disables
+  web tools and web proxy routes. The necessary Controller model proxy remains
+  reachable through its inspected host gateway. This is not a port allowlist;
+  runner firewall policy protects other host services. `isolation: none`
+  cannot enforce this setting and rejects it.
+- Legacy plugin/server `network` fields do not select Worker egress. A false
+  declaration does not isolate a plugin in an online Worker, and a true
+  declaration cannot override an offline Worker. Network namespaces and mounts
+  are shared by the whole process, not per-tool sandboxes. Controller GitHub
+  access and dependency installation are independent of this Worker switch.
 - The validation container currently uses bridge networking for validation
   commands, including dependency installation. On a self-hosted or
   corporate-network runner, repository validation code may reach services

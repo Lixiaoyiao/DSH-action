@@ -1,5 +1,7 @@
 # DSH-action
 
+Unreleased: native project Profiles, independent network access (on by default), per-run reply history and live diagnostics. Installer changes are deferred. See [configuration](docs/native-profile.md).
+
 For existing workflows, update the Action reference to Lixiaoyiao/DSH-action@the-existing-commit-SHA and keep its immutable commit pin. Use npm create dsh-action for the installer.
 
 [![CI](https://github.com/Lixiaoyiao/DSH-action/actions/workflows/ci.yml/badge.svg)](https://github.com/Lixiaoyiao/DSH-action/actions/workflows/ci.yml)
@@ -130,7 +132,7 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
           persist-credentials: false
           fetch-depth: 1
-      - uses: Lixiaoyiao/DSH-action@v0.12.2
+      - uses: Lixiaoyiao/DSH-action@v0.13.0
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           dsh-version: 0.2.1-rc.2
@@ -216,7 +218,7 @@ Maintainers can change the trigger phrase, add label/assignee routes, filter act
 - An approved Bundle, Plugin, or stdio MCP server is trusted worker code. Controlled ToolRuntime limits model-routed calls; native leaves routing and inventory to DSH. Neither model is a sandbox for extension startup, background work, or direct process I/O, and any bridge/RW capability applies to the whole worker.
 - `github.*` uses the Controller GitHub Gateway. A separately configured GitHub MCP uses its own external credential and is outside the Gateway's binding, revalidation, validation, and deferred-write guarantees.
 
-Read the complete [Security policy](SECURITY.md) before enabling write mode, host execution, network access, or third-party extensions.
+`worker-network` is the Worker public-egress switch: default `true`, explicit `false` for isolation. Plugin network flags do not control it. Read the [Security policy](SECURITY.md) when choosing network policy, write mode, host execution or third-party extensions.
 
 ## Documentation
 

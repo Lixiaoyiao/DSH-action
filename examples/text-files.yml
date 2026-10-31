@@ -20,7 +20,7 @@ jobs:
     steps:
       # First commit the two referenced files to your default branch.
       # Keep these paths maintainer-authored; never interpolate PR/Issue/log data.
-      - uses: Lixiaoyiao/DSH-action@v0.12.2
+      - uses: Lixiaoyiao/DSH-action@v0.13.0
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           command: task

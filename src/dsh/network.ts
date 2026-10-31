@@ -9,11 +9,15 @@ export function dockerNetworkSpec(
   name: string,
   workspace: string,
   environment: NodeJS.ProcessEnv,
+  internal = true,
 ): DshProcessSpec {
   const controllerEnv = dockerControllerEnvironment(environment, {});
   return {
     command: "docker",
-    args: action === "create" ? ["network", "create", "--internal", name] : ["network", "rm", name],
+    args:
+      action === "create"
+        ? ["network", "create", ...(internal ? ["--internal"] : []), name]
+        : ["network", "rm", name],
     cwd: workspace,
     env: controllerEnv,
   };

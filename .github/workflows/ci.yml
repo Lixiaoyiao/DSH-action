@@ -92,6 +92,17 @@ jobs:
             test/fixtures/images test/fixtures/messages-sse.mjs scripts/verify-dsh-config.mjs \
             src assets/dsh package.json package-lock.json
           ./node_modules/.bin/vitest run test/integrity-docker.integration.test.ts test/images-docker.integration.test.ts
+      - name: Linux Docker Worker egress and native HTTP fetch
+        timeout-minutes: 15
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          DSH_E2E_NETWORK_DOCKER: "1"
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$CANDIDATE_SHA" ]]
+          git diff --exit-code "$CANDIDATE_SHA" -- src assets/dsh test/network-docker.integration.test.ts package.json package-lock.json
+          ./node_modules/.bin/vitest run test/network-docker.integration.test.ts
       - name: Linux Docker frozen-SHA DSH rc.2 native ecosystem smoke
         # Collect the independent native evidence after a controlled failure;
         # the failed integrity step still fails this job and blocks release.
@@ -122,7 +133,7 @@ jobs:
               docker.io/library/node:24.18.0-bookworm@sha256:5711a0d445a1af54af9589066c646df387d1831a608226f4cd694fc59e745059 \
               rm -rf -- \
                 /runtime/node_modules /runtime/package.json /runtime/package-lock.json \
-                /runtime/action-launcher.mjs /runtime/native-launcher.mjs \
+                /runtime/action-launcher.mjs /runtime/native-launcher.mjs /runtime/profile-runtime.mjs \
                 /runtime/native-mcp-server.mjs /runtime/native-mcp-fixture \
                 /runtime/cordis.patch.yml \
                 /runtime/action-native-root.yml /runtime/pnpm-workspace.yaml \
@@ -132,7 +143,7 @@ jobs:
             rmdir "$runtime_dir" "$smoke_dir" || true
           }
           trap cleanup EXIT
-          cp package.json package-lock.json assets/dsh/action-launcher.mjs assets/dsh/native-launcher.mjs "$runtime_dir/"
+          cp package.json package-lock.json assets/dsh/action-launcher.mjs assets/dsh/native-launcher.mjs assets/dsh/profile-runtime.mjs "$runtime_dir/"
           docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges \
             --user "$run_as" \
             --memory 4g --cpus 2 \

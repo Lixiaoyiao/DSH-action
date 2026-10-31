@@ -1,9 +1,10 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { githubClientFixture } from "./helpers/github-client.js";
 import type { GitHubClient } from "../src/github/client.js";
 import {
   assertWritablePath,
@@ -65,6 +66,51 @@ describe("GitHub database writes", () => {
     "SECURITY.md",
   ])("rejects protected control-plane path %s", (path) => {
     expect(() => assertWritablePath(path)).toThrow("Protected path");
+  });
+
+  it.each(["modified", "added", "deleted"])(
+    "rejects a %s custom Profile file before any GitHub persistence",
+    async (kind) => {
+      const root = await mkdtemp(join(tmpdir(), "dsh-custom-profile-write-"));
+      roots.push(root);
+      const source = join(root, "source");
+      const worker = join(root, "worker");
+      await mkdir(join(source, "config", "harness"), { recursive: true });
+      if (kind !== "added") await writeFile(join(source, "config/harness/cordis.patch.yml"), "[]");
+      const snapshot = await createWorkspaceSnapshot(
+        { kind: "materialized-tree", root: source },
+        worker,
+        ["config/harness"],
+      );
+      await mkdir(join(worker, "config", "harness"), { recursive: true });
+      if (kind === "deleted") await rm(join(worker, "config/harness/cordis.patch.yml"));
+      else
+        await writeFile(
+          join(worker, "config/harness/cordis.patch.yml"),
+          "- id: action-policy\n  disabled: true\n",
+        );
+      const getCommit = vi.fn(() => Promise.reject(new Error("GitHub must not be called")));
+      await expect(
+        createGitHubCommitFromWorkspace(
+          githubClientFixture({ rest: { git: { getCommit } } }),
+          { owner: "o", repo: "r", baseSha: "a".repeat(40), message: "candidate" },
+          snapshot,
+        ),
+      ).rejects.toThrow("Protected path");
+      expect(getCommit).not.toHaveBeenCalled();
+    },
+  );
+
+  it("normalizes a custom protected directory without blocking sibling names", () => {
+    expect(() => assertWritablePath("CONFIG/HARNESS/cordis.patch.yml", ["config/harness"])).toThrow(
+      "Protected path",
+    );
+    expect(() => assertWritablePath("config/harness", ["config/harness"])).toThrow(
+      "Protected path",
+    );
+    expect(() =>
+      assertWritablePath("config/harness-other/README.md", ["config/harness"]),
+    ).not.toThrow();
   });
 
   it("reconciles an ambiguous updateRef error when the branch reached the desired SHA", async () => {
