@@ -44,7 +44,7 @@ jobs:
     steps:
       # Pin the complete commit from the corresponding Action Release for production.
       # Commit this file to the default branch and dispatch from that branch.
-      - uses: Lixiaoyiao/DSH-action@v0.12.2
+      - uses: Lixiaoyiao/DSH-action@v0.13.0
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           command: task

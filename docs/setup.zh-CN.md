@@ -1,6 +1,6 @@
 # 安装与接入
 
-未发布变更：Action 管运行环境，项目原生 Profile 管 Harness。默认联网、按运行保留回复；安装器迁移暂缓，本次先完成 Action 运行时。详见[原生配置与迁移](native-profile.md)。
+Action v0.13.0：Action 管运行环境，项目原生 Profile 管 Harness。默认联网、按运行保留回复；安装器迁移和发布另行处理。详见[原生配置与迁移](native-profile.md)。
 
 [English](setup.md) · [项目首页](../README.zh-CN.md) · [使用指南](usage.zh-CN.md) · [配置参考](configuration.md)
 
@@ -136,11 +136,11 @@ DEEPSEEK_API_KEY
 为了便于阅读，示例使用当前发布 Tag：
 
 ```yaml
-uses: Lixiaoyiao/DSH-action@v0.12.2
+uses: Lixiaoyiao/DSH-action@v0.13.0
 ```
 
-生产环境应把 Tag 替换为从正式 `v0.12.2` 解析出的完整、不可变 commit SHA。
-安装器 `0.7.4` 对应该 Action 身份，独立审查的 installer 源码 commit 是另一个身份。
+生产环境应把 Tag 替换为从正式 `v0.13.0` 解析出的完整、不可变 commit SHA。
+未修改的安装器 `0.7.4` 仍对应 Action `v0.12.2`，独立审查的 installer 源码 commit 是另一个身份。
 生成的 workflow 使用核验后的正式 commit，源码模板通过发布构建接收该值。
 
 必须分别核验 installer 源码 Tag 与 `DSH_ACTION_RELEASE_SHA` 打包输入；源码中的
@@ -197,7 +197,7 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
           persist-credentials: false
           fetch-depth: 1
-      - uses: Lixiaoyiao/DSH-action@v0.12.2
+      - uses: Lixiaoyiao/DSH-action@v0.13.0
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           dsh-version: 0.2.1-rc.2

@@ -21,6 +21,39 @@ export interface DiagnosticSummary {
   readonly remainingMs?: number;
 }
 
+function workerDiagnostic(line: string): Pick<DiagnosticEvent, "phase" | "name"> | undefined {
+  if (!line.startsWith("DSH_DIAGNOSTIC ")) return undefined;
+  try {
+    const row: unknown = JSON.parse(line.slice(15));
+    if (
+      !isRecord(row) ||
+      typeof row.phase !== "string" ||
+      !/^(?:profile|loader)\.[a-z-]+$/u.test(row.phase) ||
+      Object.keys(row).some((key) => key !== "phase" && key !== "name") ||
+      (row.name !== undefined && typeof row.name !== "string")
+    )
+      return undefined;
+    return { phase: row.phase, ...(typeof row.name === "string" ? { name: row.name } : {}) };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Keep startup telemetry in its own trace so it cannot crowd the bounded failure message. */
+export function workerFailureDetail(stderr: string): string {
+  return stderr
+    .split(/\r?\n/u)
+    .filter((line) => {
+      const event = workerDiagnostic(line);
+      return (
+        event === undefined ||
+        !["profile.composed", "loader.entry-loading", "loader.entry-active"].includes(event.phase)
+      );
+    })
+    .join("\n")
+    .trim();
+}
+
 /** Bounded metadata projection. Never retain model prose, tool arguments or HTTP bodies. */
 export class RunDiagnostics {
   private readonly started = Date.now();
@@ -68,7 +101,7 @@ export class RunDiagnostics {
     this.events.push(event);
     try {
       this.log(
-        `[dsh] ${source} ${event.phase}${event.name ? ` ${event.name}` : ""} +${String(event.elapsedMs)}ms`,
+        `[dsh] ${source} ${event.phase}${event.name ? ` ${event.name}` : ""}${event.status === undefined ? "" : ` status=${String(event.status)}`} +${String(event.elapsedMs)}ms`,
       );
     } catch {
       /* Diagnostics cannot replace business results. */
@@ -98,21 +131,11 @@ export class RunDiagnostics {
     this.pendingError = (this.pendingError + chunk.toString("utf8")).slice(-65536);
     const lines = this.pendingError.split("\n");
     this.pendingError = lines.pop() ?? "";
-    for (const line of lines)
-      if (line.startsWith("DSH_DIAGNOSTIC ")) {
-        try {
-          const row: unknown = JSON.parse(line.slice(15));
-          if (
-            isRecord(row) &&
-            "phase" in row &&
-            typeof row.phase === "string" &&
-            /^(?:profile|loader)\.[a-z-]+$/.test(row.phase)
-          )
-            this.event(row.phase, typeof row.name === "string" ? { name: row.name } : {}, "worker");
-        } catch {
-          /* Ignore malformed diagnostics. */
-        }
-      }
+    for (const line of lines) {
+      const row = workerDiagnostic(line);
+      if (row !== undefined)
+        this.event(row.phase, row.name === undefined ? {} : { name: row.name }, "worker");
+    }
   }
   public observeHeadless(value: unknown): void {
     if (!isRecord(value)) return;

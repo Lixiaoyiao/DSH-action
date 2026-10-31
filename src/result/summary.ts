@@ -213,12 +213,12 @@ export function formatStepSummary(outcome: RunOutcome): string {
       "",
       `Last activity: ${String(outcome.diagnostics.lastActivityMs)}ms ago. Worker events are observations, not authority.`,
       "",
-      "| Source | Event | Elapsed ms |",
-      "| --- | --- | --- |",
+      "| Source | Event | HTTP status | Elapsed ms |",
+      "| --- | --- | --- | --- |",
     );
     for (const event of outcome.diagnostics.events.slice(-30))
       lines.push(
-        `| ${event.source} | ${safeInline(event.phase)}${event.name ? " " + safeInline(event.name) : ""} | ${String(event.elapsedMs)} |`,
+        `| ${event.source} | ${safeInline(event.phase)}${event.name ? " " + safeInline(event.name) : ""} | ${event.status === undefined ? "" : String(event.status)} | ${String(event.elapsedMs)} |`,
       );
     if (outcome.diagnostics.remainingMs !== undefined)
       lines.push("", `Remaining Action budget: ${String(outcome.diagnostics.remainingMs)}ms.`);

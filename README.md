@@ -1,6 +1,6 @@
 # DSH-action
 
-Unreleased: native project Profiles, independent network access (on by default), per-run reply history and live diagnostics. Installer changes are deferred. See [configuration](docs/native-profile.md).
+Action v0.13.0: native project Profiles, independent network access (on by default), per-run reply history and live diagnostics. Installer changes are deferred. See [configuration](docs/native-profile.md).
 
 For existing workflows, update the Action reference to Lixiaoyiao/DSH-action@the-existing-commit-SHA and keep its immutable commit pin. Use npm create dsh-action for the installer.
 
@@ -132,7 +132,7 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
           persist-credentials: false
           fetch-depth: 1
-      - uses: Lixiaoyiao/DSH-action@v0.12.2
+      - uses: Lixiaoyiao/DSH-action@v0.13.0
         with:
           deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}
           dsh-version: 0.2.1-rc.2
