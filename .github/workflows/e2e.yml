@@ -158,9 +158,9 @@ jobs:
           jq -e '
             .schemaVersion == 1 and .conclusion == "success" and .operation == "task" and
             .policy.trust == "trusted-read" and .permissions.profile == "strict" and
-            .permissions.effectiveTools == ["workspace.read","workspace.search"] and
+            .permissions.effectiveTools == ["native.web-fetch","native.web-search","workspace.read","workspace.search"] and
             .toolPolicy.policyOwner == "controller" and
-            .toolPolicy.requestedTools == ["workspace.edit","workspace.read","workspace.search"] and
+            .toolPolicy.requestedTools == ["native.web-fetch","native.web-search","workspace.edit","workspace.read","workspace.search"] and
             .toolPolicy.effectiveTools == .permissions.effectiveTools and
             (.toolPolicy.deniedTools | any(.id == "workspace.edit")) and
             (.toolPolicy | has("observedTools") | not) and
@@ -214,7 +214,7 @@ jobs:
             (.toolPolicy | has("requestedTools") | not) and
             (.toolPolicy | has("deniedTools") | not) and
             .permissions.workspaceWrite == false and
-            .permissions.network == "mediated-web" and
+            .permissions.network == "bridge" and
             .isolation.backend == "docker" and .isolation.processIsolated == true and
             .isolation.workspaceAccess == "read-only" and
             .isolation.extensionProfile == "none" and
@@ -360,7 +360,7 @@ jobs:
           jq -e '
             .conclusion == "success" and
             .permissions.effectiveTools == ["native.web-search"] and
-            .permissions.network == "mediated-web" and
+            .permissions.network == "bridge" and
             (.loop.dshToolReceipts // [] | map(select(.id == "native.web-search" and .completed == true and .ok == true)) | length == 1)
           ' <<<"$RESULT_JSON" >/dev/null
 

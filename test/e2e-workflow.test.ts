@@ -266,7 +266,7 @@ describe("trusted core E2E workflow", () => {
       expect(assertion).toContain('(.toolPolicy | has("observedTools") | not)');
     }
     expect(strict).toContain(
-      '.toolPolicy.requestedTools == ["workspace.edit","workspace.read","workspace.search"]',
+      '.toolPolicy.requestedTools == ["native.web-fetch","native.web-search","workspace.edit","workspace.read","workspace.search"]',
     );
     expect(mcp).toContain(
       '.toolPolicy.requestedTools == ["mcp.fixture.echo","mcp.fixture.hidden","workspace.read","workspace.search"]',
@@ -332,7 +332,7 @@ describe("trusted core E2E workflow", () => {
       assertion.indexOf("jq -e"),
     );
     expect(assertion).toContain(".receiptCount == 1 and .completedWebSearchCount == 1");
-    expect(assertion).toContain('.permissions.network == "mediated-web"');
+    expect(assertion).toContain('.permissions.network == "bridge"');
     expect(assertion).toContain(".loop.dshToolReceipts // []");
     expect(artifact.if).toBe("always()");
     expect(workflowRecord(artifact.with).path).toContain("dsh-e2e-web-evidence.json");
