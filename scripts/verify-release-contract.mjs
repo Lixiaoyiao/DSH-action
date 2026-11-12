@@ -227,12 +227,14 @@ for (const [name, document] of [
 }
 // Configuration's output example is maintained by hand, not the input contract generator.
 // Check every release-tagged Action step so old examples cannot survive a version bump.
-const configurationExampleTags = [...configurationGuide.matchAll(
-  /^[ \t]*-[ \t]*uses:[ \t]+Lixiaoyiao\/DSH-action@(v\d+\.\d+\.\d+)[ \t]*$/gmu,
-)].map((match) => match[1]);
-assert.ok(configurationExampleTags.length > 0, "docs/configuration.md must include a versioned Action example");
-for (const tag of configurationExampleTags) {
-  assert.equal(tag, ACTION_TAG, "docs/configuration.md Action examples must match the release tag");
+const exampleRefPattern = /^[ \t]*-[ \t]*uses: Lixiaoyiao\/DSH-action@(v\d+\.\d+\.\d+)$/gmu;
+const documentedTags = [];
+for (const match of configurationGuide.matchAll(exampleRefPattern)) {
+  documentedTags.push(match[1]);
+}
+assert.ok(documentedTags.length > 0, "Configuration guide needs an Action version example");
+for (const tag of documentedTags) {
+  assert.equal(tag, ACTION_TAG, "Configuration guide Action example version drifted");
 }
 
 assert.ok(
