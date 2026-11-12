@@ -33,7 +33,7 @@ git --version
 gh --version
 ```
 
-Use `npm.cmd` if PowerShell blocks `npm.ps1`; no execution-policy change is needed. On macOS and Linux, use `npm`.
+Use `npm.cmd` if PowerShell blocks `npm.ps1`; no execution-policy change is needed. On macOS and Linux, use `npm`. The installer supports Node.js 20+, but Node.js 24 is required to develop this Action; Node.js 24+ remains the recommended setup.
 
 ### 2. Open your repository and sign in
 
@@ -55,7 +55,7 @@ npm.cmd create dsh-action@latest
 
 The installer asks which workflow to install, starting with **read-only `@dsh` conversation and automatic PR Review**, then asks for the DSH composition, with `controlled` as the default. It creates local workflow files and preserves existing files. Review, commit and push the generated files with your normal Git workflow.
 
-Installer `0.7.4` binds generated workflows to formal Action `v0.12.2`.
+Installer `0.7.4` binds generated workflows to formal Action `v0.12.2`, **not** the newer `v0.13.0`. To use `v0.13.0` features, replace the generated workflow's `uses:` reference with the verified full commit SHA of the [v0.13.0 release](https://github.com/Lixiaoyiao/DSH-action/releases/tag/v0.13.0); see [Action reference guidance](docs/setup.md#2-choose-an-action-reference). Rerunning the installer does not automatically upgrade existing workflows.
 
 Add the key in **Settings → Secrets and variables → Actions → New repository secret** on GitHub. Set the name to `DEEPSEEK_API_KEY` and paste the key as its value. A key stored in local DSH does not configure this secret.
 
