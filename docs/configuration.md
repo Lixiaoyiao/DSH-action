@@ -919,10 +919,12 @@ repair is a separate call. The report is not a total for every model call made
 by the whole Action.
 
 Failed steps set outputs before failing. Read them from a later `always()` step
-without interpolating model-derived text into a shell command:
+without interpolating model-derived text into a shell command. The snippet
+uses the current release tag for readability; production workflows should pin
+the verified full commit SHA (see [Setup](setup.md#2-choose-an-action-reference)):
 
 ```yaml
-- uses: Lixiaoyiao/DSH-action@v0.11.0
+- uses: Lixiaoyiao/DSH-action@v0.13.0
   id: dsh
   with:
     deepseek-api-key: ${{ secrets.DEEPSEEK_API_KEY }}

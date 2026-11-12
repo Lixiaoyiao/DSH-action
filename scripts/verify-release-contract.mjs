@@ -32,6 +32,7 @@ const [
   rootReadmeZh,
   setupGuide,
   setupGuideZh,
+  configurationGuide,
   changelog,
   maintainerReleaseGuide,
   installerRuntime,
@@ -50,6 +51,7 @@ const [
   read("README.zh-CN.md"),
   read("docs/setup.md"),
   read("docs/setup.zh-CN.md"),
+  read("docs/configuration.md"),
   read("CHANGELOG.md"),
   read("docs/maintainer-release.md"),
   read("packages/create-dsh-action/src/installer.mjs"),
@@ -223,6 +225,18 @@ for (const [name, document] of [
     `${name} must identify the installer version and immutable Action binding`,
   );
 }
+// Configuration's output example is maintained by hand, not the input contract generator.
+// Check every release-tagged Action step so old examples cannot survive a version bump.
+const exampleRefPattern = /^[ \t]*-[ \t]*uses: Lixiaoyiao\/DSH-action@(v\d+\.\d+\.\d+)$/gmu;
+const documentedTags = [];
+for (const match of configurationGuide.matchAll(exampleRefPattern)) {
+  documentedTags.push(match[1]);
+}
+assert.ok(documentedTags.length > 0, "Configuration guide needs an Action version example");
+for (const tag of documentedTags) {
+  assert.equal(tag, ACTION_TAG, "Configuration guide Action example version drifted");
+}
+
 assert.ok(
   maintainerReleaseGuide.includes('repository="Lixiaoyiao/DSH-action"') &&
     !maintainerReleaseGuide.includes("$GITHUB_REPOSITORY"),

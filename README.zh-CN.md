@@ -33,7 +33,7 @@ git --version
 gh --version
 ```
 
-PowerShell 如果提示禁止运行 `npm.ps1`，请使用这里的 `npm.cmd`，无需修改执行策略。macOS 和 Linux 用户可以直接使用 `npm`。
+PowerShell 如果提示禁止运行 `npm.ps1`，请使用这里的 `npm.cmd`，无需修改执行策略。macOS 和 Linux 用户可以直接使用 `npm`。安装器最低支持 Node.js 20，但开发本 Action 需要 Node.js 24；新用户仍建议安装 Node.js 24 或更新版本。
 
 ### 2. 打开仓库并登录 GitHub
 
@@ -55,7 +55,7 @@ npm.cmd create dsh-action@latest
 
 安装器先在终端询问要安装的工作流，默认选择**只读 `@dsh` 对话和自动 PR Review**，再询问 DSH composition，默认 controlled。它生成本地工作流文件，保留已有文件；通过日常 Git 流程审查、提交并推送生成的文件。
 
-安装器 `0.7.4` 生成的工作流绑定正式 Action `v0.12.2`。
+安装器 `0.7.4` 生成的工作流绑定正式 Action `v0.12.2`，**不会自动使用**较新的 `v0.13.0`。如需使用 `v0.13.0` 的新功能，请将生成工作流的 `uses:` 引用替换为[正式 v0.13.0 Release](https://github.com/Lixiaoyiao/DSH-action/releases/tag/v0.13.0) 对应的、已验证的完整 commit SHA（见[选择 Action 版本](docs/setup.zh-CN.md#2-选择-action-版本)）。重新运行安装器不会自动升级已有工作流。
 
 在 GitHub 仓库打开 **Settings → Secrets and variables → Actions → New repository secret**，名称填 `DEEPSEEK_API_KEY`，值填你的密钥。只在本地 DSH 中配置密钥，云端 Action 仍然无法使用它。
 
